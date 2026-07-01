@@ -697,6 +697,7 @@ class ControlDialog(QDialog):
             f"background-color: {COLOR_BG_ROW_ALT}; padding: 5px; border-radius: 3px;"
         )
         self._test_poll_counter = 0
+        self._test_seen_progress = False  # ยังไม่เคยเห็น in-progress state
         self._test_poll_timer.start()
 
     def _abort_test(self) -> None:
@@ -717,6 +718,11 @@ class ControlDialog(QDialog):
         data = self._worker.read_feature_report(0x24, 4)
         if data and len(data) >= 2:
             val = data[1]
+
+            # ติดตามว่าเคยเห็น UPS อยู่ใน in-progress state แล้วหรือยัง
+            if val in (0x01, 0x02, 0x03):
+                self._test_seen_progress = True
+
             status = self._decode_test_val(val)
             self._test_status_label.setText(
                 f"RID 0x24 = 0x{val:02X}  →  {status}  [{self._test_poll_counter * 2}s]"
@@ -730,7 +736,9 @@ class ControlDialog(QDialog):
                 f"color: {color}; font-size: 12px; "
                 f"background-color: {COLOR_BG_ROW_ALT}; padding: 5px; border-radius: 3px;"
             )
-            if val in (0x00, 0x04, 0x05, 0x06, 0x10):
+            # หยุด poll เมื่อได้ผลสุดท้าย แต่ต้องเห็น in-progress ก่อน —
+            # ป้องกันอ่านผลเก่า (stale) จากการทดสอบครั้งก่อน
+            if val in (0x00, 0x04, 0x05, 0x06, 0x10) and self._test_seen_progress:
                 self._test_poll_timer.stop()
         else:
             self._test_status_label.setText("อ่านผลไม่ได้")
