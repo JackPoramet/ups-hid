@@ -411,7 +411,7 @@ class StatusBarWidget(QWidget):
         layout.setContentsMargins(10, 4, 10, 4)
         layout.setSpacing(20)
 
-        self._led = QLabel("●")
+        self._led = QLabel("O")
         self._led.setFixedWidth(20)
         self._led.setStyleSheet(f"color: {COLOR_DIM}; font-size: 16px;")
 
@@ -515,6 +515,9 @@ class ControlDialog(QDialog):
         self._test_poll_timer.setInterval(2000)   # poll ทุก 2 วินาที
         self._test_poll_timer.timeout.connect(self._poll_test_status)
         self._test_poll_counter = 0
+        self._test_seen_progress = False
+        self._test_last_terminal_val: Optional[int] = None
+        self._test_terminal_hits = 0
 
         self._result_label = QLabel("พร้อมรับคำสั่ง")
         self._result_label.setStyleSheet(
@@ -535,15 +538,15 @@ class ControlDialog(QDialog):
     # ── Section builders ─────────────────────────────────────────────────────
 
     def _build_test_section(self) -> QGroupBox:
-        grp = QGroupBox("Self Test  (RID 0x24)")
+        grp = QGroupBox("Self Test  (RID 0x24) (ยังใช้งานไม่ได้)")
         lay = QVBoxLayout(grp)
         lay.setContentsMargins(8, 18, 8, 8)
         lay.setSpacing(6)
 
         btn_row = QHBoxLayout()
-        btn_run   = QPushButton("\u25b6  Run Self-Test")
-        btn_abort = QPushButton("\u25a0  Abort Test")
-        btn_check = QPushButton("\U0001f504  Check Status")
+        btn_run   = QPushButton("Run Self-Test")
+        btn_abort = QPushButton("Abort Test")
+        btn_check = QPushButton("Check Status")
         btn_run.clicked.connect(self._run_test)
         btn_abort.clicked.connect(self._abort_test)
         btn_check.clicked.connect(self._poll_test_status)
@@ -691,18 +694,22 @@ class ControlDialog(QDialog):
 
     def _run_test(self) -> None:
         self._send(0x24, [0x01])
-        self._test_status_label.setText("🔄 ส่งคำสั่งแล้ว — กำลังรอผล...")
+        self._test_status_label.setText("Sending command - waiting for result...")
         self._test_status_label.setStyleSheet(
             f"color: {COLOR_STATUS_INFO}; font-size: 12px; "
             f"background-color: {COLOR_BG_ROW_ALT}; padding: 5px; border-radius: 3px;"
         )
         self._test_poll_counter = 0
         self._test_seen_progress = False  # ยังไม่เคยเห็น in-progress state
+        self._test_last_terminal_val = None
+        self._test_terminal_hits = 0
         self._test_poll_timer.start()
 
     def _abort_test(self) -> None:
         self._test_poll_timer.stop()
         self._send(0x24, [0x00])
+        self._test_last_terminal_val = None
+        self._test_terminal_hits = 0
         self._test_status_label.setText("ยกเลิกการทดสอบแล้ว")
         self._test_status_label.setStyleSheet(
             f"color: {COLOR_DIM}; font-size: 12px; "
@@ -710,10 +717,11 @@ class ControlDialog(QDialog):
         )
 
     def _poll_test_status(self) -> None:
+        TERMINAL_VALS = (0x00, 0x04, 0x05, 0x06, 0x10)
         self._test_poll_counter += 1
         if self._test_poll_counter > 30:  # max 60 วินาที
             self._test_poll_timer.stop()
-            self._test_status_label.setText("⏱ หมดเวลาตรวจสอบ (60s) — กด Check Status เพื่ออ่านอีกครั้ง")
+            self._test_status_label.setText("Timeout after 60s - press Check Status to read again")
             return
         data = self._worker.read_feature_report(0x24, 4)
         if data and len(data) >= 2:
@@ -722,37 +730,50 @@ class ControlDialog(QDialog):
             # ติดตามว่าเคยเห็น UPS อยู่ใน in-progress state แล้วหรือยัง
             if val in (0x01, 0x02, 0x03):
                 self._test_seen_progress = True
+                self._test_last_terminal_val = None
+                self._test_terminal_hits = 0
 
             status = self._decode_test_val(val)
-            self._test_status_label.setText(
-                f"RID 0x24 = 0x{val:02X}  →  {status}  [{self._test_poll_counter * 2}s]"
-            )
+            suffix = ""
             color = (
                 COLOR_STATUS_OK  if val == 0x00 else
                 COLOR_STATUS_ERR if val in (0x04, 0x05, 0x06) else
                 COLOR_STATUS_INFO
             )
+
+            # ยืนยันค่าปลายทางซ้ำ 3 ครั้งก่อนหยุด เพื่อไม่พลาดค่าที่ UPS ส่งตามมา
+            if self._test_seen_progress and val in TERMINAL_VALS:
+                if self._test_last_terminal_val == val:
+                    self._test_terminal_hits += 1
+                else:
+                    self._test_last_terminal_val = val
+                    self._test_terminal_hits = 1
+
+                suffix = f"  (confirm {self._test_terminal_hits}/3)"
+                if self._test_terminal_hits >= 3:
+                    self._test_poll_timer.stop()
+                    suffix = "  (final)"
+
+            self._test_status_label.setText(
+                f"RID 0x24 = 0x{val:02X} -> {status}{suffix}  [{self._test_poll_counter * 2}s]"
+            )
             self._test_status_label.setStyleSheet(
                 f"color: {color}; font-size: 12px; "
                 f"background-color: {COLOR_BG_ROW_ALT}; padding: 5px; border-radius: 3px;"
             )
-            # หยุด poll เมื่อได้ผลสุดท้าย แต่ต้องเห็น in-progress ก่อน —
-            # ป้องกันอ่านผลเก่า (stale) จากการทดสอบครั้งก่อน
-            if val in (0x00, 0x04, 0x05, 0x06, 0x10) and self._test_seen_progress:
-                self._test_poll_timer.stop()
         else:
             self._test_status_label.setText("อ่านผลไม่ได้")
 
     @staticmethod
     def _decode_test_val(val: int) -> str:
         table = {
-            0x00: "✓ ผ่าน / ไม่มีการทดสอบ",
-            0x01: "🔄 กำลังทดสอบ (Manufacturer Test)...",
-            0x02: "🔄 กำลังทดสอบ (Quick Battery Test)...",
-            0x03: "🔄 กำลังทดสอบ (Deep Battery Test)...",
-            0x04: "✗ ล้มเหลว (Battery Fault)",
-            0x05: "✗ Quick Test ล้มเหลว",
-            0x06: "✗ Deep Test ล้มเหลว",
+            0x00: "PASS / no test",
+            0x01: "TESTING (Manufacturer Test)...",
+            0x02: "TESTING (Quick Battery Test)...",
+            0x03: "TESTING (Deep Battery Test)...",
+            0x04: "FAIL (Battery Fault)",
+            0x05: "FAIL (Quick Test)",
+            0x06: "FAIL (Deep Test)",
             0x10: "ยกเลิกแล้ว",
             0xFF: "ไม่รองรับ / ไม่พร้อม",
         }
@@ -770,8 +791,8 @@ class ControlDialog(QDialog):
         self._time_status = QLabel("(ยังไม่ได้อ่าน)")
         self._time_status.setStyleSheet(f"color: {COLOR_TEXT_VALUE}; font-size: 12px;")
 
-        btn_read = QPushButton("อ่านเวลา UPS")
-        btn_set  = QPushButton("ตั้งเวลา = PC Time")
+        btn_read = QPushButton("Read UPS Time")
+        btn_set  = QPushButton("Set Time = PC Time")
         btn_set.setStyleSheet(
             f"background-color: #3A3A1A; color: {COLOR_TEXT_VALUE}; "
             f"border: 1px solid #7A7A3A; border-radius: 4px; padding: 5px 12px;"
@@ -780,12 +801,12 @@ class ControlDialog(QDialog):
         btn_set.clicked.connect(self._do_set_time)
 
         warn = QLabel(
-            "⚠ Vendor-defined field (Usage 0x0097) — เป็นการทดลอง "
-            "อาจไม่มีผล หรืออาจเปลี่ยน field อื่น"
+            "Warning: Vendor-defined field (Usage 0x0097) - experimental "
+            "may have no effect or may change another field"
         )
         warn.setStyleSheet(f"color: {COLOR_STATUS_WARN}; font-size: 11px;")
 
-        lay.addWidget(QLabel("เวลาใน UPS:"),  0, 0)
+        lay.addWidget(QLabel("UPS time:"),  0, 0)
         lay.addWidget(self._time_status,       0, 1)
         lay.addWidget(btn_read,                0, 2)
         lay.addWidget(btn_set,                 1, 2)
@@ -815,9 +836,9 @@ class ControlDialog(QDialog):
         ts  = int((now - self._LOCAL_EPOCH).total_seconds())
         reply = QMessageBox.question(
             self, "ยืนยันตั้งเวลา",
-            f"ต้องการเขียนเวลา PC ({now.strftime('%Y-%m-%d %H:%M:%S')}) ลง UPS ไหม?\n\n"
-            "⚠ RID 0x29 เป็น Vendor-defined field\n"
-            "อาจไม่มีผล หรืออาจเปลี่ยนค่า field อื่นแทน",
+            f"Write PC time ({now.strftime('%Y-%m-%d %H:%M:%S')}) to the UPS?\n\n"
+            "Warning: RID 0x29 is a Vendor-defined field\n"
+            "It may have no effect or may change a different field instead",
             QMessageBox.Yes | QMessageBox.Cancel,
             QMessageBox.Cancel,
         )
@@ -906,7 +927,7 @@ class MainWindow(QMainWindow):
 
         # ── Section: Status ──────────────────────────────────────────────────
         self._sec_status = Section("สถานะ (Status)", [
-            ("ups.status",            "NUT Status",            ""),
+            ("ups.status",            "UPS Status",            ""),
             ("ups_mode",              "UPS Mode",              ""),
             ("ac_present",            "AC Present",            ""),
             ("charging",              "Charging",              ""),
@@ -1013,7 +1034,7 @@ class MainWindow(QMainWindow):
         self._header_subtitle.setStyleSheet(f"color: {COLOR_TEXT_LABEL}; font-size: 11px; border: none;")
         self._header_subtitle.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
-        btn_control = QPushButton("\u2699  Control")
+        btn_control = QPushButton("Control")
         btn_control.setStyleSheet(
             f"background-color: {COLOR_BG_SECTION}; color: {COLOR_STATUS_INFO}; "
             f"border: 1px solid {COLOR_BORDER}; border-radius: 4px; "
