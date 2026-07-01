@@ -1,0 +1,36 @@
+
+  Manufacturer 
+  Product      
+  Serial       
+  Release      
+  Usage Page   
+  Usage        
+
+  NUT Status                     
+  UPS Mode                       
+  AC Present                     
+  Charging                       
+  Discharging                    
+  Below Capacity Limit           
+  Status Good                    
+  Battery Charge                 
+  Battery Capacity               
+  Low Batt Threshold             
+  Runtime Remaining               
+  Runtime Remaining               
+  Temperature                     
+  Percent Load                   
+  Battery Voltage                 
+  Output Voltage                 
+  Output Current                 
+  Output Frequency               
+  Output Active Power            
+  Output Apparent Power          
+  Input Frequency                
+  Nominal Voltage                
+  Nominal Frequency              
+  Config Nominal Voltage         
+  Config Nominal Frequency       
+  Low Transfer Voltage           
+  Firmware Version               
+  Last Event Date                
