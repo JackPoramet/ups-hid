@@ -1,21 +1,25 @@
 """
-UPS Monitor GUI
+UPS Monitor GUI — Linux
 Real-time display via PySide6, polls every 1 second.
+
+Linux-specific changes vs. the Windows version:
+- HID report descriptor is read directly from sysfs
+  (/sys/class/hidraw/hidrawN/device/report_descriptor)
+- No dependency on hidapi.py (Windows-only DeviceIoControl wrapper)
 """
 
 import datetime
-import platform as _platform
+import re
 import sys
 import time
 from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt, QThread, QTimer, Signal, Slot
-from PySide6.QtGui import QColor, QFont, QPalette
+from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
-    QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -26,7 +30,6 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSpinBox,
-    QStatusBar,
     QVBoxLayout,
     QWidget,
 )
@@ -55,17 +58,34 @@ except ImportError as _hid_import_err:
     DEFAULT_DESCRIPTOR_BIN = "report_descriptor_live.bin"
     DEFAULT_DESCRIPTOR_TXT = "report_descriptor_live.txt"
 
-# ── ดึง WinHidApi จาก hidapi.py (Windows เท่านั้น) ──────────────────────────
-try:
-    if _platform.system().lower() == "windows":
-        from hidapi import WinHidApi, normalize_path
-        HIDAPI_WIN_AVAILABLE = True
-    else:
-        HIDAPI_WIN_AVAILABLE = False
-except ImportError:
-    HIDAPI_WIN_AVAILABLE = False
-
 POLL_INTERVAL_MS = 1000  # 1 วินาที
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Linux sysfs descriptor helper
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _read_descriptor_from_sysfs(device_path: object) -> Optional[bytes]:
+    """
+    อ่าน HID report descriptor จาก sysfs ของ Linux
+
+    device_path: bytes หรือ str ที่ได้จาก hid.enumerate() เช่น b'/dev/hidraw0'
+    คืนค่า bytes ของ descriptor หรือ None ถ้าอ่านไม่ได้
+    """
+    if isinstance(device_path, (bytes, bytearray)):
+        path_str = device_path.decode("utf-8", errors="ignore")
+    else:
+        path_str = str(device_path)
+
+    m = re.search(r"hidraw(\d+)", path_str)
+    if not m:
+        return None
+
+    sysfs = Path(f"/sys/class/hidraw/hidraw{m.group(1)}/device/report_descriptor")
+    try:
+        return sysfs.read_bytes()
+    except OSError:
+        return None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -128,10 +148,9 @@ class UPSWorker(QThread):
             return
 
         try:
-            report_ids = self._report_ids
             raw, _ = read_all_feature_reports(
                 self._h,
-                report_ids=report_ids,
+                report_ids=self._report_ids,
                 sizes=(64,),
                 retries=1,
                 include_zero=False,
@@ -158,54 +177,29 @@ class UPSWorker(QThread):
             self._h = h
             self._info = info or {}
             self._read_descriptor()
-            self.error_occurred.emit("")  
+            self.error_occurred.emit("")
         except Exception as exc:
             self.error_occurred.emit(f"Connect error: {exc}")
 
     def _read_descriptor(self) -> None:
-        if not HIDAPI_WIN_AVAILABLE or not HID_AVAILABLE:
-            self.descriptor_ready.emit("Profile: — (Windows HID API ไม่พร้อมใช้)")
-            return
-
+        """อ่าน report descriptor จาก sysfs ของ Linux"""
         raw_path = self._info.get("path")
         if not raw_path:
             self.descriptor_ready.emit("Profile: — (ไม่มี device path)")
             return
 
-        dev_path = normalize_path(raw_path)
-        api = WinHidApi()
-        handle = None
-        descriptor_bytes: Optional[bytes] = None
-
-        try:
-            handle = api.create_file(dev_path)
-            descriptor_bytes, _err = api.get_report_descriptor(
-                handle, sizes=(256, 512, 1024, 2048, 4096)
-            )
-            if not descriptor_bytes:
-                col_info, _ = api.get_collection_information(handle)
-                if col_info and col_info.get("DescriptorSize", 0) > 0:
-                    descriptor_bytes, _ = api.get_collection_descriptor(
-                        handle, col_info["DescriptorSize"]
-                    )
-        except Exception as exc:
-            self.descriptor_ready.emit(f"Descriptor error: {exc}")
-            return
-        finally:
-            if handle:
-                try:
-                    api.close_handle(handle)
-                except Exception:
-                    pass
+        descriptor_bytes = _read_descriptor_from_sysfs(raw_path)
 
         if not descriptor_bytes:
-            self.descriptor_ready.emit("Profile: — descriptor ไม่ได้ → scan 0x01-0x7F")
+            self.descriptor_ready.emit(
+                "Profile: — (อ่าน sysfs ไม่ได้ → scan 0x01-0x7F)"
+            )
             return
 
         bin_path = Path(DEFAULT_DESCRIPTOR_BIN)
         try:
             bin_path.write_bytes(descriptor_bytes)
-        except Exception as exc:
+        except OSError as exc:
             self.descriptor_ready.emit(f"Profile: บันทึกไม่ได้ ({exc})")
             return
 
@@ -246,7 +240,7 @@ class UPSWorker(QThread):
             return list(data) if data else None
         except Exception:
             return None
-    
+
     def read_interrupt_data(self, size: int = 64, timeout_ms: int = 500) -> Optional[list]:
         if not self._h:
             return None
@@ -364,10 +358,6 @@ class StatusBarWidget(QWidget):
         layout.setContentsMargins(10, 4, 10, 4)
         layout.setSpacing(20)
 
-        self._led = QLabel("")
-        self._led.setFixedWidth(20)
-        self._led.setStyleSheet(f"color: {COLOR_DIM}; font-size: 16px;")
-
         self._conn_label = QLabel("ไม่ได้เชื่อมต่อ")
         self._conn_label.setStyleSheet(f"color: {COLOR_TEXT_LABEL}; font-size: 12px;")
 
@@ -390,8 +380,6 @@ class StatusBarWidget(QWidget):
         self._desc_label.setStyleSheet(f"color: {color}; font-size: 11px;")
 
     def set_connected(self, ok: bool, message: str = "") -> None:
-        color = COLOR_STATUS_OK if ok else COLOR_STATUS_ERR
-        self._led.setStyleSheet(f"color: {color}; font-size: 16px;")
         if ok:
             self._conn_label.setText("เชื่อมต่อแล้ว")
             self._conn_label.setStyleSheet(f"color: {COLOR_STATUS_OK}; font-size: 12px;")
@@ -462,8 +450,7 @@ class ControlDialog(QDialog):
         root.addWidget(self._build_time_section())
 
         self._test_poll_timer = QTimer(self)
-        # ตั้ง interval 1 วินาทีเพื่อนับถอยหลัง
-        self._test_poll_timer.setInterval(1000)   
+        self._test_poll_timer.setInterval(1000)
         self._test_poll_timer.timeout.connect(self._poll_test_status)
         self._test_countdown = 0
 
@@ -494,7 +481,6 @@ class ControlDialog(QDialog):
         btn_abort = QPushButton("Abort Test")
         btn_run.clicked.connect(self._run_test)
         btn_abort.clicked.connect(self._abort_test)
-        
         btn_row.addWidget(btn_run)
         btn_row.addWidget(btn_abort)
         btn_row.addStretch()
@@ -529,7 +515,7 @@ class ControlDialog(QDialog):
         self._spin_startup.setValue(0)
         self._spin_startup.setSuffix("  วินาที")
 
-        btn_sched = QPushButton("Schedule  (RID 0x09)")
+        btn_sched  = QPushButton("Schedule  (RID 0x09)")
         btn_sched.setStyleSheet(
             f"background-color: #4A1A1A; color: {COLOR_TEXT_VALUE}; "
             f"border: 1px solid #8A3A3A; border-radius: 4px; padding: 5px 12px;"
@@ -595,6 +581,40 @@ class ControlDialog(QDialog):
         lay.addWidget(btn_rt,                              2, 2)
         return grp
 
+    def _build_time_section(self) -> QGroupBox:
+        grp = QGroupBox("นาฬิกา UPS  (RID 0x29 — Vendor Defined / ทดลองใช้)")
+        lay = QGridLayout(grp)
+        lay.setContentsMargins(8, 18, 8, 8)
+        lay.setSpacing(8)
+        lay.setColumnStretch(1, 1)
+
+        self._time_status = QLabel("(ยังไม่ได้อ่าน)")
+        self._time_status.setStyleSheet(f"color: {COLOR_TEXT_VALUE}; font-size: 12px;")
+
+        btn_read = QPushButton("Read UPS Time")
+        btn_set  = QPushButton("Set Time = PC Time")
+        btn_set.setStyleSheet(
+            f"background-color: #3A3A1A; color: {COLOR_TEXT_VALUE}; "
+            f"border: 1px solid #7A7A3A; border-radius: 4px; padding: 5px 12px;"
+        )
+        btn_read.clicked.connect(self._do_read_time)
+        btn_set.clicked.connect(self._do_set_time)
+
+        warn = QLabel(
+            "Warning: Vendor-defined field (Usage 0x0097) — experimental, "
+            "may have no effect or may change another field"
+        )
+        warn.setStyleSheet(f"color: {COLOR_STATUS_WARN}; font-size: 11px;")
+
+        lay.addWidget(QLabel("UPS time:"),  0, 0)
+        lay.addWidget(self._time_status,    0, 1)
+        lay.addWidget(btn_read,             0, 2)
+        lay.addWidget(btn_set,              1, 2)
+        lay.addWidget(warn,                 2, 0, 1, 3)
+        return grp
+
+    # ── helpers ─────────────────────────────────────────────────────────────
+
     def _send(self, rid: int, payload: list) -> None:
         self._worker.send_feature_report(rid, payload)
 
@@ -632,16 +652,14 @@ class ControlDialog(QDialog):
     def _do_runtime_limit(self) -> None:
         self._send_u16(0x17, self._spin_runtime_lim.value())
 
-    # ── Self-Test helpers ───────────────────────────────────────────────────────
+    # ── Self-Test ────────────────────────────────────────────────────────────
 
     def _run_test(self) -> None:
-        # ยิงคำสั่งเริ่มทดสอบ
         self._send(0x24, [0x01])
-        
-        # ตั้งเวลานับถอยหลัง 12 วินาที
-        self._test_countdown = 12  
-        
-        self._test_status_label.setText(f"กำลังทดสอบ... UPS สลับใช้ไฟจากแบตเตอรี่ (เหลือ {self._test_countdown} วิ)")
+        self._test_countdown = 12
+        self._test_status_label.setText(
+            f"กำลังทดสอบ... UPS สลับใช้ไฟจากแบตเตอรี่ (เหลือ {self._test_countdown} วิ)"
+        )
         self._test_status_label.setStyleSheet(
             f"color: {COLOR_STATUS_WARN}; font-size: 12px; "
             f"background-color: {COLOR_BG_ROW_ALT}; padding: 5px; border-radius: 3px;"
@@ -651,14 +669,13 @@ class ControlDialog(QDialog):
     def _abort_test(self) -> None:
         self._test_poll_timer.stop()
         self._send(0x24, [0x00])
-        
         self._test_status_label.setText("ยกเลิกการทดสอบแล้ว")
         self._test_status_label.setStyleSheet(
             f"color: {COLOR_DIM}; font-size: 12px; "
             f"background-color: {COLOR_BG_ROW_ALT}; padding: 5px; border-radius: 3px;"
         )
 
-    # RID 0x24 result values (ยืนยันจาก usbmon + การทดสอบจริงบน Linux)
+    # RID 0x24 result values (ยืนยันจาก usbmon + การทดสอบจริง)
     _TEST_STATUS = {
         0x01: ("✅ ผ่าน / Idle",         COLOR_STATUS_OK),
         0x02: ("⚠️ Warning",              COLOR_STATUS_WARN),
@@ -704,39 +721,7 @@ class ControlDialog(QDialog):
                 f"background-color: {COLOR_BG_ROW_ALT}; padding: 5px; border-radius: 3px;"
             )
 
-    # ── Time section ────────────────────────────────────────────────────────────
-
-    def _build_time_section(self) -> QGroupBox:
-        grp = QGroupBox("นาฬิกา UPS  (RID 0x29 — Vendor Defined / ทดลองใช้)")
-        lay = QGridLayout(grp)
-        lay.setContentsMargins(8, 18, 8, 8)
-        lay.setSpacing(8)
-        lay.setColumnStretch(1, 1)
-
-        self._time_status = QLabel("(ยังไม่ได้อ่าน)")
-        self._time_status.setStyleSheet(f"color: {COLOR_TEXT_VALUE}; font-size: 12px;")
-
-        btn_read = QPushButton("Read UPS Time")
-        btn_set  = QPushButton("Set Time = PC Time")
-        btn_set.setStyleSheet(
-            f"background-color: #3A3A1A; color: {COLOR_TEXT_VALUE}; "
-            f"border: 1px solid #7A7A3A; border-radius: 4px; padding: 5px 12px;"
-        )
-        btn_read.clicked.connect(self._do_read_time)
-        btn_set.clicked.connect(self._do_set_time)
-
-        warn = QLabel(
-            "Warning: Vendor-defined field (Usage 0x0097) - experimental "
-            "may have no effect or may change another field"
-        )
-        warn.setStyleSheet(f"color: {COLOR_STATUS_WARN}; font-size: 11px;")
-
-        lay.addWidget(QLabel("UPS time:"),  0, 0)
-        lay.addWidget(self._time_status,       0, 1)
-        lay.addWidget(btn_read,                0, 2)
-        lay.addWidget(btn_set,                 1, 2)
-        lay.addWidget(warn,                    2, 0, 1, 3)
-        return grp
+    # ── UPS time ─────────────────────────────────────────────────────────────
 
     _LOCAL_EPOCH = datetime.datetime(1970, 1, 1)
 
@@ -818,8 +803,7 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        header = self._build_header()
-        root.addWidget(header)
+        root.addWidget(self._build_header())
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -900,29 +884,26 @@ class MainWindow(QMainWindow):
             ("last_event_date","Last Event Date",  ""),
         ])
 
-        left_sections = [
+        for row_idx, sec in enumerate([
             self._sec_device,
             self._sec_status,
             self._sec_fault,
             self._sec_info,
-        ]
-        for row_idx, sec in enumerate(left_sections):
+        ]):
             grid.addWidget(sec, row_idx, 0)
 
-        right_sections = [
+        for row_idx, sec in enumerate([
             self._sec_battery,
             self._sec_thermal,
             self._sec_output,
             self._sec_input,
-        ]
-        for row_idx, sec in enumerate(right_sections):
+        ]):
             grid.addWidget(sec, row_idx, 1)
 
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
 
         root.addWidget(scroll)
-
         self._status_bar = StatusBarWidget()
         root.addWidget(self._status_bar)
 
@@ -937,10 +918,14 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(16, 8, 16, 8)
 
         title = QLabel("UPS Monitor")
-        title.setStyleSheet(f"color: {COLOR_STATUS_INFO}; font-size: 16px; font-weight: bold; border: none;")
+        title.setStyleSheet(
+            f"color: {COLOR_STATUS_INFO}; font-size: 16px; font-weight: bold; border: none;"
+        )
 
         self._header_subtitle = QLabel("Real-time polling 1s")
-        self._header_subtitle.setStyleSheet(f"color: {COLOR_TEXT_LABEL}; font-size: 11px; border: none;")
+        self._header_subtitle.setStyleSheet(
+            f"color: {COLOR_TEXT_LABEL}; font-size: 11px; border: none;"
+        )
         self._header_subtitle.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
         btn_control = QPushButton("Control")
@@ -956,7 +941,6 @@ class MainWindow(QMainWindow):
         layout.addStretch()
         layout.addWidget(self._header_subtitle)
         layout.addWidget(btn_control)
-
         return header
 
     @Slot(dict, dict)
@@ -964,13 +948,12 @@ class MainWindow(QMainWindow):
         self._status_bar.set_connected(True)
         self._status_bar.set_time(time.strftime("%H:%M:%S"))
 
-        # 👇 --- เพิ่มคำสั่งนี้เพื่อแอบดูตัวแปรที่ซ่อนอยู่ (จะปริ้นท์ในหน้าจอ Terminal) --- 👇
-        print("\n=== ตัวแปรทั้งหมดที่ UPS ส่งมาตอนนี้ ===")
+        print("\n--- รายชื่อตัวแปรและค่าที่ UPS ส่งมา ---")
         for key, value in ups.items():
-            print(f"'{key}': {value}")
-        # 👆 ----------------------------------------------------------------- 👆
+            print(f"Key: {key:<30} | Value: {value}")
+        print("------------------------------------------")
 
-        mfr = device_info.get("manufacturer_string") or ""
+        mfr  = device_info.get("manufacturer_string") or ""
         prod = device_info.get("product_string") or ""
         device_label = " / ".join(filter(None, [mfr, prod])) or "UPS"
         self._header_subtitle.setText(f"{device_label}  |  Real-time polling 1s")
@@ -1000,8 +983,7 @@ class MainWindow(QMainWindow):
                 self._sec_status.update_row(key, None)
             else:
                 b = bool(val)
-                color = _bool_color(key, b)
-                self._sec_status.update_row(key, "True" if b else "False", color=color)
+                self._sec_status.update_row(key, "True" if b else "False", color=_bool_color(key, b))
 
         test_st = ups.get("battery_test_status")
         _test_color = {
@@ -1023,8 +1005,8 @@ class MainWindow(QMainWindow):
                 self._sec_fault.update_row(key, None)
             else:
                 b = bool(val)
-                c = COLOR_STATUS_ERR if b else COLOR_STATUS_OK
-                self._sec_fault.update_row(key, "True" if b else "False", color=c)
+                self._sec_fault.update_row(key, "True" if b else "False",
+                                           color=COLOR_STATUS_ERR if b else COLOR_STATUS_OK)
 
         charge = ups.get("battery.charge")
         charge_color = (
@@ -1032,7 +1014,7 @@ class MainWindow(QMainWindow):
             COLOR_STATUS_WARN if isinstance(charge, (int, float)) and charge < 50  else
             COLOR_STATUS_OK
         )
-        self._sec_battery.update_row("battery.charge",               charge,                          color=charge_color)
+        self._sec_battery.update_row("battery.charge",               charge, color=charge_color)
         self._sec_battery.update_row("battery_capacity_percent",     ups.get("battery_capacity_percent"))
         self._sec_battery.update_row("low_batt_alert_limit_percent", ups.get("low_batt_alert_limit_percent"))
         self._sec_battery.update_row("battery.charge.low",           ups.get("battery.charge.low"))
@@ -1049,11 +1031,11 @@ class MainWindow(QMainWindow):
         self._sec_thermal.update_row("temperature_c", temp, color=temp_color)
         self._sec_thermal.update_row("percent_load",  ups.get("percent_load"))
 
-        self._sec_output.update_row("output_voltage_v",          ups.get("output_voltage_v") or ups.get("output.voltage"))
-        self._sec_output.update_row("output_current_a",          ups.get("output_current_a"))
-        self._sec_output.update_row("output_frequency_hz",       ups.get("output_frequency_hz"))
-        self._sec_output.update_row("output_active_power_w",     ups.get("output_active_power_w"))
-        self._sec_output.update_row("output_apparent_power_va",  ups.get("output_apparent_power_va"))
+        self._sec_output.update_row("output_voltage_v",         ups.get("output_voltage_v") or ups.get("output.voltage"))
+        self._sec_output.update_row("output_current_a",         ups.get("output_current_a"))
+        self._sec_output.update_row("output_frequency_hz",      ups.get("output_frequency_hz"))
+        self._sec_output.update_row("output_active_power_w",    ups.get("output_active_power_w"))
+        self._sec_output.update_row("output_apparent_power_va", ups.get("output_apparent_power_va"))
 
         self._sec_input.update_row("input.voltage",               ups.get("input.voltage"))
         self._sec_input.update_row("input.frequency",             ups.get("input.frequency"))
@@ -1090,7 +1072,6 @@ class MainWindow(QMainWindow):
 def _bool_color(key: str, value: bool) -> str:
     good_when_true = {"ac_present", "charging", "status_good"}
     bad_when_true  = {"discharging", "below_capacity_limit"}
-
     if key in good_when_true:
         return COLOR_STATUS_OK   if value else COLOR_DIM
     if key in bad_when_true:
@@ -1102,18 +1083,96 @@ def _bool_color(key: str, value: bool) -> str:
 # Entry point
 # ══════════════════════════════════════════════════════════════════════════════
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Linux permission setup
+# ══════════════════════════════════════════════════════════════════════════════
+
+UDEV_RULE_PATH = "/etc/udev/rules.d/99-ups-hid.rules"
+UDEV_RULE_CONTENT = (
+    'SUBSYSTEM=="hidraw", ATTRS{idVendor}=="06da", '
+    'ATTRS{idProduct}=="ffff", MODE="0660", GROUP="plugdev"\n'
+    'SUBSYSTEM=="usb", ATTRS{idVendor}=="06da", '
+    'ATTRS{idProduct}=="ffff", MODE="0660", GROUP="plugdev"\n'
+)
+
+
+def _check_hid_permission() -> bool:
+    """ตรวจสอบว่าสามารถ enumerate HID device ได้ไหม"""
+    try:
+        import hid as _hid
+        devices = _hid.enumerate(VID, PID)
+        if not devices:
+            return True   # ไม่มีอุปกรณ์ แต่ไม่ใช่ปัญหาสิทธิ์
+        # ลอง open จริง
+        h = _hid.device()
+        h.open_path(devices[0]["path"])
+        h.close()
+        return True
+    except OSError:
+        return False
+    except Exception:
+        return True
+
+
+def _try_setup_permissions() -> None:
+    """แสดงคำแนะนำหรือสร้าง udev rule อัตโนมัติถ้าเป็น root"""
+    import os, subprocess, grp
+
+    is_root = (os.geteuid() == 0)
+
+    if is_root:
+        # สร้าง udev rule โดยตรง
+        try:
+            with open(UDEV_RULE_PATH, "w") as f:
+                f.write(UDEV_RULE_CONTENT)
+            subprocess.run(["udevadm", "control", "--reload-rules"], check=False)
+            subprocess.run(["udevadm", "trigger", "--subsystem-match=hidraw",
+                            "--subsystem-match=usb"], check=False)
+            print(f"[setup] สร้าง udev rule ที่ {UDEV_RULE_PATH} แล้ว")
+            print("[setup] กรุณา logout/login ใหม่ถ้า user ยังเข้าไม่ได้")
+            return
+        except OSError as e:
+            print(f"[setup] สร้าง udev rule ไม่ได้: {e}")
+
+    # ไม่ใช่ root — แสดงคำแนะนำ
+    username = os.environ.get("USER", os.environ.get("LOGNAME", "$USER"))
+    print("\n" + "=" * 60)
+    print("⚠️  ไม่มีสิทธิ์เข้าถึง USB HID device")
+    print("=" * 60)
+    print("รันคำสั่งต่อไปนี้ครั้งเดียวเพื่อแก้ปัญหาถาวร:\n")
+    print(f"  sudo tee {UDEV_RULE_PATH} <<'EOF'")
+    print(UDEV_RULE_CONTENT.strip())
+    print("EOF")
+    print("  sudo udevadm control --reload-rules")
+    print("  sudo udevadm trigger")
+    print(f"  sudo usermod -aG plugdev {username}")
+    print("  # แล้ว logout + login ใหม่")
+    print("=" * 60 + "\n")
+    print("หรือรัน script นี้ด้วย sudo ครั้งเดียวเพื่อให้ setup อัตโนมัติ:")
+    print(f"  sudo python3 {sys.argv[0]}")
+    print()
+
+
 def main() -> int:
+    # ── ตรวจสอบและแก้สิทธิ์ ─────────────────────────────────────────────────
+    if not _check_hid_permission():
+        _try_setup_permissions()
+        # ถ้า root ทำ setup แล้ว ให้รันต่อ; ถ้าไม่ใช่ root ให้ exit
+        import os
+        if os.geteuid() != 0:
+            sys.exit(1)
+
     app = QApplication(sys.argv)
     app.setApplicationName("UPS Monitor")
     app.setApplicationVersion("1.0")
 
     palette = QPalette()
-    palette.setColor(QPalette.Window,          QColor(COLOR_BG_WINDOW))
-    palette.setColor(QPalette.WindowText,      QColor(COLOR_TEXT_VALUE))
-    palette.setColor(QPalette.Base,            QColor(COLOR_BG_SECTION))
-    palette.setColor(QPalette.AlternateBase,   QColor(COLOR_BG_ROW_ALT))
-    palette.setColor(QPalette.Text,            QColor(COLOR_TEXT_VALUE))
-    palette.setColor(QPalette.ButtonText,      QColor(COLOR_TEXT_VALUE))
+    palette.setColor(QPalette.Window,        QColor(COLOR_BG_WINDOW))
+    palette.setColor(QPalette.WindowText,    QColor(COLOR_TEXT_VALUE))
+    palette.setColor(QPalette.Base,          QColor(COLOR_BG_SECTION))
+    palette.setColor(QPalette.AlternateBase, QColor(COLOR_BG_ROW_ALT))
+    palette.setColor(QPalette.Text,          QColor(COLOR_TEXT_VALUE))
+    palette.setColor(QPalette.ButtonText,    QColor(COLOR_TEXT_VALUE))
     app.setPalette(palette)
 
     window = MainWindow()

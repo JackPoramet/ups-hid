@@ -38,9 +38,12 @@ LEGACY_DECODE_REPORT_IDS = {
     0x10,
     0x14,
     0x17,
+    0x24,
     0x25,
     0x26,
+    0x27,
     0x29,
+    0x31,
 }
 
 
@@ -681,6 +684,17 @@ def decode_feature_reports(raw: Dict[int, List[int]]) -> dict:
         ups["config_nominal_frequency_hz"] = d[0]
         ups["config_nominal_voltage_v"] = d[1]
 
+    # Report 0x31: Input Frequency (u16×10 at offset 0) + Input Voltage (u16×10 at offset 2)
+    # ยืนยันจาก usbmon: RID=0x31 data=[0xf4,0x01,0x6d,0x08] → freq=500/10=50.0Hz, volt=2157/10=215.7V
+    d = payload(0x31)
+    if d and len(d) >= 4:
+        freq_raw = d[0] | (d[1] << 8)
+        volt_raw = d[2] | (d[3] << 8)
+        if freq_raw > 0:
+            ups["input.frequency"] = round(freq_raw / 10.0, 1)
+        if volt_raw > 0:
+            ups["input.voltage"] = round(volt_raw / 10.0, 1)
+
     d = payload(0x17)
     if d and len(d) >= 2:
         ups["input.transfer.low"] = d[0] | (d[1] << 8)
@@ -697,6 +711,28 @@ def decode_feature_reports(raw: Dict[int, List[int]]) -> dict:
     d = payload(0x26)
     if d and len(d) >= 3:
         ups["ups.firmware"] = f"{d[0]}.{d[1]}.{d[2]}"
+
+    # Report 0x24: Self-test status
+    # ยืนยันจากการทดสอบจริง (usbmon + python polling):
+    #   0x01 = Idle / Passed (before & after successful test)
+    #   0x05 = Test in progress (~10 seconds)
+    #   0x04 = Failed (hypothesis, ไม่สามารถยืนยันได้โดยไม่มีแบตเตอรี่เสีย)
+    d = payload(0x24)
+    if d and len(d) >= 1:
+        val = d[0]
+        ups["battery_test_status_raw"] = val
+        ups["battery_test_status"] = {
+            0x01: "idle",
+            0x02: "warning",
+            0x03: "abort",
+            0x04: "failed",
+            0x05: "running",
+        }.get(val, f"unknown(0x{val:02X})")
+
+    # Report 0x27: Status flags (ยืนยันจาก usbmon — d[3] เปลี่ยนระหว่าง self-test)
+    d = payload(0x27)
+    if d and len(d) >= 4:
+        ups["test_discharge_active"] = bool(d[3])
 
     # Report 0x42: output power meter
     d = payload(0x42)
