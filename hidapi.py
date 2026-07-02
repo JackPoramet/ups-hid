@@ -182,6 +182,13 @@ class WinHidApi:
         ]
         self.hid_dll.HidP_GetCaps.restype = wintypes.ULONG
 
+        self.hid_dll.HidD_GetFeature.argtypes = [
+            wintypes.HANDLE,
+            ctypes.c_void_p,
+            wintypes.ULONG,
+        ]
+        self.hid_dll.HidD_GetFeature.restype = wintypes.BOOLEAN
+
     def create_file(self, path: str) -> wintypes.HANDLE:
         handle = self.kernel32.CreateFileW(
             path,
@@ -319,6 +326,21 @@ class WinHidApi:
             return info, None
         finally:
             self.hid_dll.HidD_FreePreparsedData(preparsed)
+
+    def get_feature_report(self, handle: wintypes.HANDLE, rid: int, length: int) -> Optional[List[int]]:
+        """อ่าน HID Feature Report ผ่าน HidD_GetFeature โดยตรง (bypass driver filter)
+
+        rid    : Report ID (0x01–0xFF)
+        length : ขนาด payload ที่ต้องการ (ไม่รวม RID byte)
+        คืน: list[int] payload (ไม่มี RID byte) หรือ None
+        """
+        buf_size = length + 1  # +1 สำหรับ RID byte ตัวแรก
+        buf = ctypes.create_string_buffer(buf_size)
+        buf[0] = rid & 0xFF
+        ok = self.hid_dll.HidD_GetFeature(handle, buf, buf_size)
+        if not ok:
+            return None
+        return list(buf.raw[1:buf_size])
 
 
 # -----------------------------

@@ -12,6 +12,7 @@ PID: 0xFFFF (Innova Unity)
 import argparse
 import datetime
 import json
+import platform
 import re
 import sys
 import time
@@ -20,8 +21,52 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import hid
 
+# ── Windows fallback: อ่าน feature report ผ่าน WinHidApi (bypass HID class driver) ──
+_WIN_HIDAPI: Optional[object] = None
+_WIN_HIDAPI_HANDLE: Optional[object] = None
+_WIN_HIDAPI_PATH: Optional[str] = None
 
-VID = 0x06DA
+
+def _win_open_direct(path: object) -> bool:
+    """(Windows-only) เปิด device ด้วย WinHidApi และเก็บ handle ไว้ module-level"""
+    global _WIN_HIDAPI, _WIN_HIDAPI_HANDLE, _WIN_HIDAPI_PATH
+    if platform.system().lower() != "windows":
+        return False
+    try:
+        from hidapi import WinHidApi, normalize_path
+        raw_path = path.decode("utf-8", errors="ignore") if isinstance(path, (bytes, bytearray)) else str(path)
+        dev_path = normalize_path(raw_path)
+        api = WinHidApi()
+        handle = api.create_file(dev_path)
+        _WIN_HIDAPI = api
+        _WIN_HIDAPI_HANDLE = handle
+        _WIN_HIDAPI_PATH = dev_path
+        return True
+    except Exception:
+        return False
+
+
+def _win_close_direct() -> None:
+    """(Windows-only) ปิด WinHidApi handle"""
+    global _WIN_HIDAPI, _WIN_HIDAPI_HANDLE, _WIN_HIDAPI_PATH
+    if _WIN_HIDAPI and _WIN_HIDAPI_HANDLE:
+        try:
+            _WIN_HIDAPI.close_handle(_WIN_HIDAPI_HANDLE)
+        except Exception:
+            pass
+    _WIN_HIDAPI = None
+    _WIN_HIDAPI_HANDLE = None
+    _WIN_HIDAPI_PATH = None
+
+
+def _win_get_feature(rid: int, length: int) -> Optional[List[int]]:
+    """(Windows-only) อ่าน feature report ผ่าน HidD_GetFeature โดยตรง"""
+    if _WIN_HIDAPI is None or _WIN_HIDAPI_HANDLE is None:
+        return None
+    try:
+        return _WIN_HIDAPI.get_feature_report(_WIN_HIDAPI_HANDLE, rid, length)
+    except Exception:
+        return None
 PID = 0xFFFF
 
 DEFAULT_REPORT_SIZES = (8, 16, 32, 64, 128, 255)
@@ -389,6 +434,15 @@ def open_ups_device(vid: int = VID, pid: int = PID):
     print(f"  Release      : {target.get('release_number')}")
     print(f"  Usage Page   : 0x{(target.get('usage_page') or 0):04X}")
     print(f"  Usage        : 0x{(target.get('usage') or 0):04X}")
+
+    # Windows: เปิด handle แบบ direct ด้วย WinHidApi เพื่อใช้เป็น fallback
+    # สำหรับ report ที่ Windows HID class driver block เช่น RID 0x31 (Input Voltage)
+    if platform.system().lower() == "windows":
+        if _win_open_direct(target["path"]):
+            print("  Win direct   : HidD_GetFeature fallback ready")
+        else:
+            print("  Win direct   : fallback unavailable (hidapi.py not found)")
+
     return h, target
 
 
@@ -445,6 +499,7 @@ def read_all_feature_reports(
 ) -> Tuple[Dict[int, List[int]], Dict[int, dict]]:
     raw: Dict[int, List[int]] = {}
     meta: Dict[int, dict] = {}
+    is_win = platform.system().lower() == "windows"
 
     for rid in report_ids:
         data, m = read_feature_report_best(h, rid, sizes=sizes, retries=retries)
@@ -452,6 +507,16 @@ def read_all_feature_reports(
             continue
         payload = payload_of_report(data)
         has_non_zero = any(b != 0 for b in payload)
+
+        # Windows fallback: ถ้า standard read ได้ zeros ให้ลอง HidD_GetFeature โดยตรง
+        if is_win and not has_non_zero and _WIN_HIDAPI_HANDLE is not None:
+            win_payload = _win_get_feature(rid, max(sizes))
+            if win_payload and any(b != 0 for b in win_payload):
+                data = [rid] + win_payload
+                payload = win_payload
+                has_non_zero = True
+                m["source"] = "win_direct"
+
         if not has_non_zero and not include_zero:
             continue
 

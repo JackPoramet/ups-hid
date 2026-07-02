@@ -1116,7 +1116,7 @@ def _check_hid_permission() -> bool:
 
 def _try_setup_permissions() -> None:
     """แสดงคำแนะนำหรือสร้าง udev rule อัตโนมัติถ้าเป็น root"""
-    import os, subprocess, grp
+    import os, subprocess
 
     is_root = (os.geteuid() == 0)
 
@@ -1134,7 +1134,8 @@ def _try_setup_permissions() -> None:
         except OSError as e:
             print(f"[setup] สร้าง udev rule ไม่ได้: {e}")
 
-    # ไม่ใช่ root — แสดงคำแนะนำ
+    # ไม่ใช่ root — แสดงคำแนะนำ (ใช้ sys.executable เพื่อให้ชี้ไปที่ venv)
+    python = sys.executable
     username = os.environ.get("USER", os.environ.get("LOGNAME", "$USER"))
     print("\n" + "=" * 60)
     print("⚠️  ไม่มีสิทธิ์เข้าถึง USB HID device")
@@ -1149,7 +1150,7 @@ def _try_setup_permissions() -> None:
     print("  # แล้ว logout + login ใหม่")
     print("=" * 60 + "\n")
     print("หรือรัน script นี้ด้วย sudo ครั้งเดียวเพื่อให้ setup อัตโนมัติ:")
-    print(f"  sudo python3 {sys.argv[0]}")
+    print(f"  sudo {python} {sys.argv[0]}")
     print()
 
 
