@@ -21,6 +21,10 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import hid
 
+
+VID = 0x06DA
+PID = 0xFFFF
+
 # ── Windows fallback: อ่าน feature report ผ่าน WinHidApi (bypass HID class driver) ──
 _WIN_HIDAPI: Optional[object] = None
 _WIN_HIDAPI_HANDLE: Optional[object] = None
@@ -67,7 +71,7 @@ def _win_get_feature(rid: int, length: int) -> Optional[List[int]]:
         return _WIN_HIDAPI.get_feature_report(_WIN_HIDAPI_HANDLE, rid, length)
     except Exception:
         return None
-PID = 0xFFFF
+
 
 DEFAULT_REPORT_SIZES = (8, 16, 32, 64, 128, 255)
 DEFAULT_DESCRIPTOR_TXT = "report_descriptor_live.txt"
