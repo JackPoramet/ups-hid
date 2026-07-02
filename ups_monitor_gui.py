@@ -1,19 +1,6 @@
 """
 UPS Monitor GUI
 Real-time display via PySide6, polls every 1 second.
-
-ข้อมูลที่แสดง (ตาม doc/datapoll.txt):
-  Device    : Manufacturer, Product, Serial, Release, Usage Page, Usage
-  Status    : NUT Status, UPS Mode, AC Present, Charging, Discharging,
-              Below Capacity Limit, Status Good
-  Fault     : Internal Failure, Need Replacement, Overload, Shutdown Imminent,
-              Over Temperature
-  Battery   : Charge %, Capacity %, Low Batt Threshold, Runtime (s), Runtime (hr)
-  Thermal   : Temperature, Percent Load, Battery Voltage
-  Output    : Voltage, Current, Frequency, Active Power, Apparent Power
-  Input/Cfg : Input Frequency, Nominal Voltage, Nominal Frequency,
-              Config Nominal Voltage, Config Nominal Frequency, Low Transfer V
-  Info      : Firmware Version, Last Event Date
 """
 
 import datetime
@@ -122,8 +109,6 @@ class UPSWorker(QThread):
         self._descriptor_profile: Optional[dict] = None
         self._report_ids: list = list(range(0x01, 0x80))
 
-    # ── public API ────────────────────────────────────────────────────────────
-
     def stop(self) -> None:
         self._stop = True
         if self._h:
@@ -134,7 +119,6 @@ class UPSWorker(QThread):
             self._h = None
 
     def poll_once(self) -> None:
-        """เรียกจาก QTimer ใน main thread เพื่อดึงข้อมูล 1 รอบ"""
         if not HID_AVAILABLE:
             self.error_occurred.emit("ไม่พบ module hid_ups (import ไม่สำเร็จ)")
             return
@@ -156,15 +140,12 @@ class UPSWorker(QThread):
             ups.update(infer_tentative_live_values(raw, ups))
             self.data_ready.emit(self._info, ups)
         except Exception as exc:
-            # อุปกรณ์หลุดหรือ error ให้ลอง reconnect รอบหน้า
             try:
                 self._h.close()
             except Exception:
                 pass
             self._h = None
             self.error_occurred.emit(f"Poll error: {exc}")
-
-    # ── private ───────────────────────────────────────────────────────────────
 
     def _connect(self) -> None:
         try:
@@ -177,13 +158,11 @@ class UPSWorker(QThread):
             self._h = h
             self._info = info or {}
             self._read_descriptor()
-            self.error_occurred.emit("")  # clear error
+            self.error_occurred.emit("")  
         except Exception as exc:
             self.error_occurred.emit(f"Connect error: {exc}")
 
     def _read_descriptor(self) -> None:
-        """อ่าน HID report descriptor ผ่าน Windows IOCTL แล้วโหลด descriptor profile
-        เพื่อกำหนด report IDs ที่จะ poll แบบ dynamic"""
         if not HIDAPI_WIN_AVAILABLE or not HID_AVAILABLE:
             self.descriptor_ready.emit("Profile: — (Windows HID API ไม่พร้อมใช้)")
             return
@@ -200,11 +179,9 @@ class UPSWorker(QThread):
 
         try:
             handle = api.create_file(dev_path)
-            # ลอง raw report descriptor ก่อน
             descriptor_bytes, _err = api.get_report_descriptor(
                 handle, sizes=(256, 512, 1024, 2048, 4096)
             )
-            # fallback: collection descriptor (preparsed blob)
             if not descriptor_bytes:
                 col_info, _ = api.get_collection_information(handle)
                 if col_info and col_info.get("DescriptorSize", 0) > 0:
@@ -250,7 +227,6 @@ class UPSWorker(QThread):
             self.descriptor_ready.emit(f"Profile load error: {exc}")
 
     def send_feature_report(self, rid: int, payload: list) -> None:
-        """ส่ง SetFeatureReport ไปยัง UPS (เรียกจาก main thread)"""
         if not self._h:
             self.command_result.emit("\u2717 ยังไม่ได้เชื่อมต่ออุปกรณ์")
             return
@@ -263,7 +239,6 @@ class UPSWorker(QThread):
             self.command_result.emit(f"\u2717 RID=0x{rid:02X}: {exc}")
 
     def read_feature_report(self, rid: int, size: int = 8) -> Optional[list]:
-        """อ่าน Feature Report เดี่ยว — ใช้ตรวจสอบผล self-test หรืออ่านค่า config"""
         if not self._h:
             return None
         try:
@@ -271,20 +246,23 @@ class UPSWorker(QThread):
             return list(data) if data else None
         except Exception:
             return None
+    
+    def read_interrupt_data(self, size: int = 64, timeout_ms: int = 500) -> Optional[list]:
+        if not self._h:
+            return None
+        try:
+            data = self._h.read(size, timeout_ms)
+            return data if data else None
+        except Exception:
+            return None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ValueRow: แถวแสดงค่าเดียว (label + value)
+# ValueRow / Section
 # ══════════════════════════════════════════════════════════════════════════════
 
 class ValueRow(QWidget):
-    def __init__(
-        self,
-        label: str,
-        unit: str = "",
-        parent: Optional[QWidget] = None,
-        alt_bg: bool = False,
-    ):
+    def __init__(self, label: str, unit: str = "", parent: Optional[QWidget] = None, alt_bg: bool = False):
         super().__init__(parent)
         self._unit = unit
         self._alt_bg = alt_bg
@@ -310,12 +288,7 @@ class ValueRow(QWidget):
         layout.addStretch()
         layout.addWidget(self._value_w)
 
-    def set_value(
-        self,
-        value: object,
-        color: Optional[str] = None,
-        suffix: Optional[str] = None,
-    ) -> None:
+    def set_value(self, value: object, color: Optional[str] = None, suffix: Optional[str] = None) -> None:
         if value is None or value == "":
             text = "—"
         elif isinstance(value, float):
@@ -329,25 +302,15 @@ class ValueRow(QWidget):
         display = f"{text}  {unit}".strip() if unit else text
         self._value_w.setText(display)
         c = color or COLOR_TEXT_VALUE
-        self._value_w.setStyleSheet(
-            f"color: {c}; font-size: 13px; font-weight: bold;"
-        )
+        self._value_w.setStyleSheet(f"color: {c}; font-size: 13px; font-weight: bold;")
 
     def set_na(self) -> None:
         self._value_w.setText("N/A")
         self._value_w.setStyleSheet(f"color: {COLOR_DIM}; font-size: 13px; font-weight: bold;")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Section: QGroupBox ที่รวม ValueRow หลายแถว
-# ══════════════════════════════════════════════════════════════════════════════
-
 class Section(QGroupBox):
     def __init__(self, title: str, fields: list, parent: Optional[QWidget] = None):
-        """
-        fields = list of (key, label, unit)
-        key: ถ้าขึ้นต้นด้วย '_' จะถือว่าเป็น static row (device info)
-        """
         super().__init__(parent)
         self.setTitle(title)
         self.setStyleSheet(f"""
@@ -378,13 +341,7 @@ class Section(QGroupBox):
             layout.addWidget(row)
             self._rows[key] = row
 
-    def update_row(
-        self,
-        key: str,
-        value: object,
-        color: Optional[str] = None,
-        suffix: Optional[str] = None,
-    ) -> None:
+    def update_row(self, key: str, value: object, color: Optional[str] = None, suffix: Optional[str] = None) -> None:
         row = self._rows.get(key)
         if row is None:
             return
@@ -398,10 +355,6 @@ class Section(QGroupBox):
             row.set_na()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# StatusBar custom
-# ══════════════════════════════════════════════════════════════════════════════
-
 class StatusBarWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -411,7 +364,7 @@ class StatusBarWidget(QWidget):
         layout.setContentsMargins(10, 4, 10, 4)
         layout.setSpacing(20)
 
-        self._led = QLabel("O")
+        self._led = QLabel("")
         self._led.setFixedWidth(20)
         self._led.setStyleSheet(f"color: {COLOR_DIM}; font-size: 16px;")
 
@@ -425,7 +378,6 @@ class StatusBarWidget(QWidget):
         self._time_label.setStyleSheet(f"color: {COLOR_TEXT_LABEL}; font-size: 12px;")
         self._time_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
-        layout.addWidget(self._led)
         layout.addWidget(self._conn_label)
         layout.addStretch()
         layout.addWidget(self._desc_label)
@@ -457,8 +409,6 @@ class StatusBarWidget(QWidget):
 # ══════════════════════════════════════════════════════════════════════════════
 
 class ControlDialog(QDialog):
-    """Dialog ส่งคำสั่งไปยัง UPS ผ่าน SetFeatureReport"""
-
     def __init__(self, worker: "UPSWorker", parent=None):
         super().__init__(parent)
         self._worker = worker
@@ -512,12 +462,10 @@ class ControlDialog(QDialog):
         root.addWidget(self._build_time_section())
 
         self._test_poll_timer = QTimer(self)
-        self._test_poll_timer.setInterval(2000)   # poll ทุก 2 วินาที
+        # ตั้ง interval 1 วินาทีเพื่อนับถอยหลัง
+        self._test_poll_timer.setInterval(1000)   
         self._test_poll_timer.timeout.connect(self._poll_test_status)
-        self._test_poll_counter = 0
-        self._test_seen_progress = False
-        self._test_last_terminal_val: Optional[int] = None
-        self._test_terminal_hits = 0
+        self._test_countdown = 0
 
         self._result_label = QLabel("พร้อมรับคำสั่ง")
         self._result_label.setStyleSheet(
@@ -535,10 +483,8 @@ class ControlDialog(QDialog):
 
         self._worker.command_result.connect(self._on_result)
 
-    # ── Section builders ─────────────────────────────────────────────────────
-
     def _build_test_section(self) -> QGroupBox:
-        grp = QGroupBox("Self Test  (RID 0x24) (ยังใช้งานไม่ได้)")
+        grp = QGroupBox("Self Test  (RID 0x24)")
         lay = QVBoxLayout(grp)
         lay.setContentsMargins(8, 18, 8, 8)
         lay.setSpacing(6)
@@ -546,13 +492,11 @@ class ControlDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_run   = QPushButton("Run Self-Test")
         btn_abort = QPushButton("Abort Test")
-        btn_check = QPushButton("Check Status")
         btn_run.clicked.connect(self._run_test)
         btn_abort.clicked.connect(self._abort_test)
-        btn_check.clicked.connect(self._poll_test_status)
+        
         btn_row.addWidget(btn_run)
         btn_row.addWidget(btn_abort)
-        btn_row.addWidget(btn_check)
         btn_row.addStretch()
 
         self._test_status_label = QLabel("\u2500")
@@ -560,7 +504,7 @@ class ControlDialog(QDialog):
             f"color: {COLOR_TEXT_VALUE}; font-size: 12px; "
             f"background-color: {COLOR_BG_ROW_ALT}; padding: 5px; border-radius: 3px;"
         )
-        warn = QLabel("\u26a0 UPS จะทดสอบโดยใช้ไฟจากแบตชั่วคราว — ผลจะแสดงใน ~10-60 วินาที")
+        warn = QLabel("\u26a0 สังเกตผลลัพธ์ที่หมวด 'สถานะ' และ 'ความผิดปกติ' ในหน้าจอหลัก")
         warn.setStyleSheet(f"color: {COLOR_STATUS_WARN}; font-size: 11px;")
 
         lay.addLayout(btn_row)
@@ -651,8 +595,6 @@ class ControlDialog(QDialog):
         lay.addWidget(btn_rt,                              2, 2)
         return grp
 
-    # ── Command helpers ───────────────────────────────────────────────────────
-
     def _send(self, rid: int, payload: list) -> None:
         self._worker.send_feature_report(rid, payload)
 
@@ -693,23 +635,23 @@ class ControlDialog(QDialog):
     # ── Self-Test helpers ───────────────────────────────────────────────────────
 
     def _run_test(self) -> None:
+        # ยิงคำสั่งเริ่มทดสอบ
         self._send(0x24, [0x01])
-        self._test_status_label.setText("Sending command - waiting for result...")
+        
+        # ตั้งเวลานับถอยหลัง 12 วินาที
+        self._test_countdown = 12  
+        
+        self._test_status_label.setText(f"กำลังทดสอบ... UPS สลับใช้ไฟจากแบตเตอรี่ (เหลือ {self._test_countdown} วิ)")
         self._test_status_label.setStyleSheet(
-            f"color: {COLOR_STATUS_INFO}; font-size: 12px; "
+            f"color: {COLOR_STATUS_WARN}; font-size: 12px; "
             f"background-color: {COLOR_BG_ROW_ALT}; padding: 5px; border-radius: 3px;"
         )
-        self._test_poll_counter = 0
-        self._test_seen_progress = False  # ยังไม่เคยเห็น in-progress state
-        self._test_last_terminal_val = None
-        self._test_terminal_hits = 0
         self._test_poll_timer.start()
 
     def _abort_test(self) -> None:
         self._test_poll_timer.stop()
         self._send(0x24, [0x00])
-        self._test_last_terminal_val = None
-        self._test_terminal_hits = 0
+        
         self._test_status_label.setText("ยกเลิกการทดสอบแล้ว")
         self._test_status_label.setStyleSheet(
             f"color: {COLOR_DIM}; font-size: 12px; "
@@ -717,67 +659,17 @@ class ControlDialog(QDialog):
         )
 
     def _poll_test_status(self) -> None:
-        TERMINAL_VALS = (0x00, 0x04, 0x05, 0x06, 0x10)
-        self._test_poll_counter += 1
-        if self._test_poll_counter > 30:  # max 60 วินาที
+        self._test_countdown -= 1
+        
+        if self._test_countdown > 0:
+            self._test_status_label.setText(f"กำลังทดสอบ... UPS สลับใช้ไฟจากแบตเตอรี่ (เหลือ {self._test_countdown} วิ)")
+        else:
             self._test_poll_timer.stop()
-            self._test_status_label.setText("Timeout after 60s - press Check Status to read again")
-            return
-        data = self._worker.read_feature_report(0x24, 4)
-        if data and len(data) >= 2:
-            val = data[1]
-
-            # ติดตามว่าเคยเห็น UPS อยู่ใน in-progress state แล้วหรือยัง
-            if val in (0x01, 0x02, 0x03):
-                self._test_seen_progress = True
-                self._test_last_terminal_val = None
-                self._test_terminal_hits = 0
-
-            status = self._decode_test_val(val)
-            suffix = ""
-            color = (
-                COLOR_STATUS_OK  if val == 0x00 else
-                COLOR_STATUS_ERR if val in (0x04, 0x05, 0x06) else
-                COLOR_STATUS_INFO
-            )
-
-            # ยืนยันค่าปลายทางซ้ำ 3 ครั้งก่อนหยุด เพื่อไม่พลาดค่าที่ UPS ส่งตามมา
-            if self._test_seen_progress and val in TERMINAL_VALS:
-                if self._test_last_terminal_val == val:
-                    self._test_terminal_hits += 1
-                else:
-                    self._test_last_terminal_val = val
-                    self._test_terminal_hits = 1
-
-                suffix = f"  (confirm {self._test_terminal_hits}/3)"
-                if self._test_terminal_hits >= 3:
-                    self._test_poll_timer.stop()
-                    suffix = "  (final)"
-
-            self._test_status_label.setText(
-                f"RID 0x24 = 0x{val:02X} -> {status}{suffix}  [{self._test_poll_counter * 2}s]"
-            )
+            self._test_status_label.setText("✅ ทดสอบเสร็จสิ้น! (ดูผลลัพธ์ที่หมวด 'ความผิดปกติ' ในหน้าจอหลัก)")
             self._test_status_label.setStyleSheet(
-                f"color: {color}; font-size: 12px; "
+                f"color: {COLOR_STATUS_OK}; font-size: 12px; "
                 f"background-color: {COLOR_BG_ROW_ALT}; padding: 5px; border-radius: 3px;"
             )
-        else:
-            self._test_status_label.setText("อ่านผลไม่ได้")
-
-    @staticmethod
-    def _decode_test_val(val: int) -> str:
-        table = {
-            0x00: "PASS / no test",
-            0x01: "TESTING (Manufacturer Test)...",
-            0x02: "TESTING (Quick Battery Test)...",
-            0x03: "TESTING (Deep Battery Test)...",
-            0x04: "FAIL (Battery Fault)",
-            0x05: "FAIL (Quick Test)",
-            0x06: "FAIL (Deep Test)",
-            0x10: "ยกเลิกแล้ว",
-            0xFF: "ไม่รองรับ / ไม่พร้อม",
-        }
-        return table.get(val, f"ค่าดิบ 0x{val:02X} (ไม่ทราบสถานะ)")
 
     # ── Time section ────────────────────────────────────────────────────────────
 
@@ -813,7 +705,6 @@ class ControlDialog(QDialog):
         lay.addWidget(warn,                    2, 0, 1, 3)
         return grp
 
-    # epoch สำหรับการคำนวณเวลา local (ไม่ใช้ UTC offset)
     _LOCAL_EPOCH = datetime.datetime(1970, 1, 1)
 
     def _do_read_time(self) -> None:
@@ -880,15 +771,12 @@ class MainWindow(QMainWindow):
         self._timer.timeout.connect(self._worker.poll_once)
         self._timer.start()
 
-        # poll รอบแรกทันที
         QTimer.singleShot(100, self._worker.poll_once)
 
     def closeEvent(self, event):
         self._timer.stop()
         self._worker.stop()
         super().closeEvent(event)
-
-    # ── UI builder ────────────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
         central = QWidget()
@@ -897,11 +785,9 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # Header
         header = self._build_header()
         root.addWidget(header)
 
-        # Scroll area สำหรับ sections
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet(
@@ -915,7 +801,6 @@ class MainWindow(QMainWindow):
         grid.setContentsMargins(12, 12, 12, 12)
         grid.setSpacing(10)
 
-        # ── Section: Device Info ─────────────────────────────────────────────
         self._sec_device = Section("อุปกรณ์ (Device Info)", [
             ("manufacturer_string", "Manufacturer",  ""),
             ("product_string",      "Product",       ""),
@@ -925,7 +810,6 @@ class MainWindow(QMainWindow):
             ("usage",               "Usage",         ""),
         ])
 
-        # ── Section: Status ──────────────────────────────────────────────────
         self._sec_status = Section("สถานะ (Status)", [
             ("ups.status",            "UPS Status",            ""),
             ("ups_mode",              "UPS Mode",              ""),
@@ -936,7 +820,6 @@ class MainWindow(QMainWindow):
             ("status_good",           "Status Good",           ""),
         ])
 
-        # ── Section: Fault ───────────────────────────────────────────────────
         self._sec_fault = Section("ความผิดปกติ (Fault)", [
             ("internal_failure",  "Internal Failure",   ""),
             ("need_replacement",  "Need Replacement",   ""),
@@ -945,7 +828,6 @@ class MainWindow(QMainWindow):
             ("over_temperature",  "Over Temperature",   ""),
         ])
 
-        # ── Section: Battery ─────────────────────────────────────────────────
         self._sec_battery = Section("แบตเตอรี่ (Battery)", [
             ("battery.charge",                "Battery Charge",     "%"),
             ("battery_capacity_percent",      "Battery Capacity",   "%"),
@@ -956,13 +838,11 @@ class MainWindow(QMainWindow):
             ("battery_voltage_v",             "Battery Voltage",    "V"),
         ])
 
-        # ── Section: Thermal / Load ──────────────────────────────────────────
         self._sec_thermal = Section("ความร้อน / โหลด (Thermal & Load)", [
             ("temperature_c",  "Temperature",    "°C"),
             ("percent_load",   "Percent Load",   "%"),
         ])
 
-        # ── Section: Output ──────────────────────────────────────────────────
         self._sec_output = Section("ไฟออก (Output)", [
             ("output_voltage_v",          "Output Voltage",        "V"),
             ("output_current_a",          "Output Current",        "A"),
@@ -971,7 +851,6 @@ class MainWindow(QMainWindow):
             ("output_apparent_power_va",  "Output Apparent Power", "VA"),
         ])
 
-        # ── Section: Input / Config ──────────────────────────────────────────
         self._sec_input = Section("ไฟเข้า / ค่าตั้ง (Input & Config)", [
             ("input.frequency",             "Input Frequency",       "Hz"),
             ("input.voltage.nominal",       "Nominal Voltage",       "V (config)"),
@@ -981,14 +860,11 @@ class MainWindow(QMainWindow):
             ("input.transfer.low",          "Low Transfer Voltage",  "V"),
         ])
 
-        # ── Section: Info ────────────────────────────────────────────────────
         self._sec_info = Section("ข้อมูลอื่น (Info)", [
             ("ups.firmware",   "Firmware Version", ""),
             ("last_event_date","Last Event Date",  ""),
         ])
 
-        # ── วาง Section ใน grid ──────────────────────────────────────────────
-        # คอลัมน์ซ้าย
         left_sections = [
             self._sec_device,
             self._sec_status,
@@ -998,7 +874,6 @@ class MainWindow(QMainWindow):
         for row_idx, sec in enumerate(left_sections):
             grid.addWidget(sec, row_idx, 0)
 
-        # คอลัมน์ขวา
         right_sections = [
             self._sec_battery,
             self._sec_thermal,
@@ -1013,7 +888,6 @@ class MainWindow(QMainWindow):
 
         root.addWidget(scroll)
 
-        # Status bar
         self._status_bar = StatusBarWidget()
         root.addWidget(self._status_bar)
 
@@ -1050,21 +924,23 @@ class MainWindow(QMainWindow):
 
         return header
 
-    # ── Slots ─────────────────────────────────────────────────────────────────
-
     @Slot(dict, dict)
     def _on_data(self, device_info: dict, ups: dict) -> None:
         self._status_bar.set_connected(True)
         self._status_bar.set_time(time.strftime("%H:%M:%S"))
 
-        # ── Header subtitle อัปเดตจากข้อมูลจริงของอุปกรณ์ ──────────────────
+        # 👇 --- เพิ่มคำสั่งนี้เพื่อแอบดูตัวแปรที่ซ่อนอยู่ (จะปริ้นท์ในหน้าจอ Terminal) --- 👇
+        print("\n=== ตัวแปรทั้งหมดที่ UPS ส่งมาตอนนี้ ===")
+        for key, value in ups.items():
+            print(f"'{key}': {value}")
+        # 👆 ----------------------------------------------------------------- 👆
+
         mfr = device_info.get("manufacturer_string") or ""
         prod = device_info.get("product_string") or ""
         device_label = " / ".join(filter(None, [mfr, prod])) or "UPS"
         self._header_subtitle.setText(f"{device_label}  |  Real-time polling 1s")
         self.setWindowTitle(f"UPS Monitor — {device_label}")
 
-        # ── Device Info ──────────────────────────────────────────────────────
         self._sec_device.update_row("manufacturer_string", device_info.get("manufacturer_string"))
         self._sec_device.update_row("product_string",      device_info.get("product_string"))
         self._sec_device.update_row("serial_number",       device_info.get("serial_number"))
@@ -1074,7 +950,6 @@ class MainWindow(QMainWindow):
         u = device_info.get("usage")
         self._sec_device.update_row("usage", f"0x{u:04X}" if u is not None else None)
 
-        # ── Status ───────────────────────────────────────────────────────────
         nut = ups.get("ups.status", "")
         nut_color = (
             COLOR_STATUS_OK  if "OL" in str(nut) and "OB" not in str(nut) else
@@ -1093,7 +968,6 @@ class MainWindow(QMainWindow):
                 color = _bool_color(key, b)
                 self._sec_status.update_row(key, "True" if b else "False", color=color)
 
-        # ── Fault ────────────────────────────────────────────────────────────
         for key in ("internal_failure", "need_replacement", "overload", "shutdown_imminent", "over_temperature"):
             val = ups.get(key)
             if val is None:
@@ -1103,7 +977,6 @@ class MainWindow(QMainWindow):
                 c = COLOR_STATUS_ERR if b else COLOR_STATUS_OK
                 self._sec_fault.update_row(key, "True" if b else "False", color=c)
 
-        # ── Battery ──────────────────────────────────────────────────────────
         charge = ups.get("battery.charge")
         charge_color = (
             COLOR_STATUS_ERR  if isinstance(charge, (int, float)) and charge < 20  else
@@ -1118,7 +991,6 @@ class MainWindow(QMainWindow):
         self._sec_battery.update_row("battery.runtime.hr",           ups.get("battery.runtime.hr"))
         self._sec_battery.update_row("battery_voltage_v",            ups.get("battery_voltage_v"))
 
-        # ── Thermal / Load ───────────────────────────────────────────────────
         temp = ups.get("temperature_c") or ups.get("ups.temperature")
         temp_color = (
             COLOR_STATUS_ERR  if isinstance(temp, (int, float)) and temp > 55 else
@@ -1128,14 +1000,12 @@ class MainWindow(QMainWindow):
         self._sec_thermal.update_row("temperature_c", temp, color=temp_color)
         self._sec_thermal.update_row("percent_load",  ups.get("percent_load"))
 
-        # ── Output ───────────────────────────────────────────────────────────
         self._sec_output.update_row("output_voltage_v",          ups.get("output_voltage_v") or ups.get("output.voltage"))
         self._sec_output.update_row("output_current_a",          ups.get("output_current_a"))
         self._sec_output.update_row("output_frequency_hz",       ups.get("output_frequency_hz"))
         self._sec_output.update_row("output_active_power_w",     ups.get("output_active_power_w"))
         self._sec_output.update_row("output_apparent_power_va",  ups.get("output_apparent_power_va"))
 
-        # ── Input / Config ───────────────────────────────────────────────────
         self._sec_input.update_row("input.frequency",             ups.get("input.frequency"))
         self._sec_input.update_row("input.voltage.nominal",       ups.get("input.voltage.nominal"))
         self._sec_input.update_row("input.frequency.nominal",     ups.get("input.frequency.nominal"))
@@ -1143,7 +1013,6 @@ class MainWindow(QMainWindow):
         self._sec_input.update_row("config_nominal_frequency_hz", ups.get("config_nominal_frequency_hz"))
         self._sec_input.update_row("input.transfer.low",          ups.get("input.transfer.low"))
 
-        # ── Info ─────────────────────────────────────────────────────────────
         self._sec_info.update_row("ups.firmware",    ups.get("ups.firmware"))
         self._sec_info.update_row("last_event_date", ups.get("last_event_date"))
 
@@ -1169,7 +1038,6 @@ class MainWindow(QMainWindow):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _bool_color(key: str, value: bool) -> str:
-    """เลือกสีให้เหมาะสมกับความหมายของค่า bool"""
     good_when_true = {"ac_present", "charging", "status_good"}
     bad_when_true  = {"discharging", "below_capacity_limit"}
 
@@ -1189,7 +1057,6 @@ def main() -> int:
     app.setApplicationName("UPS Monitor")
     app.setApplicationVersion("1.0")
 
-    # Dark palette ระดับ application
     palette = QPalette()
     palette.setColor(QPalette.Window,          QColor(COLOR_BG_WINDOW))
     palette.setColor(QPalette.WindowText,      QColor(COLOR_TEXT_VALUE))
