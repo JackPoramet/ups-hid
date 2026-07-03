@@ -490,7 +490,7 @@ class ControlDialog(QDialog):
             f"color: {COLOR_TEXT_VALUE}; font-size: 12px; "
             f"background-color: {COLOR_BG_ROW_ALT}; padding: 5px; border-radius: 3px;"
         )
-        warn = QLabel("\u26a0 สังเกตผลลัพธ์ที่หมวด 'สถานะ' และ 'ความผิดปกติ' ในหน้าจอหลัก")
+        warn = QLabel("")
         warn.setStyleSheet(f"color: {COLOR_STATUS_WARN}; font-size: 11px;")
 
         lay.addLayout(btn_row)
