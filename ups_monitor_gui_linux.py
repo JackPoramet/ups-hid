@@ -11,6 +11,7 @@ Linux-specific changes vs. the Windows version:
 import datetime
 import re
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -947,6 +948,7 @@ class MainWindow(QMainWindow):
     def _on_data(self, device_info: dict, ups: dict) -> None:
         self._status_bar.set_connected(True)
         self._status_bar.set_time(time.strftime("%H:%M:%S"))
+        _update_api_store(device_info, ups)
 
         print("\n--- รายชื่อตัวแปรและค่าที่ UPS ส่งมา ---")
         for key, value in ups.items():
@@ -1154,6 +1156,115 @@ def _try_setup_permissions() -> None:
     print()
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# REST API Server  (Flask — optional,  pip install flask)
+# ══════════════════════════════════════════════════════════════════════════════
+
+_api_store: dict = {"device": {}, "ups": {}, "timestamp": None}
+_api_lock = threading.Lock()
+
+
+def _sanitize_for_json(d: dict) -> dict:
+    """แปลง bytes / ประเภทที่ JSON ไม่รองรับให้เป็น str"""
+    out: dict = {}
+    for k, v in d.items():
+        if isinstance(v, (bytes, bytearray)):
+            out[k] = v.decode("utf-8", errors="ignore")
+        elif isinstance(v, (int, float, str, bool, type(None))):
+            out[k] = v
+        elif isinstance(v, list):
+            out[k] = [
+                x.decode("utf-8", errors="ignore")
+                if isinstance(x, (bytes, bytearray))
+                else (x if isinstance(x, (int, float, str, bool, type(None))) else str(x))
+                for x in v
+            ]
+        else:
+            out[k] = str(v)
+    return out
+
+
+def _update_api_store(device_info: dict, ups: dict) -> None:
+    with _api_lock:
+        _api_store["device"] = _sanitize_for_json(device_info)
+        _api_store["ups"] = _sanitize_for_json(ups)
+        _api_store["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _create_flask_app():
+    try:
+        from flask import Flask, jsonify
+    except ImportError:
+        return None
+
+    import logging
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)
+
+    app = Flask(__name__)
+
+    @app.route("/api/health")
+    def api_health():
+        with _api_lock:
+            return jsonify({
+                "status": "ok",
+                "connected": _api_store["timestamp"] is not None,
+                "timestamp": _api_store["timestamp"],
+            })
+
+    @app.route("/api/ups")
+    def api_ups():
+        with _api_lock:
+            return jsonify({
+                "device": _api_store["device"],
+                "ups": _api_store["ups"],
+                "timestamp": _api_store["timestamp"],
+            })
+
+    @app.route("/api/ups/status")
+    def api_status():
+        with _api_lock:
+            ups = _api_store["ups"]
+            return jsonify({
+                "ups.status":           ups.get("ups.status"),
+                "ac_present":           ups.get("ac_present"),
+                "charging":             ups.get("charging"),
+                "discharging":          ups.get("discharging"),
+                "below_capacity_limit": ups.get("below_capacity_limit"),
+                "status_good":          ups.get("status_good"),
+                "timestamp":            _api_store["timestamp"],
+            })
+
+    @app.route("/api/ups/battery")
+    def api_battery():
+        with _api_lock:
+            ups = _api_store["ups"]
+            return jsonify({
+                "battery.charge":     ups.get("battery.charge"),
+                "battery.runtime":    ups.get("battery.runtime"),
+                "battery.runtime.hr": ups.get("battery.runtime.hr"),
+                "battery_voltage_v":  ups.get("battery_voltage_v"),
+                "timestamp":          _api_store["timestamp"],
+            })
+
+    return app
+
+
+def _start_api_server(host: str = "127.0.0.1", port: int = 5000) -> None:
+    app = _create_flask_app()
+    if app is None:
+        print("[API] ไม่พบ flask — ข้าม REST API (pip install flask)")
+        return
+    print(f"[API] REST API พร้อมใช้งานที่  http://{host}:{port}/api/ups")
+    app.run(host=host, port=port, debug=False, use_reloader=False, threaded=True)
+
+
+def start_api_thread(host: str = "127.0.0.1", port: int = 5000) -> None:
+    t = threading.Thread(
+        target=_start_api_server, args=(host, port), daemon=True, name="ups-rest-api"
+    )
+    t.start()
+
+
 def main() -> int:
     # ── ตรวจสอบและแก้สิทธิ์ ─────────────────────────────────────────────────
     if not _check_hid_permission():
@@ -1163,6 +1274,7 @@ def main() -> int:
         if os.geteuid() != 0:
             sys.exit(1)
 
+    start_api_thread()
     app = QApplication(sys.argv)
     app.setApplicationName("UPS Monitor")
     app.setApplicationVersion("1.0")

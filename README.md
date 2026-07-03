@@ -31,6 +31,7 @@
   - ปรับแรงดันอ้างอิง (220V / 230V)
   - ปรับความถี่ (50Hz / 60Hz)
   - ปรับนาฬิกาของ UPS
+- **REST API** (Flask) เปิด endpoint HTTP สำหรับดึงข้อมูล UPS จากระบบอื่น
 - **Mapping Cache** บันทึกผล descriptor profile ต่อ device เพื่อเร่งการเปิดครั้งต่อไป
 - ค่าที่อ่านได้ผ่านการตรวจสอบกับโปรแกรม **WinPower G2** แล้ว ✔
 
@@ -85,6 +86,7 @@ pip install -r requirements.txt
 | `PySide6` | Qt6 GUI framework |
 | `pyusb` | USB access (Input Voltage บน Linux) |
 | `libusb-package` | bundles libusb DLL สำหรับ Windows |
+| `flask` | REST API server *(optional)* |
 
 ---
 
@@ -111,3 +113,43 @@ python ups_monitor_gui.py
 | Linux | ✔ | อ่าน descriptor จาก sysfs โดยตรง |
 
 > **Windows:** แนะนำให้รันด้วย interpreter ใน `.venv` เนื่องจาก global interpreter อาจไม่พบ `hid` หรือ `PySide6`
+
+---
+
+## REST API
+
+เมื่อรันโปรแกรม Flask จะเปิด HTTP server อัตโนมัติที่ `http://127.0.0.1:5000` (local only)
+
+### Endpoints
+
+| Method | URL | คำอธิบาย |
+|--------|-----|-----------|
+| GET | `/api/health` | ตรวจสอบสถานะ server และเวลา update ล่าสุด |
+| GET | `/api/ups` | ข้อมูลทั้งหมด — device info + ค่า UPS ทุกตัว |
+| GET | `/api/ups/status` | สถานะหลัก (AC present, charging, discharging) |
+| GET | `/api/ups/battery` | ข้อมูลแบตเตอรี่ (charge %, runtime, voltage) |
+
+### ตัวอย่าง Response — `/api/ups/status`
+
+```json
+{
+  "ups.status": "OL",
+  "ac_present": true,
+  "charging": false,
+  "discharging": false,
+  "below_capacity_limit": false,
+  "status_good": true,
+  "timestamp": "2026-07-03T10:30:00"
+}
+```
+
+### การตั้งค่า
+
+ค่า default คือ `127.0.0.1:5000` (เฉพาะ local)  
+ถ้าต้องการเปิดให้เครื่องอื่นใน LAN เข้าถึงได้ แก้บรรทัดนี้ใน [ups_monitor_gui_linux.py](ups_monitor_gui_linux.py):
+
+```python
+start_api_thread(host="0.0.0.0", port=5000)
+```
+
+> **หมายเหตุ:** Flask เป็น dependency แบบ optional — ถ้าไม่ได้ติดตั้งโปรแกรมจะแจ้งเตือนและข้ามการเปิด API โดย GUI ยังทำงานได้ปกติ

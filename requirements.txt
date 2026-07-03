@@ -5,3 +5,4 @@ hidapi          # hid module — HID device communication (hid_ups.py, hidapi.py
 PySide6         # Qt6 GUI framework (ups_monitor_gui.py)
 pyusb           # usb.core / usb.util — USB access (volt_in.py)
 libusb-package  # bundles libusb DLL for Windows (volt_in.py)
+flask           # REST API server (ups_monitor_gui_linux.py) — optional
