@@ -1,0 +1,59 @@
+{
+  "platform": "Windows-10-10.0.19045-SP0",
+  "target": {
+    "vid": 1754,
+    "pid": 65535,
+    "usage_page": 132,
+    "usage": 4,
+    "device_path": "\\\\?\\HID#VID_06DA&PID_FFFF#6&2b8a9455&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}",
+    "manufacturer": "PHOENIXTEC",
+    "product": "Innova Unity",
+    "serial": "CP10T2354690002",
+    "release_number": 514,
+    "interface_number": 0
+  },
+  "winapi": {
+    "ioctl_hid_get_report_descriptor": "0x000B0007",
+    "ioctl_hid_get_collection_descriptor": "0x000B0193",
+    "ioctl_hid_get_collection_information": "0x000B01A8",
+    "descriptor_sizes_tried": [
+      256,
+      512,
+      1024,
+      2048,
+      4096
+    ]
+  },
+  "result": {
+    "descriptor_read_ok": true,
+    "descriptor_length": 11844,
+    "descriptor_source": "collection_descriptor_preparsed",
+    "descriptor_error": "DeviceIoControl failed (size=4096, winerr=1)",
+    "collection_info": {
+      "DescriptorSize": 11844,
+      "Polled": false,
+      "VendorID": 1754,
+      "ProductID": 65535,
+      "VersionNumber": 514
+    },
+    "collection_info_error": null,
+    "collection_descriptor_error": null,
+    "caps_ok": true,
+    "caps_error": null,
+    "attributes": {
+      "VendorID": 1754,
+      "ProductID": 65535,
+      "VersionNumber": 514
+    },
+    "caps": {
+      "UsagePage": 132,
+      "Usage": 4,
+      "InputReportByteLength": 8,
+      "OutputReportByteLength": 0,
+      "FeatureReportByteLength": 256,
+      "NumberLinkCollectionNodes": 16,
+      "NumberInputValueCaps": 25,
+      "NumberFeatureValueCaps": 85
+    }
+  }
+}
