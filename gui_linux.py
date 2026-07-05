@@ -5,7 +5,7 @@ Real-time display via PySide6, polls every 1 second.
 Linux-specific changes vs. the Windows version:
 - HID report descriptor is read directly from sysfs
   (/sys/class/hidraw/hidrawN/device/report_descriptor)
-- No dependency on hidapi.py (Windows-only DeviceIoControl wrapper)
+- No dependency on win32_hid_wrapper.py (Windows-only DeviceIoControl wrapper)
 """
 
 import datetime
@@ -35,9 +35,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-# ── ดึงฟังก์ชันหลักจาก hid_ups.py ───────────────────────────────────────────
+# ── ดึงฟังก์ชันหลักจาก core_hid_ups.py ───────────────────────────────────────────
 try:
-    from hid_ups import (
+    from core_hid_ups import (
         DEFAULT_DESCRIPTOR_BIN,
         DEFAULT_DESCRIPTOR_TXT,
         DEFAULT_REPORT_SIZES,
@@ -141,7 +141,7 @@ class UPSWorker(QThread):
 
     def poll_once(self) -> None:
         if not HID_AVAILABLE:
-            self.error_occurred.emit("ไม่พบ module hid_ups (import ไม่สำเร็จ)")
+            self.error_occurred.emit("ไม่พบ module core_hid_ups (import ไม่สำเร็จ)")
             return
 
         if self._h is None:

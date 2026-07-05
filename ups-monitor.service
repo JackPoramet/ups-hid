@@ -1,0 +1,24 @@
+[Unit]
+Description=UPS Monitor Web Daemon
+After=network.target
+
+[Service]
+Type=simple
+# Change to the path of your virtual environment python if needed
+ExecStart=/usr/bin/python3 /opt/ups-monitor/web_daemon.py
+# Working directory should be where the templates folder is located
+WorkingDirectory=/opt/ups-monitor
+
+Restart=always
+RestartSec=5
+
+# Optional: run as a specific user (make sure they are in plugdev group)
+# User=pi
+# Group=plugdev
+
+# Set to 0.0.0.0 to listen on all interfaces
+Environment="HOST=0.0.0.0"
+Environment="PORT=5000"
+
+[Install]
+WantedBy=multi-user.target

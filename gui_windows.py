@@ -31,9 +31,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-# ── ดึงฟังก์ชันหลักจาก hid_ups.py ───────────────────────────────────────────
+# ── ดึงฟังก์ชันหลักจาก core_hid_ups.py ───────────────────────────────────────────
 try:
-    from hid_ups import (
+    from core_hid_ups import (
         DEFAULT_DESCRIPTOR_BIN,
         DEFAULT_DESCRIPTOR_TXT,
         DEFAULT_REPORT_SIZES,
@@ -55,10 +55,10 @@ except ImportError as _hid_import_err:
     DEFAULT_DESCRIPTOR_BIN = "report_descriptor_live.bin"
     DEFAULT_DESCRIPTOR_TXT = "report_descriptor_live.txt"
 
-# ── ดึง WinHidApi จาก hidapi.py (Windows เท่านั้น) ──────────────────────────
+# ── ดึง WinHidApi จาก win32_hid_wrapper.py (Windows เท่านั้น) ──────────────────────────
 try:
     if _platform.system().lower() == "windows":
-        from hidapi import WinHidApi, normalize_path
+        from win32_hid_wrapper import WinHidApi, normalize_path
         HIDAPI_WIN_AVAILABLE = True
     else:
         HIDAPI_WIN_AVAILABLE = False
@@ -120,7 +120,7 @@ class UPSWorker(QThread):
 
     def poll_once(self) -> None:
         if not HID_AVAILABLE:
-            self.error_occurred.emit("ไม่พบ module hid_ups (import ไม่สำเร็จ)")
+            self.error_occurred.emit("ไม่พบ module core_hid_ups (import ไม่สำเร็จ)")
             return
 
         if self._h is None:

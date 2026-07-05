@@ -41,10 +41,13 @@
 
 ```
 UPS/
-├── ups_monitor_gui.py          # GUI หลัก (Windows)
-├── ups_monitor_gui_linux.py    # GUI สำหรับ Linux (อ่าน descriptor จาก sysfs)
-├── hid_ups.py                  # HID core: descriptor parsing, report decode, mapping cache
-├── hidapi.py                   # Windows WinHidApi wrapper (DeviceIoControl)
+├── gui_windows.py              # GUI หลัก (Windows)
+├── gui_linux.py                # GUI สำหรับ Linux (อ่าน descriptor จาก sysfs)
+├── web_daemon.py               # Web GUI และ REST API Daemon (สำหรับ Linux Headless)
+├── core_hid_ups.py             # HID core: descriptor parsing, report decode, mapping cache
+├── win32_hid_wrapper.py        # Windows WinHidApi wrapper (DeviceIoControl)
+├── templates/index.html        # หน้าจอ Web GUI
+├── ups-monitor.service         # Systemd service template สำหรับ Linux
 ├── requirements.txt            # Python dependencies
 ├── guide.md                    # คู่มือพัฒนา Auto-Discovery
 ├── how to use.md               # วิธีติดตั้งและใช้งาน
@@ -94,10 +97,13 @@ pip install -r requirements.txt
 
 ```bash
 # รัน GUI (ใช้ได้ทั้ง Windows และ Linux)
-python ups_monitor_gui_linux.py
+python gui_linux.py
 
 # รัน GUI เวอร์ชัน Windows
-python ups_monitor_gui.py
+python gui_windows.py
+
+# รัน Web GUI & Daemon (ไร้หน้าจอ, แนะนำสำหรับเซิร์ฟเวอร์/Raspberry Pi)
+python web_daemon.py
 ```
 
 > **หมายเหตุ:** บน Windows ค่า Input Voltage ยังไม่สามารถแสดงได้ (HID class driver limitation)  
@@ -129,6 +135,17 @@ python ups_monitor_gui.py
 | GET | `/api/ups/status` | สถานะหลัก (AC present, charging, discharging) |
 | GET | `/api/ups/battery` | ข้อมูลแบตเตอรี่ (charge %, runtime, voltage) |
 
+### Endpoints (Control / POST)
+
+| Method | URL | Body (JSON) | คำอธิบาย |
+|--------|-----|-------------|-----------|
+| POST | `/api/control/test` | `{"action": "run" หรือ "abort"}` | สั่งเริ่ม (Run) หรือยกเลิก (Abort) การทำ Self-Test (ทดสอบแบตเตอรี่) |
+| POST | `/api/control/shutdown` | `{"delay_min": ตัวเลข}` | สั่งให้ UPS ปิดการจ่ายไฟ (Shutdown) ในอีก N นาที |
+| POST | `/api/control/startup` | `{"delay_min": ตัวเลข}` | สั่งตั้งเวลาเปิด UPS ล่วงหน้า (Startup) ในอีก N นาที |
+| POST | `/api/control/cancel_shutdown`| `{}` | ยกเลิกคำสั่งตั้งเวลาปิดเครื่อง |
+| POST | `/api/control/config` | `{"voltage": 220|230, "frequency": 50|60, "runtime_limit": 0-65535}` | ตั้งค่าระดับแรงดันไฟ, ความถี่, และเวลาสำรองไฟ (บางพารามิเตอร์อาจเว้นว่างได้ถ้าไม่ต้องการเปลี่ยน) |
+| POST | `/api/control/time` | `{}` | ตั้งค่าเวลาภายใน UPS ให้ตรงกับเวลาของเครื่อง Server |
+
 ### ตัวอย่าง Response — `/api/ups/status`
 
 ```json
@@ -146,7 +163,7 @@ python ups_monitor_gui.py
 ### การตั้งค่า
 
 ค่า default คือ `127.0.0.1:5000` (เฉพาะ local)  
-ถ้าต้องการเปิดให้เครื่องอื่นใน LAN เข้าถึงได้ แก้บรรทัดนี้ใน [ups_monitor_gui_linux.py](ups_monitor_gui_linux.py):
+ถ้าต้องการเปิดให้เครื่องอื่นใน LAN เข้าถึงได้ แก้บรรทัดนี้ใน [gui_linux.py](gui_linux.py) หรือรันผ่าน `web_daemon.py`:
 
 ```python
 start_api_thread(host="0.0.0.0", port=5000)

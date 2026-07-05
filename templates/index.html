@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UPS Monitor</title>
+    <style>
+        :root {
+            --bg-color: #12121c;
+            --panel-bg: #1e1e2d;
+            --panel-border: #2a2a3c;
+            --text-main: #e2e2e8;
+            --text-muted: #8b8b9e;
+            --accent: #56B0F5;
+            --ok: #4ECA6E;
+            --warn: #F5A623;
+            --err: #E04A4A;
+            --glass-bg: rgba(30, 30, 45, 0.7);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text-main); display: flex; flex-direction: column; min-height: 100vh; }
+        header { 
+            background: var(--glass-bg); backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--panel-border); padding: 15px 30px;
+            display: flex; justify-content: space-between; align-items: center;
+            position: sticky; top: 0; z-index: 100;
+        }
+        .header-title { color: var(--accent); font-size: 1.2rem; font-weight: bold; }
+        .header-subtitle { color: var(--text-muted); font-size: 0.9rem; }
+        .control-btn { 
+            background: var(--panel-bg); color: var(--accent); border: 1px solid var(--panel-border);
+            padding: 8px 16px; border-radius: 6px; cursor: pointer; transition: all 0.2s; 
+        }
+        .control-btn:hover { border-color: var(--accent); }
+        .dashboard { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; padding: 20px 30px; }
+        .panel { 
+            background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 8px; 
+            overflow: hidden; display: flex; flex-direction: column;
+        }
+        .panel-header { 
+            background: rgba(0,0,0,0.1); padding: 10px 15px; border-bottom: 1px solid var(--panel-border);
+            font-size: 0.9rem; font-weight: bold; color: var(--text-main);
+        }
+        .panel-content { padding: 10px; display: flex; flex-direction: column; gap: 5px; }
+        .row { display: flex; justify-content: space-between; padding: 8px 10px; border-radius: 4px; }
+        .row:nth-child(even) { background: rgba(0,0,0,0.15); }
+        .row-label { color: var(--text-muted); font-size: 0.85rem; }
+        .row-value { font-size: 0.9rem; font-weight: 600; }
+        .status-bar {
+            margin-top: auto; background: var(--panel-bg); border-top: 1px solid var(--panel-border);
+            padding: 10px 30px; display: flex; justify-content: space-between; font-size: 0.85rem;
+        }
+        .color-ok { color: var(--ok); }
+        .color-warn { color: var(--warn); }
+        .color-err { color: var(--err); }
+        .color-dim { color: var(--text-muted); }
+        .color-info { color: var(--accent); }
+
+        /* Modal Styles */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(5px); z-index: 1000; align-items: center; justify-content: center; }
+        .modal.active { display: flex; }
+        .modal-content { background: var(--bg-color); border: 1px solid var(--panel-border); border-radius: 8px; width: 600px; max-width: 90%; max-height: 90vh; overflow-y: auto; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--panel-border); padding-bottom: 10px; }
+        .modal-title { font-size: 1.2rem; font-weight: bold; }
+        .close-btn { background: none; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer; }
+        .close-btn:hover { color: var(--text-main); }
+        .control-group { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 6px; padding: 15px; margin-bottom: 15px; }
+        .control-group h3 { font-size: 1rem; margin-bottom: 10px; color: var(--text-main); border-bottom: 1px solid var(--panel-border); padding-bottom: 5px; }
+        .input-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+        .input-row label { width: 180px; color: var(--text-muted); font-size: 0.9rem; }
+        input[type="number"] { background: var(--bg-color); color: var(--text-main); border: 1px solid var(--panel-border); padding: 5px 10px; border-radius: 4px; width: 100px; }
+        button { background: var(--panel-border); color: var(--text-main); border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; transition: 0.2s; font-size: 0.9rem; }
+        button:hover { background: #3a3a4c; }
+        .btn-primary { background: var(--accent); color: #000; }
+        .btn-primary:hover { background: #6bc0ff; }
+        .btn-danger { background: #4a1a1a; color: var(--text-main); border: 1px solid #8a3a3a; }
+        .btn-danger:hover { background: #6a2a2a; }
+        #control-log { margin-top: 15px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 4px; color: var(--accent); font-size: 0.85rem; min-height: 40px; }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">UPS Monitor</div>
+    <div class="header-subtitle" id="device-label">Connecting... | Real-time polling 1s</div>
+    <button class="control-btn" onclick="openControlPanel()">Control Panel</button>
+</header>
+
+<div class="dashboard" id="dashboard">
+    <!-- Panels injected here -->
+</div>
+
+<div class="status-bar">
+    <div id="conn-status" class="color-dim">Disconnected</div>
+    <div id="update-time">Waiting for data...</div>
+</div>
+
+<!-- Control Panel Modal -->
+<div class="modal" id="control-modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <div class="modal-title">UPS Control Panel</div>
+            <button class="close-btn" onclick="closeControlPanel()">&times;</button>
+        </div>
+
+        <div class="control-group">
+            <h3>Self Test (RID 0x24)</h3>
+            <div class="input-row">
+                <button onclick="runSelfTest()">Run Self-Test</button>
+                <button onclick="abortSelfTest()">Abort Test</button>
+            </div>
+            <div id="test-status" style="font-size: 0.85rem; color: var(--text-muted); margin-top: 5px;"></div>
+        </div>
+
+        <div class="control-group">
+            <h3>Shutdown Schedule</h3>
+            <div class="input-row">
+                <label>Delay Before Shutdown (s):</label>
+                <input type="number" id="shutdown-delay" value="60">
+                <button class="btn-danger" onclick="apiCall('/api/control/shutdown', {delay: parseInt(document.getElementById('shutdown-delay').value)})">Schedule (RID 0x09)</button>
+                <button onclick="apiCall('/api/control/cancel_shutdown')">Cancel Shutdown</button>
+            </div>
+            <div class="input-row">
+                <label>Delay Before Startup (s):</label>
+                <input type="number" id="startup-delay" value="0">
+                <button onclick="apiCall('/api/control/startup', {delay: parseInt(document.getElementById('startup-delay').value)})">Set (RID 0x0A)</button>
+            </div>
+            <div style="font-size: 0.8rem; color: var(--warn); margin-top: 5px;">⚠ Delay=0 turns off output immediately | Always set Startup Delay first so the UPS will auto-restart</div>
+        </div>
+
+        <div class="control-group">
+            <h3>Configuration</h3>
+            <div class="input-row">
+                <label>Config Voltage (V):</label>
+                <input type="number" id="cfg-volt" value="220">
+                <button onclick="apiCall('/api/control/config', {voltage: parseInt(document.getElementById('cfg-volt').value)})">Set (RID 0x72)</button>
+            </div>
+            <div class="input-row">
+                <label>Config Frequency (Hz):</label>
+                <input type="number" id="cfg-freq" value="50">
+                <button onclick="apiCall('/api/control/config', {frequency: parseInt(document.getElementById('cfg-freq').value)})">Set (RID 0x0D)</button>
+            </div>
+            <div class="input-row">
+                <label>Low Batt Runtime Limit (s):</label>
+                <input type="number" id="cfg-limit" value="120">
+                <button onclick="apiCall('/api/control/config', {runtime_limit: parseInt(document.getElementById('cfg-limit').value)})">Set (RID 0x17)</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <h3>UPS Time (RID 0x29)</h3>
+            <div class="input-row">
+                <button onclick="apiCall('/api/control/time')">Set Time = PC Time</button>
+            </div>
+            <div style="font-size: 0.8rem; color: var(--warn); margin-top: 5px;">Warning: Vendor-defined field — experimental, may have no effect or change another field.</div>
+        </div>
+
+        <div id="control-log">Ready</div>
+    </div>
+</div>
+
+<script>
+    let testCountdown = 0;
+
+    const panels = [
+        { id: 'device', title: 'Device Info', keys: [
+            { k: 'manufacturer_string', l: 'Manufacturer' },
+            { k: 'product_string', l: 'Product' },
+            { k: 'serial_number', l: 'Serial' },
+            { k: 'release_number', l: 'Release' },
+            { k: 'usage_page', l: 'Usage Page', hex: true },
+            { k: 'usage', l: 'Usage', hex: true }
+        ], col: 1 },
+        { id: 'status', title: 'Status', keys: [
+            { k: 'ups.status', l: 'UPS Status', colorize: 'nut' },
+            { k: 'ups_mode', l: 'UPS Mode', colorClass: 'color-info' },
+            { k: 'ac_present', l: 'AC Present', boolColor: 'good' },
+            { k: 'charging', l: 'Charging', boolColor: 'good' },
+            { k: 'discharging', l: 'Discharging', boolColor: 'bad' },
+            { k: 'below_capacity_limit', l: 'Below Capacity', boolColor: 'bad' },
+            { k: 'status_good', l: 'Status Good', boolColor: 'good' },
+            { k: 'battery_test_status', l: 'Battery Test' }
+        ], col: 1 },
+        { id: 'fault', title: 'Fault', keys: [
+            { k: 'internal_failure', l: 'Internal Failure', boolColor: 'bad' },
+            { k: 'need_replacement', l: 'Need Replacement', boolColor: 'bad' },
+            { k: 'overload', l: 'Overload', boolColor: 'bad' },
+            { k: 'shutdown_imminent', l: 'Shutdown Imminent', boolColor: 'bad' },
+            { k: 'over_temperature', l: 'Over Temperature', boolColor: 'bad' }
+        ], col: 1 },
+        { id: 'battery', title: 'Battery', keys: [
+            { k: 'battery.charge', l: 'Battery Charge', unit: '%' },
+            { k: 'battery_capacity_percent', l: 'Battery Capacity', unit: '%' },
+            { k: 'low_batt_alert_limit_percent', l: 'Low Batt Alert', unit: '%' },
+            { k: 'battery.charge.low', l: 'Low Batt Threshold', unit: '% (config)' },
+            { k: 'battery.runtime', l: 'Runtime Remaining', unit: 's' },
+            { k: 'battery.runtime.hr', l: 'Runtime Remaining', unit: 'hr' },
+            { k: 'battery_voltage_v', l: 'Battery Voltage', unit: 'V' }
+        ], col: 2 },
+        { id: 'thermal', title: 'Thermal & Load', keys: [
+            { k: 'temperature_c', l: 'Temperature', unit: '°C' },
+            { k: 'percent_load', l: 'Percent Load', unit: '%' }
+        ], col: 2 },
+        { id: 'output', title: 'Output', keys: [
+            { k: 'output_voltage_v', l: 'Output Voltage', unit: 'V' },
+            { k: 'output_current_a', l: 'Output Current', unit: 'A' },
+            { k: 'output_frequency_hz', l: 'Output Frequency', unit: 'Hz' },
+            { k: 'output_active_power_w', l: 'Active Power', unit: 'W' },
+            { k: 'output_apparent_power_va', l: 'Apparent Power', unit: 'VA' }
+        ], col: 2 },
+        { id: 'input', title: 'Input & Config', keys: [
+            { k: 'input.voltage', l: 'Input Voltage', unit: 'V' },
+            { k: 'input.frequency', l: 'Input Frequency', unit: 'Hz' },
+            { k: 'config_nominal_voltage_v', l: 'Config Nominal Volts', unit: 'V' },
+            { k: 'config_nominal_frequency_hz', l: 'Config Nominal Freq', unit: 'Hz' }
+        ], col: 2 }
+    ];
+
+    function renderDashboard() {
+        const db = document.getElementById('dashboard');
+        db.innerHTML = '';
+        panels.forEach(p => {
+            const html = `
+                <div class="panel" id="panel-${p.id}">
+                    <div class="panel-header">${p.title}</div>
+                    <div class="panel-content">
+                        ${p.keys.map(k => `
+                            <div class="row">
+                                <span class="row-label">${k.l}</span>
+                                <span class="row-value color-dim" id="val-${k.k.replace(/\./g, '-')}">—</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+            db.insertAdjacentHTML('beforeend', html);
+        });
+    }
+
+    function formatVal(val, keyDef) {
+        if (val === null || val === undefined || val === '') return { text: '—', cls: 'color-dim' };
+        let text = val;
+        let cls = '';
+        
+        if (keyDef.hex) text = '0x' + parseInt(val).toString(16).padStart(4, '0').toUpperCase();
+        else if (typeof val === 'number' && !Number.isInteger(val)) text = val.toFixed(1);
+        
+        if (typeof val === 'boolean' || val === 'True' || val === 'False' || val === 1 || val === 0) {
+            let b = (val === true || val === 'True' || val === 1);
+            text = b ? 'True' : 'False';
+            if (keyDef.boolColor === 'good') cls = b ? 'color-ok' : 'color-dim';
+            else if (keyDef.boolColor === 'bad') cls = b ? 'color-err' : 'color-ok';
+        }
+
+        if (keyDef.unit) text += ' ' + keyDef.unit;
+        if (keyDef.colorClass) cls = keyDef.colorClass;
+        
+        if (keyDef.colorize === 'nut') {
+            if (String(val).includes('OL') && !String(val).includes('OB')) cls = 'color-ok';
+            else if (String(val).includes('OB')) cls = 'color-err';
+            else cls = 'color-warn';
+        }
+        
+        if (keyDef.k === 'battery.charge' && typeof val === 'number') {
+            if (val < 20) cls = 'color-err';
+            else if (val < 50) cls = 'color-warn';
+            else cls = 'color-ok';
+        }
+
+        return { text, cls };
+    }
+
+    async function pollData() {
+        try {
+            const res = await fetch('/api/ups');
+            const data = await fetch('/api/ups').then(r => r.json());
+            
+            if (data.timestamp) {
+                document.getElementById('conn-status').className = 'color-ok';
+                document.getElementById('conn-status').innerText = 'Connected: ' + data.message;
+                document.getElementById('update-time').innerText = 'Updated: ' + new Date().toLocaleTimeString();
+                
+                const mfr = data.device.manufacturer_string || '';
+                const prod = data.device.product_string || '';
+                const label = (mfr || prod) ? `${mfr} / ${prod}` : 'UPS';
+                document.getElementById('device-label').innerText = label + ' | Real-time polling 1s';
+
+                const allData = { ...data.device, ...data.ups };
+                panels.forEach(p => {
+                    p.keys.forEach(k => {
+                        const el = document.getElementById('val-' + k.k.replace(/\./g, '-'));
+                        if (el) {
+                            const { text, cls } = formatVal(allData[k.k], k);
+                            el.innerText = text;
+                            el.className = 'row-value ' + cls;
+                        }
+                    });
+                });
+
+                if (testCountdown > 0) {
+                    testCountdown--;
+                    const st = String(allData['battery_test_status'] || 'unknown').toLowerCase();
+                    let msg = '';
+                    let color = 'var(--text-muted)';
+                    
+                    if (st === 'running') {
+                        msg = `Testing... (~${testCountdown}s remaining)`;
+                        color = 'var(--warn)';
+                    } else if (st === 'idle' || st === 'ok' || st === 'passed') {
+                        msg = '✅ Passed / Idle';
+                        color = 'var(--ok)';
+                        testCountdown = 0;
+                    } else if (st === 'failed') {
+                        msg = '❌ Failed';
+                        color = 'var(--err)';
+                        testCountdown = 0;
+                    } else if (st === 'warning') {
+                        msg = '⚠️ Warning';
+                        color = 'var(--warn)';
+                        testCountdown = 0;
+                    } else if (st === 'abort') {
+                        msg = '⏸ Aborted';
+                        color = 'var(--text-muted)';
+                        testCountdown = 0;
+                    } else {
+                        msg = `Status: ${st} (~${testCountdown}s remaining)`;
+                    }
+
+                    if (testCountdown === 0 && st === 'running') {
+                         msg = 'Test finished (Status unknown)';
+                    }
+                    
+                    const tsLabel = document.getElementById('test-status');
+                    tsLabel.innerText = msg;
+                    tsLabel.style.color = color;
+                }
+            } else {
+                document.getElementById('conn-status').className = 'color-err';
+                document.getElementById('conn-status').innerText = 'Error: ' + data.message;
+            }
+        } catch (e) {
+            document.getElementById('conn-status').className = 'color-err';
+            document.getElementById('conn-status').innerText = 'Connection Lost';
+        }
+    }
+
+    function openControlPanel() { document.getElementById('control-modal').classList.add('active'); }
+    function closeControlPanel() { document.getElementById('control-modal').classList.remove('active'); }
+
+    async function apiCall(endpoint, payload = {}) {
+        const log = document.getElementById('control-log');
+        log.innerText = `Sending request...`;
+        log.style.color = 'var(--text-main)';
+        try {
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            log.innerText = data.message;
+            log.style.color = data.success ? 'var(--ok)' : 'var(--err)';
+        } catch (e) {
+            log.innerText = 'Network error: ' + e.message;
+            log.style.color = 'var(--err)';
+        }
+    }
+
+    async function runSelfTest() {
+        await apiCall('/api/control/test', {action: 'run'});
+        testCountdown = 12;
+        document.getElementById('test-status').innerText = `Testing... UPS switched to battery (12s remaining)`;
+        document.getElementById('test-status').style.color = 'var(--warn)';
+    }
+
+    async function abortSelfTest() {
+        await apiCall('/api/control/test', {action: 'abort'});
+        testCountdown = 0;
+        document.getElementById('test-status').innerText = 'Test aborted';
+        document.getElementById('test-status').style.color = 'var(--text-muted)';
+    }
+
+    renderDashboard();
+    pollData();
+    setInterval(pollData, 1000);
+</script>
+</body>
+</html>

@@ -37,7 +37,7 @@ def _win_open_direct(path: object) -> bool:
     if platform.system().lower() != "windows":
         return False
     try:
-        from hidapi import WinHidApi, normalize_path
+        from win32_hid_wrapper import WinHidApi, normalize_path
         raw_path = path.decode("utf-8", errors="ignore") if isinstance(path, (bytes, bytearray)) else str(path)
         dev_path = normalize_path(raw_path)
         api = WinHidApi()
@@ -445,7 +445,7 @@ def open_ups_device(vid: int = VID, pid: int = PID):
         if _win_open_direct(target["path"]):
             print("  Win direct   : HidD_GetFeature fallback ready")
         else:
-            print("  Win direct   : fallback unavailable (hidapi.py not found)")
+            print("  Win direct   : fallback unavailable (win32_hid_wrapper.py not found)")
 
     return h, target
 
