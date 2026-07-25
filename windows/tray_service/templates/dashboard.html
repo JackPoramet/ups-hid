@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ENEREX UPS Monitor</title>
+    <link rel="icon" type="image/png" href="/static/img/logo.png">
+    <link rel="shortcut icon" type="image/png" href="/static/img/logo.png">
+    <meta name="description" content="ENEREX UPS Monitor Windows — Real-time UPS status dashboard, settings, and control panel">
+    <meta name="theme-color" content="#0F172A">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<div class="app-layout">
+    <!-- ═══════════════════════════════════════════════════════════
+         Sidebar (Side Navigation)
+    ════════════════════════════════════════════════════════════ -->
+    <aside class="sidebar" id="sidebar">
+        <!-- Brand Header -->
+        <div class="sidebar__brand">
+            <div class="sidebar__logo">
+                <img src="/static/img/logo.png" alt="Logo" class="sidebar__logo-img">
+            </div>
+            <div class="sidebar__title-wrap">
+                <span class="sidebar__title">ENEREX UPS</span>
+                <span class="sidebar__subtitle-tag">MONITOR</span>
+            </div>
+        </div>
+
+        <!-- Navigation Menu -->
+        <nav class="sidebar__nav tabs" id="tabs" role="tablist">
+            <button class="tab tab--active" id="tab-dashboard" role="tab" aria-selected="true" onclick="switchTab('dashboard')">
+                <span class="material-symbols-outlined">dashboard</span>
+                <span>Dashboard</span>
+            </button>
+            <button class="tab" id="tab-device" role="tab" aria-selected="false" onclick="switchTab('device')">
+                <span class="material-symbols-outlined">developer_board</span>
+                <span>Device Info</span>
+            </button>
+            <button class="tab" id="tab-control" role="tab" aria-selected="false" onclick="switchTab('control')">
+                <span class="material-symbols-outlined">tune</span>
+                <span>Control</span>
+            </button>
+            <button class="tab" id="tab-history" role="tab" aria-selected="false" onclick="switchTab('history')">
+                <span class="material-symbols-outlined">analytics</span>
+                <span>History & Logs</span>
+            </button>
+            <button class="tab" id="tab-settings" role="tab" aria-selected="false" onclick="switchTab('settings')">
+                <span class="material-symbols-outlined">settings</span>
+                <span>Settings</span>
+            </button>
+        </nav>
+
+        <!-- Footer Status & Tools -->
+        <div class="sidebar__footer">
+            <div class="sidebar__meta-row">
+                <div class="sidebar__update-wrap">
+                    <span class="sidebar__update-label">Last update:</span>
+                    <span class="sidebar__update" id="last-update">—</span>
+                </div>
+                <button class="theme-toggle-btn" id="theme-toggle-btn" onclick="toggleTheme()" title="สลับโหมดสว่าง / โหมดมืด">
+                    <span class="material-symbols-outlined" id="theme-toggle-icon">light_mode</span>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- ═══════════════════════════════════════════════════════════
+         App Content Area
+    ════════════════════════════════════════════════════════════ -->
+    <div class="app-content">
+        <main class="main" id="main-content">
+
+    <!-- ─── Live PC Shutdown Countdown Alert Banner ─────────────────────── -->
+    <div class="shutdown-banner" id="shutdown-banner" style="display:none">
+        <div class="shutdown-banner__inner">
+            <div class="shutdown-banner__content">
+                <span class="material-symbols-outlined shutdown-banner__icon">alarm</span>
+                <div class="shutdown-banner__text">
+                    <div class="shutdown-banner__title" id="shutdown-banner-title">ระบบกำลังจะปิดเครื่องคอมพิวเตอร์ (PC Shutdown Pending)</div>
+                    <div class="shutdown-banner__sub" id="shutdown-banner-sub">เหตุผล: UPS ไฟฟ้าดับ (AC Fail)</div>
+                </div>
+            </div>
+            <div class="shutdown-banner__actions">
+                <div class="shutdown-banner__clock-box">
+                    <span class="shutdown-banner__clock-label">ปิดเครื่องใน:</span>
+                    <span class="shutdown-banner__clock" id="shutdown-banner-clock">00:00</span>
+                </div>
+                <button class="btn btn--warning btn--sm" onclick="cancelShutdown()">
+                    <span class="material-symbols-outlined">cancel</span>
+                    <span>ยกเลิก Shutdown</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── Tab: Dashboard ──────────────────────────────────────── -->
+    <section class="tab-panel tab-panel--active" id="panel-dashboard" role="tabpanel">
+
+        <!-- Hero Cards Row -->
+        <div class="hero-cards">
+            <!-- AC Status Card -->
+            <div class="hero-card hero-card--ac" id="card-ac">
+                <div class="hero-card__icon-box" id="ac-icon-box">
+                    <span class="material-symbols-outlined" id="ac-icon">bolt</span>
+                </div>
+                <div class="hero-card__body">
+                    <div class="hero-card__label">สถานะไฟฟ้า AC</div>
+                    <div class="hero-card__value" id="ac-status">—</div>
+                </div>
+            </div>
+
+            <!-- Battery Card -->
+            <div class="hero-card hero-card--battery" id="card-battery">
+                <div class="hero-card__icon-box">
+                    <span class="material-symbols-outlined">battery_charging_full</span>
+                </div>
+                <div class="hero-card__body">
+                    <div class="hero-card__label">ระดับแบตเตอรี่</div>
+                    <div class="hero-card__value" id="battery-pct">—</div>
+                    <div class="battery-bar-wrap">
+                        <div class="battery-bar" id="battery-bar"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Runtime Card -->
+            <div class="hero-card hero-card--runtime" id="card-runtime">
+                <div class="hero-card__icon-box">
+                    <span class="material-symbols-outlined">schedule</span>
+                </div>
+                <div class="hero-card__body">
+                    <div class="hero-card__label">เวลาสำรองไฟที่เหลือ</div>
+                    <div class="hero-card__value" id="runtime-val">—</div>
+                </div>
+            </div>
+
+            <!-- Load Card -->
+            <div class="hero-card hero-card--load" id="card-load">
+                <div class="hero-card__icon-box">
+                    <span class="material-symbols-outlined">monitoring</span>
+                </div>
+                <div class="hero-card__body">
+                    <div class="hero-card__label">โหลด (Load)</div>
+                    <div class="hero-card__value" id="load-val">—</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detail Grid -->
+        <div class="detail-grid">
+
+            <!-- Status Section -->
+            <div class="card" id="section-status">
+                <div class="card__header">
+                    <span class="material-symbols-outlined card__header-icon">activity_zone</span>
+                    <span>สถานะการทำงาน (System Status)</span>
+                </div>
+                <div class="card__body">
+                    <div class="data-row" id="row-ups-status">
+                        <span class="data-row__label">UPS Status</span>
+                        <span class="data-row__value" id="val-ups-status">—</span>
+                    </div>
+                    <div class="data-row alt" id="row-charging">
+                        <span class="data-row__label">Charging</span>
+                        <span class="data-row__value" id="val-charging">—</span>
+                    </div>
+                    <div class="data-row" id="row-discharging">
+                        <span class="data-row__label">Discharging</span>
+                        <span class="data-row__value" id="val-discharging">—</span>
+                    </div>
+                    <div class="data-row alt" id="row-status-good">
+                        <span class="data-row__label">Status Normal</span>
+                        <span class="data-row__value" id="val-status-good">—</span>
+                    </div>
+                    <div class="data-row" id="row-battery-test">
+                        <span class="data-row__label">Battery Test</span>
+                        <span class="data-row__value" id="val-battery-test">—</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Battery Section -->
+            <div class="card" id="section-battery">
+                <div class="card__header">
+                    <span class="material-symbols-outlined card__header-icon">battery_std</span>
+                    <span>แบตเตอรี่ (Battery Metrics)</span>
+                </div>
+                <div class="card__body">
+                    <div class="data-row">
+                        <span class="data-row__label">Battery Charge</span>
+                        <span class="data-row__value" id="val-batt-charge">—</span>
+                    </div>
+                    <div class="data-row alt">
+                        <span class="data-row__label">Battery Capacity</span>
+                        <span class="data-row__value" id="val-batt-capacity">—</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="data-row__label">Runtime Remaining</span>
+                        <span class="data-row__value" id="val-batt-runtime">—</span>
+                    </div>
+                    <div class="data-row alt">
+                        <span class="data-row__label">Battery Voltage</span>
+                        <span class="data-row__value" id="val-batt-voltage">—</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="data-row__label">Low Batt Alert Limit</span>
+                        <span class="data-row__value" id="val-batt-low-alert">—</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fault Section -->
+            <div class="card" id="section-fault">
+                <div class="card__header card__header--warning">
+                    <span class="material-symbols-outlined card__header-icon">warning</span>
+                    <span>การแจ้งเตือนความผิดปกติ (Diagnostics & Faults)</span>
+                </div>
+                <div class="card__body">
+                    <div class="data-row">
+                        <span class="data-row__label">Internal Failure</span>
+                        <span class="data-row__value" id="val-internal-failure">—</span>
+                    </div>
+                    <div class="data-row alt">
+                        <span class="data-row__label">Need Replacement</span>
+                        <span class="data-row__value" id="val-need-replacement">—</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="data-row__label">Overload Fault</span>
+                        <span class="data-row__value" id="val-overload">—</span>
+                    </div>
+                    <div class="data-row alt">
+                        <span class="data-row__label">Shutdown Imminent</span>
+                        <span class="data-row__value" id="val-shutdown-imminent">—</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="data-row__label">Over Temperature</span>
+                        <span class="data-row__value" id="val-over-temp">—</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Power Section -->
+            <div class="card" id="section-power">
+                <div class="card__header">
+                    <span class="material-symbols-outlined card__header-icon">electric_bolt</span>
+                    <span>ไฟฟ้าเข้า / ออก (Power Metrics)</span>
+                </div>
+                <div class="card__body">
+                    <div class="data-row">
+                        <span class="data-row__label">Input Voltage</span>
+                        <span class="data-row__value" id="val-input-voltage">—</span>
+                    </div>
+                    <div class="data-row alt">
+                        <span class="data-row__label">Input Frequency</span>
+                        <span class="data-row__value" id="val-input-freq">—</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="data-row__label">Output Voltage</span>
+                        <span class="data-row__value" id="val-output-voltage">—</span>
+                    </div>
+                    <div class="data-row alt">
+                        <span class="data-row__label">Output Frequency</span>
+                        <span class="data-row__value" id="val-output-freq">—</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="data-row__label">Active Power</span>
+                        <span class="data-row__value" id="val-active-power">—</span>
+                    </div>
+                    <div class="data-row alt">
+                        <span class="data-row__label">Apparent Power</span>
+                        <span class="data-row__value" id="val-apparent-power">—</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="data-row__label">Internal Temp</span>
+                        <span class="data-row__value" id="val-temperature">—</span>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /.detail-grid -->
+    </section>
+
+    <!-- ─── Tab: Device Info ─────────────────────────────────────── -->
+    <section class="tab-panel" id="panel-device" role="tabpanel">
+        <div class="card card--full">
+            <div class="card__header">
+                <span class="material-symbols-outlined card__header-icon">info</span>
+                <span>รายละเอียดคุณสมบัติอุปกรณ์ UPS (Hardware Specifications)</span>
+            </div>
+            <div class="card__body">
+                <div class="data-row">
+                    <span class="data-row__label">Manufacturer</span>
+                    <span class="data-row__value" id="dev-manufacturer">—</span>
+                </div>
+                <div class="data-row alt">
+                    <span class="data-row__label">Product Name</span>
+                    <span class="data-row__value" id="dev-product">—</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-row__label">Serial Number</span>
+                    <span class="data-row__value mono" id="dev-serial">—</span>
+                </div>
+                <div class="data-row alt">
+                    <span class="data-row__label">Firmware Version</span>
+                    <span class="data-row__value mono" id="dev-firmware">—</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-row__label">Release Number</span>
+                    <span class="data-row__value mono" id="dev-release">—</span>
+                </div>
+                <div class="data-row alt">
+                    <span class="data-row__label">HID Usage Page</span>
+                    <span class="data-row__value mono" id="dev-usage-page">—</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-row__label">HID Usage ID</span>
+                    <span class="data-row__value mono" id="dev-usage">—</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ─── Tab: Control ─────────────────────────────────────────── -->
+    <section class="tab-panel" id="panel-control" role="tabpanel">
+        <div class="control-grid">
+
+            <!-- UPS Clock Control (RID 0x29) -->
+            <div class="card">
+                <div class="card__header">
+                    <span class="material-symbols-outlined card__header-icon">update</span>
+                    <span>UPS Real-Time Clock Sync (RID 0x29)</span>
+                </div>
+                <div class="card__body">
+                    <p class="card__desc">ตรวจสอบและปรับตั้งเวลานาฬิกาภายในของ UPS ให้ตรงกับเวลาของเครื่องคอมพิวเตอร์ (PC Host Clock)</p>
+                    <div class="data-row" style="margin-bottom: 12px;">
+                        <span class="data-row__label">เวลา UPS ปัจจุบัน:</span>
+                        <span class="data-row__value mono" id="val-ups-clock-time">—</span>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn--primary" onclick="readUpsTime()">
+                            <span class="material-symbols-outlined">read_more</span>
+                            <span>Read UPS Time</span>
+                        </button>
+                        <button class="btn btn--secondary" onclick="syncUpsTime()">
+                            <span class="material-symbols-outlined">sync</span>
+                            <span>Sync Host Time</span>
+                        </button>
+                    </div>
+                    <div class="result-box" id="result-ups-time"></div>
+                </div>
+            </div>
+
+            <!-- UPS Output Shutdown -->
+            <div class="card">
+                <div class="card__header card__header--danger">
+                    <span class="material-symbols-outlined card__header-icon">power_off</span>
+                    <span>UPS Output Control (Shutdown Outlets)</span>
+                </div>
+                <div class="card__body">
+                    <p class="card__desc">ส่งคำสั่งควบคุมให้ UPS ตัดการจ่ายกระแสไฟฟ้าเอาต์พุต (Output Shutdown)</p>
+                    <div class="inline-form">
+                        <label for="ups-shutdown-delay">Delay (วินาที):</label>
+                        <input type="number" id="ups-shutdown-delay" value="60" min="0" max="86400" class="input-field">
+                        <button class="btn btn--danger" onclick="upsShutdown()">
+                            <span class="material-symbols-outlined">power_off</span>
+                            <span>Shutdown UPS Output</span>
+                        </button>
+                    </div>
+                    <div class="btn-group" style="margin-top: 12px">
+                        <button class="btn btn--warning" onclick="upsShutdownCancel()">
+                            <span class="material-symbols-outlined">cancel</span>
+                            <span>Cancel UPS Shutdown</span>
+                        </button>
+                    </div>
+                    <div class="warn-banner warn-banner--danger" style="margin-top: 12px;">
+                        <span class="material-symbols-outlined">warning</span>
+                        <span>ข้อควรระวัง: UPS จะหยุดจ่ายไฟฟ้าแก่อุปกรณ์ต่อพ่วงทั้งหมดเมื่อถึงเวลาที่กำหนด</span>
+                    </div>
+                    <div class="result-box" id="result-ups-shutdown"></div>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- ─── Tab: Settings ─────────────────────────────────────────── -->
+    <section class="tab-panel" id="panel-settings" role="tabpanel">
+        <div class="settings-grid">
+
+            <!-- Auto Shutdown Settings -->
+            <div class="card">
+                <div class="card__header card__header--warning">
+                    <span class="material-symbols-outlined card__header-icon">power_settings_new</span>
+                    <span>ตั้งค่าเงื่อนไขการปิดเครื่องอัตโนมัติ (Auto Shutdown Rules)</span>
+                </div>
+                <div class="card__body">
+                    <div class="setting-row">
+                        <label class="setting-label" for="cfg-auto-shutdown">
+                            <strong>เปิดใช้งานระบบ ปิดเครื่องอัตโนมัติ (Master Switch)</strong>
+                            <small style="display:block; color:var(--text-secondary); margin-top:2px;">อนุญาตให้ระบบสั่ง Windows Shutdown เมื่อเข้าเงื่อนไขที่เปิดไว้</small>
+                        </label>
+                        <label class="toggle">
+                            <input type="checkbox" id="cfg-auto-shutdown">
+                            <span class="toggle__slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-row" style="margin-top: 8px;">
+                        <label class="setting-label" for="cfg-shutdown-ac-fail">
+                            <span>เงื่อนไข 1: ปิดเครื่องเมื่อระบบไฟฟ้าดับ (AC Fail)</span>
+                            <small style="display:block; color:var(--text-secondary);">นับถอยหลังตามเวลาที่กำหนดเมื่อ UPS เปลี่ยนเป็นสถานะใช้แบตเตอรี่</small>
+                        </label>
+                        <label class="toggle">
+                            <input type="checkbox" id="cfg-shutdown-ac-fail" checked>
+                            <span class="toggle__slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-row">
+                        <label class="setting-label" for="cfg-shutdown-delay">
+                            <span>ระยะเวลานับถอยหลังก่อนปิดเครื่อง (นาที)</span>
+                        </label>
+                        <input type="number" id="cfg-shutdown-delay" class="input-field input-field--sm" min="1" max="60" value="5">
+                    </div>
+
+                    <div class="setting-row" style="margin-top: 8px;">
+                        <label class="setting-label" for="cfg-shutdown-low-batt">
+                            <span>เงื่อนไข 2: ปิดเครื่องทันทีเมื่อแบตเตอรี่ต่ำ (Low Battery)</span>
+                            <small style="display:block; color:var(--text-secondary);">สั่งปิดเครื่องทันที (Grace period 30 วินาที) เมื่อแบตเตอรี่ต่ำกว่า threshold</small>
+                        </label>
+                        <label class="toggle">
+                            <input type="checkbox" id="cfg-shutdown-low-batt" checked>
+                            <span class="toggle__slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-row">
+                        <label class="setting-label" for="cfg-batt-threshold">
+                            <span>ระดับแบตเตอรี่ต่ำสุดที่จะสั่งปิดเครื่อง (%)</span>
+                        </label>
+                        <input type="number" id="cfg-batt-threshold" class="input-field input-field--sm" min="1" max="100" value="20">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Notification Settings -->
+            <div class="card">
+                <div class="card__header">
+                    <span class="material-symbols-outlined card__header-icon">notifications</span>
+                    <span>ระบบการแจ้งเตือน (Notifications)</span>
+                </div>
+                <div class="card__body">
+                    <div class="setting-row">
+                        <label class="setting-label" for="cfg-notif-enabled">เปิดระบบ แจ้งเตือนทั้งหมด</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="cfg-notif-enabled" checked>
+                            <span class="toggle__slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-row">
+                        <label class="setting-label" for="cfg-notif-ac-fail">แจ้งเตือนเมื่อระบบไฟฟ้าดับ</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="cfg-notif-ac-fail" checked>
+                            <span class="toggle__slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-row">
+                        <label class="setting-label" for="cfg-notif-ac-restore">แจ้งเตือนเมื่อไฟฟ้ากลับสู่ปกติ</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="cfg-notif-ac-restore" checked>
+                            <span class="toggle__slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-row">
+                        <label class="setting-label" for="cfg-notif-low-batt">แจ้งเตือนเมื่อแบตเตอรี่ต่ำ</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="cfg-notif-low-batt" checked>
+                            <span class="toggle__slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Database Settings -->
+            <div class="card">
+                <div class="card__header">
+                    <span class="material-symbols-outlined card__header-icon">database</span>
+                    <span>ฐานข้อมูล SQLite (Database Settings)</span>
+                </div>
+                <div class="card__body">
+                    <div class="setting-row">
+                        <label class="setting-label" for="cfg-db-enabled">เปิดใช้งานการบันทึกฐานข้อมูล (SQLite Persistent Log)</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="cfg-db-enabled" checked>
+                            <span class="toggle__slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-row">
+                        <label class="setting-label" for="cfg-db-telemetry-interval">ความถี่บันทึก Telemetry (วินาที)</label>
+                        <input type="number" id="cfg-db-telemetry-interval" class="input-field input-field--sm" min="1" max="300" value="10">
+                    </div>
+                    <div class="setting-row">
+                        <label class="setting-label" for="cfg-db-retention">ระยะเวลาเก็บรักษาข้อมูล (วัน)</label>
+                        <input type="number" id="cfg-db-retention" class="input-field input-field--sm" min="1" max="365" value="30">
+                    </div>
+                </div>
+            </div>
+
+            <!-- General Settings -->
+            <div class="card">
+                <div class="card__header">
+                    <span class="material-symbols-outlined card__header-icon">tune</span>
+                    <span>การตั้งค่าทั่วไป (System Configuration)</span>
+                </div>
+                <div class="card__body">
+                    <div class="setting-row">
+                        <label class="setting-label" for="cfg-startup-windows">
+                            <span>เริ่มโปรแกรมอัตโนมัติเมื่อเปิดเครื่อง (Start with Windows)</span>
+                        </label>
+                        <label class="toggle">
+                            <input type="checkbox" id="cfg-startup-windows" checked>
+                            <span class="toggle__slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-row">
+                        <label class="setting-label" for="cfg-poll-interval">Polling Interval (วินาที)</label>
+                        <input type="number" id="cfg-poll-interval" class="input-field input-field--sm" min="1" max="60" value="1">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Save Button -->
+            <div class="settings-actions">
+                <button class="btn btn--primary btn--lg" id="btn-save-settings" onclick="saveSettings()">
+                    <span class="material-symbols-outlined">save</span>
+                    <span>บันทึกการตั้งค่า</span>
+                </button>
+                <div class="result-box" id="result-settings"></div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- ─── Tab: History & Logs ──────────────────────────────────────── -->
+    <section class="tab-panel" id="panel-history" role="tabpanel">
+        <div class="card" style="margin-bottom: 20px;">
+            <div class="card__header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="material-symbols-outlined card__header-icon">analytics</span>
+                    <span>กราฟแสดงข้อมูลย้อนหลัง (Telemetry History)</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <label for="history-hours" style="font-size: 0.875rem; color: var(--text-secondary);">ช่วงเวลา:</label>
+                    <select id="history-hours" class="input-field input-field--sm" onchange="loadHistoryData()">
+                        <option value="1">1 ชั่วโมงที่แล้ว</option>
+                        <option value="6">6 ชั่วโมงที่แล้ว</option>
+                        <option value="12">12 ชั่วโมงที่แล้ว</option>
+                        <option value="24" selected>24 ชั่วโมงที่แล้ว</option>
+                        <option value="72">3 วันที่แล้ว</option>
+                        <option value="168">7 วันที่แล้ว</option>
+                    </select>
+                    <button class="btn btn--secondary btn--sm" onclick="loadHistoryData()">
+                        <span class="material-symbols-outlined">refresh</span>
+                        <span>รีเฟรช</span>
+                    </button>
+                    <button class="btn btn--danger btn--sm" onclick="clearDatabase()">
+                        <span class="material-symbols-outlined">delete_sweep</span>
+                        <span>ล้างข้อมูล DB</span>
+                    </button>
+                </div>
+            </div>
+            <div class="card__body">
+                <div class="chart-container" style="position: relative; width: 100%; height: 320px; background: var(--bg-tertiary, #1E293B); border-radius: 8px; padding: 12px; box-sizing: border-box;">
+                    <canvas id="history-canvas" style="width: 100%; height: 100%; display: block;"></canvas>
+                </div>
+                <div class="chart-legend" style="display: flex; justify-content: center; gap: 20px; margin-top: 12px; font-size: 0.85rem; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 6px;"><span style="width: 12px; height: 12px; background: #10B981; border-radius: 3px; display: inline-block;"></span> <span>Battery % (ระดับแบตเตอรี่)</span></div>
+                    <div style="display: flex; align-items: center; gap: 6px;"><span style="width: 12px; height: 12px; background: #3B82F6; border-radius: 3px; display: inline-block;"></span> <span>Input Voltage (แรงดันไฟเข้า - V)</span></div>
+                    <div style="display: flex; align-items: center; gap: 6px;"><span style="width: 12px; height: 12px; background: #F59E0B; border-radius: 3px; display: inline-block;"></span> <span>Output Load % (โหลด)</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card__header">
+                <span class="material-symbols-outlined card__header-icon">list_alt</span>
+                <span>ประวัติเหตุการณ์และการแจ้งเตือน (Event Logs)</span>
+            </div>
+            <div class="card__body" style="padding: 0; overflow-x: auto;">
+                <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
+                    <thead>
+                        <tr style="background: var(--bg-tertiary, #1E293B); color: var(--text-secondary);">
+                            <th style="padding: 10px 16px;"># ID</th>
+                            <th style="padding: 10px 16px;">เวลา (Timestamp)</th>
+                            <th style="padding: 10px 16px;">ประเภทเหตุการณ์ (Event)</th>
+                            <th style="padding: 10px 16px;">รายละเอียด (Message)</th>
+                            <th style="padding: 10px 16px;">แบตเตอรี่ (%)</th>
+                            <th style="padding: 10px 16px;">สถานะ AC</th>
+                        </tr>
+                    </thead>
+                    <tbody id="events-table-body">
+                        <tr>
+                            <td colspan="6" style="padding: 20px; text-align: center; color: var(--text-secondary);">กำลังโหลดประวัติเหตุการณ์...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+</main>
+    </div> <!-- /.app-content -->
+</div> <!-- /.app-layout -->
+
+<!-- Disconnect overlay -->
+<div class="disconnect-banner" id="disconnect-banner" style="display:none">
+    <span class="material-symbols-outlined">sync_problem</span>
+    <span>ไม่สามารถเชื่อมต่ออุปกรณ์ UPS — กำลังลองใหม่อัตโนมัติ...</span>
+</div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>

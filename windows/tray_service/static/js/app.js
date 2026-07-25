@@ -1,0 +1,809 @@
+/**
+ * UPS Monitor — Enterprise Web UI JavaScript
+ * ====================================
+ * จัดการ real-time polling, UI updates, tab switching, settings form
+ *
+ * Architecture:
+ *   - polling ทุก 1 วินาทีผ่าน /api/ups + /api/ups/power
+ *   - แยก update ตาม tab ที่กำลัง active เพื่อประสิทธิภาพสูงสุด
+ *   - Material Symbols icon dynamic rendering
+ */
+
+'use strict';
+
+// ── State ──────────────────────────────────────────────────────────────────────
+let currentTab = 'dashboard';
+let pollTimer = null;
+let consecutiveErrors = 0;
+const MAX_ERRORS = 5;
+const POLL_INTERVAL_MS = 1000;
+
+// ── Theme Management ──────────────────────────────────────────────────────────
+function initTheme() {
+    const savedTheme = localStorage.getItem('ups_theme') || 'dark';
+    setTheme(savedTheme);
+}
+
+function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+    const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+}
+
+function setTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('ups_theme', theme);
+    const iconEl = document.getElementById('theme-toggle-icon');
+    if (iconEl) {
+        iconEl.textContent = theme === 'dark' ? 'light_mode' : 'dark_mode';
+    }
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    initTheme();
+    loadSettings();
+    startPolling();
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Polling
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * เริ่ม polling loop
+ */
+function startPolling() {
+    pollOnce();
+    pollTimer = setInterval(pollOnce, POLL_INTERVAL_MS);
+}
+
+/**
+ * poll ครั้งเดียว — ดึงข้อมูลจาก API แล้วอัปเดต UI
+ */
+async function pollOnce() {
+    try {
+        const [upsRes, powerRes] = await Promise.all([
+            fetch('/api/ups').then(r => r.json()),
+            fetch('/api/ups/power').then(r => r.json()),
+        ]);
+
+        consecutiveErrors = 0;
+        hideBanner();
+
+        updateDashboard(upsRes, powerRes);
+
+        if (currentTab === 'device') {
+            updateDeviceInfo(upsRes.device || {}, upsRes.ups || {});
+        }
+
+    } catch (err) {
+        consecutiveErrors++;
+        console.warn(`Poll error (${consecutiveErrors}):`, err);
+        if (consecutiveErrors >= MAX_ERRORS) {
+            showBanner();
+            setStatusDot('disconnected');
+        }
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Dashboard Update
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * อัปเดต Dashboard tab ทั้งหมด
+ * @param {Object} data - response จาก /api/ups
+ * @param {Object} power - response จาก /api/ups/power
+ */
+function updateDashboard(data, power) {
+    const ups = data.ups || {};
+    const device = data.device || {};
+    const connected = data.connected;
+
+    // Update Header Subtitle
+    if (connected) {
+        const prod = device['product_string'] || device['product'] || 'Innova Unity';
+        const mode = ups['ups_mode'] || 'เชื่อมต่อสำเร็จ';
+        setText('header-subtitle', `${prod} — ${mode}`);
+    } else {
+        setText('header-subtitle', 'กำลังเชื่อมต่อ UPS...');
+    }
+
+    // Update timestamp
+    setText('last-update', new Date().toLocaleTimeString('th-TH'));
+
+    // ── Hero Cards ────────────────────────────────────────────────────────────
+    const acPresent = ups['ac_present'];
+    const charging  = ups['charging'];
+    const charge    = ups['battery.charge'];
+    const runtime   = ups['battery.runtime'];
+    const load      = ups['percent_load'];
+
+    // AC Status
+    const upsStatus = ups['ups.status'] || '';
+    const discharging = ups['discharging'];
+    updateAcCard(acPresent, charging, connected, upsStatus, discharging);
+
+    // Battery
+    if (charge != null) {
+        setText('battery-pct', `${Math.round(charge)}%`);
+        setBatteryBar(charge);
+    } else {
+        setText('battery-pct', '—');
+        setBatteryBar(0);
+    }
+
+    // Runtime
+    setText('runtime-val', formatRuntime(runtime));
+
+    // Load
+    setText('load-val', load != null ? `${Math.round(load)} %` : '—');
+
+    // ── Status Section ────────────────────────────────────────────────────────
+    let formattedStatus = upsStatus || '—';
+    let statusColor = 'ok';
+
+    if (upsStatus.includes('OFF')) {
+        formattedStatus = `Standby / Output Off (${upsStatus})`;
+        statusColor = 'dim';
+    } else if (upsStatus.includes('BYPASS') || upsStatus.includes('BYP')) {
+        formattedStatus = `Bypass Mode (${upsStatus})`;
+        statusColor = 'warn';
+    } else if (upsStatus.includes('OB') || acPresent === false || discharging === true) {
+        formattedStatus = `On Battery (${upsStatus})`;
+        statusColor = 'err';
+    } else if (upsStatus.includes('OL')) {
+        formattedStatus = `Online (${upsStatus})`;
+        statusColor = 'ok';
+    }
+
+    setValWithColor('val-ups-status', formattedStatus, statusColor);
+
+    setBool('val-charging',     ups['charging'],     true,  'ok',   'dim');
+    setBool('val-discharging',  ups['discharging'],  false, 'warn', 'ok');
+    setBool('val-status-good',  ups['status_good'],  true,  'ok',   'err');
+    setText('val-battery-test', ups['battery_test_status'] || '—');
+
+    // ── Battery Section ───────────────────────────────────────────────────────
+    setVal('val-batt-charge',   charge,   '%');
+    setVal('val-batt-capacity', ups['battery_capacity_percent'], '%');
+    setVal('val-batt-runtime',  formatRuntime(runtime));
+    setVal('val-batt-voltage',  ups['battery_voltage_v'],  ' V', 1);
+    setVal('val-batt-low-alert',ups['low_batt_alert_limit_percent'], '%');
+
+    // ── Fault Section ─────────────────────────────────────────────────────────
+    setFaultBool('val-internal-failure', ups['internal_failure']);
+    setFaultBool('val-need-replacement', ups['need_replacement']);
+    setFaultBool('val-overload',         ups['overload']);
+    setFaultBool('val-shutdown-imminent',ups['shutdown_imminent']);
+    setFaultBool('val-over-temp',        ups['over_temperature']);
+
+    // ── Power Section ─────────────────────────────────────────────────────────
+    setVal('val-input-voltage',   power['input_voltage_v'],        ' V', 1);
+    setVal('val-input-freq',      power['input_frequency_hz'],     ' Hz', 1);
+    setVal('val-output-voltage',  power['output_voltage_v'],       ' V', 1);
+    setVal('val-output-freq',     power['output_frequency_hz'],    ' Hz', 1);
+    setVal('val-active-power',    power['output_active_power_w'],  ' W', 1);
+    setVal('val-apparent-power',  power['output_apparent_power_va'],' VA', 0);
+    setVal('val-temperature',     power['temperature_c'],          ' °C', 1);
+
+    // Status Dot
+    if (!connected) setStatusDot('disconnected');
+    else if (upsStatus.includes('OFF')) setStatusDot('disconnected');
+    else if (upsStatus.includes('BYPASS') || upsStatus.includes('BYP')) setStatusDot('charging');
+    else if (acPresent === false || discharging === true || upsStatus.includes('OB')) setStatusDot('fail');
+    else if (charging === true)   setStatusDot('charging');
+    else setStatusDot('connected');
+
+    // PC Shutdown & Countdown Status
+    updatePcShutdownStatus(data.pc_shutdown || {});
+}
+
+/**
+ * อัปเดต AC hero card พร้อม Material Symbols icon
+ */
+function updateAcCard(acPresent, charging, connected, upsStatus, discharging) {
+    const card = document.getElementById('card-ac');
+    const statusEl = document.getElementById('ac-status');
+    const iconEl = document.getElementById('ac-icon');
+
+    card.className = 'hero-card hero-card--ac';
+
+    if (!connected || acPresent == null) {
+        statusEl.textContent = '—';
+        statusEl.style.color = 'var(--color-dim)';
+        if (iconEl) iconEl.textContent = 'help_outline';
+        card.classList.add('status-dim');
+    } else if (upsStatus && upsStatus.includes('OFF')) {
+        statusEl.textContent = 'Standby (ปิดการจ่ายไฟ)';
+        statusEl.style.color = 'var(--color-dim)';
+        if (iconEl) iconEl.textContent = 'pause_circle';
+        card.classList.add('status-dim');
+    } else if (upsStatus && (upsStatus.includes('BYPASS') || upsStatus.includes('BYP'))) {
+        statusEl.textContent = 'Bypass Mode';
+        statusEl.style.color = 'var(--color-warn)';
+        if (iconEl) iconEl.textContent = 'sync';
+        card.classList.add('status-charging');
+    } else if (acPresent === false || discharging === true || (upsStatus && upsStatus.includes('OB'))) {
+        statusEl.textContent = 'On Battery';
+        statusEl.style.color = 'var(--color-err)';
+        if (iconEl) iconEl.textContent = 'battery_alert';
+        card.classList.add('status-fail');
+    } else if (charging === true) {
+        statusEl.textContent = 'Online (ชาร์จไฟ)';
+        statusEl.style.color = 'var(--color-warn)';
+        if (iconEl) iconEl.textContent = 'battery_charging_full';
+        card.classList.add('status-charging');
+    } else {
+        statusEl.textContent = 'Online (ปกติ)';
+        statusEl.style.color = 'var(--color-ok)';
+        if (iconEl) iconEl.textContent = 'bolt';
+        card.classList.add('status-ok');
+    }
+}
+
+/**
+ * อัปเดต Device Info tab
+ */
+function updateDeviceInfo(device, ups) {
+    setText('dev-manufacturer', device['manufacturer_string'] || device['manufacturer'] || '—');
+    setText('dev-product',      device['product_string']      || device['product']      || '—');
+    setText('dev-serial',       device['serial_number']       || device['serial']       || '—');
+    setText('dev-firmware',     ups['ups.firmware']           || device['firmware']     || '—');
+    setText('dev-release',      device['release_number']      || device['release']      || '—');
+    setText('dev-usage-page',   device['usage_page']          || '—');
+    setText('dev-usage',        device['usage']               || '—');
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Tab Switching
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * สลับ tab
+ * @param {string} name - ชื่อ tab: 'dashboard' | 'device' | 'control' | 'settings'
+ */
+function switchTab(name) {
+    currentTab = name;
+
+    // Update tab buttons
+    document.querySelectorAll('.tab').forEach(t => {
+        t.classList.remove('tab--active');
+        t.setAttribute('aria-selected', 'false');
+    });
+    const activeTab = document.getElementById(`tab-${name}`);
+    if (activeTab) {
+        activeTab.classList.add('tab--active');
+        activeTab.setAttribute('aria-selected', 'true');
+    }
+
+    // Update panels
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('tab-panel--active'));
+    document.getElementById(`panel-${name}`)?.classList.add('tab-panel--active');
+
+    if (name === 'device') pollOnce();
+    if (name === 'settings') loadSettings();
+    if (name === 'history') loadHistoryData();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Control Panel
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** เริ่ม UPS monitoring */
+async function controlMonitor(action) {
+    const res = await apiPost(`/api/control/monitor/${action}`);
+    showResult('result-monitor',
+        res.monitoring !== undefined
+            ? (res.monitoring ? '[SUCCESS] Monitoring เริ่มทำงานแล้ว' : '[INFO] Monitoring หยุดทำงาน')
+            : `[ERROR] ${res.message || 'Unknown error'}`,
+        res.success !== false);
+}
+
+/** สั่ง PC Shutdown ด้วยมือพร้อมตั้งเวลานับถอยหลัง */
+async function triggerPcShutdown() {
+    const inputEl = document.getElementById('manual-pc-shutdown-delay');
+    const delay = parseInt(inputEl?.value || '60');
+    if (!confirm(`ยืนยันการสั่งปิดเครื่องคอมพิวเตอร์ (PC Shutdown)?\nระบบจะนับถอยหลัง ${delay} วินาทีก่อนปิดเครื่อง!`)) return;
+
+    const res = await apiPost('/api/control/shutdown/trigger', {
+        delay_seconds: delay,
+        reason: `สั่งปิดเครื่องด้วยมือผ่าน Web Dashboard (นับถอยหลัง ${delay}s)`
+    });
+
+    showResult('result-pc-shutdown',
+        res.success ? `[SUCCESS] สั่งปิดเครื่องแล้ว! กำลังนับถอยหลัง ${delay} วินาที` : `[ERROR] ${res.message || 'สั่งปิดเครื่องไม่สำเร็จ'}`,
+        res.success);
+
+    if (res.success) {
+        pollOnce();
+    }
+}
+
+/** ยกเลิก PC auto-shutdown */
+async function cancelShutdown() {
+    const res = await apiPost('/api/control/shutdown/cancel');
+    showResult('result-pc-shutdown',
+        res.success ? '[SUCCESS] ยกเลิก PC Shutdown สำเร็จ' : `[ERROR] ${res.message || 'Error'}`,
+        res.success);
+    if (res.success) {
+        pollOnce();
+    }
+}
+
+/**
+ * อัปเดตสถานะ PC Auto-Shutdown & Live Countdown Timer
+ * @param {Object} pcSd - pc_shutdown dict จาก API
+ */
+function updatePcShutdownStatus(pcSd) {
+    const banner = document.getElementById('shutdown-banner');
+    const bannerClock = document.getElementById('shutdown-banner-clock');
+    const bannerReason = document.getElementById('shutdown-banner-sub');
+    const badge = document.getElementById('pc-shutdown-badge');
+    const timerDisplay = document.getElementById('pc-shutdown-timer-display');
+    const timerDigits = document.getElementById('pc-shutdown-countdown');
+
+    if (pcSd && pcSd.pending && pcSd.remaining_seconds > 0) {
+        const secs = pcSd.remaining_seconds;
+        const formattedTime = formatCountdownTime(secs);
+
+        // Update Banner
+        if (banner) banner.style.display = 'block';
+        if (bannerClock) bannerClock.textContent = formattedTime;
+        if (bannerReason) bannerReason.textContent = `เหตุผล: ${pcSd.reason || 'UPS Event'}`;
+
+        // Update Card Display Box
+        if (badge) {
+            badge.textContent = `กำลังนับถอยหลังปิดเครื่อง (${formattedTime})`;
+            badge.className = 'countdown-badge pending';
+        }
+        if (timerDisplay) timerDisplay.style.display = 'flex';
+        if (timerDigits) timerDigits.textContent = formattedTime;
+
+    } else {
+        // Hide Banner
+        if (banner) banner.style.display = 'none';
+
+        // Update Card Display Box
+        if (badge) {
+            badge.textContent = 'ปกติ (No Pending Shutdown)';
+            badge.className = 'countdown-badge';
+        }
+        if (timerDisplay) timerDisplay.style.display = 'none';
+        if (timerDigits) timerDigits.textContent = '00:00';
+    }
+}
+
+/** Format seconds into MM:SS */
+function formatCountdownTime(seconds) {
+    if (seconds == null || seconds <= 0) return '00:00';
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    const mm = String(m).padStart(2, '0');
+    const ss = String(s).padStart(2, '0');
+    return `${mm}:${ss}`;
+}
+
+/** UPS Self Test */
+async function upsSelfTest(action) {
+    const res = await apiPost('/api/ups/control/test', { action });
+    showResult('result-selftest',
+        res.success ? `[SUCCESS] ${action === 'run' ? 'เริ่ม' : 'ยกเลิก'} Self Test แล้ว` : `[ERROR] ${res.message}`,
+        res.success);
+}
+
+/** UPS Output Shutdown */
+async function upsShutdown() {
+    const delay = parseInt(document.getElementById('ups-shutdown-delay')?.value || '60');
+    if (!confirm(`ยืนยันดำเนินการ: UPS จะหยุดจ่ายไฟหลังจาก ${delay} วินาที\nอุปกรณ์ต่อพ่วงทั้งหมดจะดับ!`)) return;
+    const res = await apiPost('/api/ups/control/shutdown', { delay_seconds: delay });
+    showResult('result-ups-shutdown', res.success ? `[SUCCESS] UPS Shutdown scheduled (${delay}s)` : `[ERROR] ${res.message}`, res.success);
+}
+
+/** ยกเลิก UPS Output Shutdown */
+async function upsShutdownCancel() {
+    const res = await apiPost('/api/ups/control/cancel_shutdown');
+    showResult('result-ups-shutdown',
+        res.success ? '[SUCCESS] ยกเลิก UPS Output Shutdown แล้ว' : `[ERROR] ${res.message}`,
+        res.success);
+}
+
+/** อ่านเวลานาฬิกา UPS (RID 0x29) */
+async function readUpsTime() {
+    try {
+        const res = await fetch('/api/ups/time').then(r => r.json());
+        if (res.success && res.ups_time) {
+            setText('val-ups-clock-time', res.ups_time);
+            showResult('result-ups-time', `[SUCCESS] อ่านเวลา UPS สำเร็จ: ${res.ups_time}`, true);
+        } else {
+            showResult('result-ups-time', `[ERROR] ${res.message || 'อ่านไม่สำเร็จ'}`, false);
+        }
+    } catch (e) {
+        showResult('result-ups-time', `[ERROR] ${e.message}`, false);
+    }
+}
+
+/** ซิงค์เวลานาฬิกา PC ไปยัง UPS (RID 0x29) */
+async function syncUpsTime() {
+    if (!confirm('ยืนยัน: ต้องการตั้งเวลานาฬิกาภายใน UPS ให้ตรงกับเวลาของเครื่อง PC?')) return;
+    const res = await apiPost('/api/ups/time/sync');
+    if (res.success) {
+        setText('val-ups-clock-time', res.synced_time);
+        showResult('result-ups-time', `[SUCCESS] ซิงค์เวลาสำเร็จ: ${res.synced_time}`, true);
+    } else {
+        showResult('result-ups-time', `[ERROR] ${res.message || 'ตั้งเวลาไม่สำเร็จ'}`, false);
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Settings
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** โหลด config จาก server มาใส่ form */
+async function loadSettings() {
+    try {
+        const cfg = await fetch('/api/config').then(r => r.json());
+        setCheck('cfg-auto-shutdown',    cfg['auto_shutdown_enabled']);
+        setNumVal('cfg-shutdown-delay',  cfg['shutdown_delay_minutes']);
+        setNumVal('cfg-batt-threshold',  cfg['shutdown_battery_threshold']);
+        setCheck('cfg-shutdown-ac-fail', cfg['shutdown_on_ac_fail'] !== false);
+        setCheck('cfg-shutdown-low-batt',cfg['shutdown_on_low_battery'] !== false);
+        setCheck('cfg-notif-enabled',    cfg['notifications_enabled'] !== false);
+        setCheck('cfg-notif-ac-fail',    cfg['notify_on_ac_fail'] !== false);
+        setCheck('cfg-notif-ac-restore', cfg['notify_on_ac_restore'] !== false);
+        setCheck('cfg-notif-low-batt',   cfg['notify_on_low_battery'] !== false);
+        setCheck('cfg-db-enabled',       cfg['db_enabled'] !== false);
+        setNumVal('cfg-db-telemetry-interval', cfg['db_telemetry_interval_s'] || 10);
+        setNumVal('cfg-db-retention',    cfg['db_retention_days'] || 30);
+        setCheck('cfg-startup-windows',  cfg['startup_with_windows'] !== false);
+        setNumVal('cfg-poll-interval',   cfg['poll_interval_s']);
+    } catch (e) {
+        console.warn('Failed to load settings:', e);
+    }
+}
+
+/** บันทึก settings ไปยัง server */
+async function saveSettings() {
+    const payload = {
+        auto_shutdown_enabled:       getCheck('cfg-auto-shutdown'),
+        shutdown_delay_minutes:      getNumVal('cfg-shutdown-delay'),
+        shutdown_battery_threshold:  getNumVal('cfg-batt-threshold'),
+        shutdown_on_ac_fail:         getCheck('cfg-shutdown-ac-fail'),
+        shutdown_on_low_battery:     getCheck('cfg-shutdown-low-batt'),
+        notifications_enabled:       getCheck('cfg-notif-enabled'),
+        notify_on_ac_fail:           getCheck('cfg-notif-ac-fail'),
+        notify_on_ac_restore:        getCheck('cfg-notif-ac-restore'),
+        notify_on_low_battery:       getCheck('cfg-notif-low-batt'),
+        db_enabled:                  getCheck('cfg-db-enabled'),
+        db_telemetry_interval_s:     getNumVal('cfg-db-telemetry-interval'),
+        db_retention_days:           getNumVal('cfg-db-retention'),
+        startup_with_windows:        getCheck('cfg-startup-windows'),
+        poll_interval_s:             getNumVal('cfg-poll-interval'),
+    };
+
+    const res = await apiPost('/api/config', payload);
+    showResult('result-settings',
+        res.success ? '[SUCCESS] บันทึกการตั้งค่าสำเร็จ' : `[ERROR] บันทึกไม่สำเร็จ: ${res.message || ''}`,
+        res.success);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// History & Events (Database)
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadHistoryData() {
+    const hours = getNumVal('history-hours') || 24;
+    try {
+        const [histRes, eventRes] = await Promise.all([
+            fetch(`/api/history?hours=${hours}`).then(r => r.json()),
+            fetch('/api/events?limit=50').then(r => r.json()),
+        ]);
+
+        if (histRes.status === 'ok') {
+            renderHistoryChart('history-canvas', histRes.data || []);
+        }
+        if (eventRes.status === 'ok') {
+            renderEventsTable('events-table-body', eventRes.events || []);
+        }
+    } catch (e) {
+        console.error('Failed to load history data:', e);
+    }
+}
+
+async function clearDatabase() {
+    if (!confirm('ยืนยัน: คุณต้องการล้างข้อมูลประวัติและ Event Logs ทั้งหมดใน SQLite ฐานข้อมูลหรือไม่?')) return;
+    const res = await apiPost('/api/database/clear');
+    if (res.status === 'ok' || res.success) {
+        alert(res.message || 'ล้างข้อมูลเรียบร้อยแล้ว');
+        loadHistoryData();
+    } else {
+        alert('เกิดข้อผิดพลาด: ' + (res.message || ''));
+    }
+}
+
+function renderEventsTable(tbodyId, events) {
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+
+    if (!events || events.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" style="padding: 20px; text-align: center; color: var(--text-secondary);">ไม่พบประวัติเหตุการณ์ในระบบ</td></tr>`;
+        return;
+    }
+
+    let html = '';
+    events.forEach(e => {
+        const timeStr = formatIsoTime(e.timestamp);
+        const eventBadge = getEventBadgeHtml(e.event_type);
+        const acStr = e.ac_present === true ? '<span style="color:var(--color-ok);">Normal</span>' : (e.ac_present === false ? '<span style="color:var(--color-err);">AC Fail</span>' : '—');
+        const battStr = e.battery_level != null ? `${e.battery_level}%` : '—';
+
+        html += `
+            <tr style="border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.05));">
+                <td style="padding: 10px 16px; color: var(--text-secondary);">${e.id}</td>
+                <td style="padding: 10px 16px;">${timeStr}</td>
+                <td style="padding: 10px 16px;">${eventBadge}</td>
+                <td style="padding: 10px 16px;">${escapeHtml(e.message || '')}</td>
+                <td style="padding: 10px 16px; font-weight: 500;">${battStr}</td>
+                <td style="padding: 10px 16px;">${acStr}</td>
+            </tr>
+        `;
+    });
+    tbody.innerHTML = html;
+}
+
+function getEventBadgeHtml(eventType) {
+    let color = '#3B82F6';
+    let bg = 'rgba(59, 130, 246, 0.15)';
+    if (eventType === 'AC_FAIL') { color = '#EF4444'; bg = 'rgba(239, 68, 68, 0.15)'; }
+    else if (eventType === 'AC_RESTORE') { color = '#10B981'; bg = 'rgba(16, 185, 129, 0.15)'; }
+    else if (eventType === 'BATTERY_LOW' || eventType === 'BATTERY_CRITICAL') { color = '#F59E0B'; bg = 'rgba(245, 158, 11, 0.15)'; }
+    else if (eventType === 'SYSTEM_START') { color = '#8B5CF6'; bg = 'rgba(139, 92, 246, 0.15)'; }
+
+    return `<span style="display:inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 600; color:${color}; background:${bg};">${eventType}</span>`;
+}
+
+function formatIsoTime(isoStr) {
+    if (!isoStr) return '—';
+    try {
+        const d = new Date(isoStr);
+        return d.toLocaleString('th-TH', { hour12: false });
+    } catch (e) {
+        return isoStr;
+    }
+}
+
+function escapeHtml(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function renderHistoryChart(canvasId, data) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    // High DPI scaling
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const width = rect.width;
+    const height = rect.height;
+
+    ctx.clearRect(0, 0, width, height);
+
+    if (!data || data.length === 0) {
+        ctx.fillStyle = '#94A3B8';
+        ctx.font = '14px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('ยังไม่มีข้อมูล Telemetry สำหรับช่วงเวลานี้', width / 2, height / 2);
+        return;
+    }
+
+    const padding = { top: 20, right: 30, bottom: 40, left: 50 };
+    const chartW = width - padding.left - padding.right;
+    const chartH = height - padding.top - padding.bottom;
+
+    // Draw Grid Lines (Y axis: 0 - 100%)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.lineWidth = 1;
+
+    for (let i = 0; i <= 4; i++) {
+        const y = padding.top + (chartH / 4) * i;
+        ctx.beginPath();
+        ctx.moveTo(padding.left, y);
+        ctx.lineTo(width - padding.right, y);
+        ctx.stroke();
+
+        // Y Labels
+        const labelVal = Math.round(100 - i * 25);
+        ctx.fillStyle = '#64748B';
+        ctx.font = '11px JetBrains Mono, monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText(`${labelVal}%`, padding.left - 8, y + 4);
+    }
+
+    const n = data.length;
+    const getX = (idx) => padding.left + (idx / Math.max(1, n - 1)) * chartW;
+
+    // 1. Draw Battery Line (Green: #10B981)
+    drawLineSeries(ctx, data, getX, (d) => d.battery_charge, padding, chartH, 0, 100, '#10B981');
+
+    // 2. Draw Output Load Line (Amber: #F59E0B)
+    drawLineSeries(ctx, data, getX, (d) => d.output_load, padding, chartH, 0, 100, '#F59E0B');
+
+    // 3. Draw Input Voltage Line (Scaled 0-300V to 0-100% height) (Blue: #3B82F6)
+    drawLineSeries(ctx, data, getX, (d) => (d.input_voltage ? (d.input_voltage / 300) * 100 : null), padding, chartH, 0, 100, '#3B82F6');
+
+    // Draw X Time Labels (Start, Middle, End)
+    ctx.fillStyle = '#64748B';
+    ctx.font = '11px JetBrains Mono, monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(formatTimeShort(data[0].timestamp), padding.left, height - 10);
+
+    ctx.textAlign = 'center';
+    ctx.fillText(formatTimeShort(data[Math.floor(n / 2)].timestamp), padding.left + chartW / 2, height - 10);
+
+    ctx.textAlign = 'right';
+    ctx.fillText(formatTimeShort(data[n - 1].timestamp), width - padding.right, height - 10);
+}
+
+function drawLineSeries(ctx, data, getX, valExtractor, padding, chartH, minVal, maxVal, color) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    let started = false;
+
+    for (let i = 0; i < data.length; i++) {
+        const rawVal = valExtractor(data[i]);
+        if (rawVal == null) continue;
+
+        const clamped = Math.max(minVal, Math.min(maxVal, rawVal));
+        const norm = (clamped - minVal) / (maxVal - minVal);
+        const x = getX(i);
+        const y = padding.top + chartH * (1 - norm);
+
+        if (!started) {
+            ctx.moveTo(x, y);
+            started = true;
+        } else {
+            ctx.lineTo(x, y);
+        }
+    }
+    ctx.stroke();
+}
+
+function formatTimeShort(isoStr) {
+    if (!isoStr) return '';
+    try {
+        const d = new Date(isoStr);
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        return `${hh}:${mm}`;
+    } catch (e) {
+        return '';
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// UI Helpers
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** ตั้ง text content ของ element */
+function setText(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value ?? '—';
+}
+
+/**
+ * ตั้ง value พร้อม unit
+ */
+function setVal(id, value, unit = '', decimals = 0) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (value == null) { el.textContent = '—'; return; }
+    const formatted = typeof value === 'number' ? value.toFixed(decimals) : value;
+    el.textContent = `${formatted}${unit}`;
+}
+
+/**
+ * ตั้ง value พร้อม CSS color class
+ */
+function setValWithColor(id, value, colorClass) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = value ?? '—';
+    el.className = `data-row__value ${colorClass ? `val-${colorClass}` : ''}`;
+}
+
+/**
+ * ตั้ง boolean value พร้อมสีตามผล
+ */
+function setBool(id, value, trueIsGood, trueClass, falseClass) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (value == null) { el.textContent = '—'; el.className = 'data-row__value val-dim'; return; }
+    const isTrue = value === true;
+    el.textContent = isTrue ? 'Normal' : 'Off';
+    el.className = `data-row__value val-${isTrue ? trueClass : falseClass}`;
+}
+
+/**
+ * ตั้ง fault boolean — True = ผิดปกติ (แดง), False = ปกติ (เขียว)
+ */
+function setFaultBool(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (value == null) { el.textContent = '—'; el.className = 'data-row__value val-dim'; return; }
+    const isTrue = value === true;
+    el.textContent = isTrue ? 'FAULT' : 'Normal';
+    el.className = `data-row__value val-${isTrue ? 'err' : 'ok'}`;
+}
+
+/** อัปเดต battery progress bar */
+function setBatteryBar(percent) {
+    const bar = document.getElementById('battery-bar');
+    if (!bar) return;
+    const pct = Math.max(0, Math.min(100, percent));
+    bar.style.width = `${pct}%`;
+    bar.style.background = pct <= 10 ? 'var(--color-critical)' :
+                           pct <= 20 ? 'var(--color-err)' :
+                           pct <= 40 ? 'var(--color-warn)' : 'var(--color-ok)';
+}
+
+/** แปลง runtime วินาที → "Xh Ym" หรือ "Ym Zs" */
+function formatRuntime(seconds) {
+    if (seconds == null || seconds <= 0) return '—';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+}
+
+/** ตั้งสถานะ dot ใน header */
+function setStatusDot(status) {
+    const dot = document.getElementById('status-dot');
+    if (!dot) return;
+    dot.className = `status-dot ${status}`;
+}
+
+/** แสดง/ซ่อน disconnect banner */
+function showBanner() { const b = document.getElementById('disconnect-banner'); if (b) b.style.display = 'flex'; }
+function hideBanner() { const b = document.getElementById('disconnect-banner'); if (b) b.style.display = 'none'; }
+
+/**
+ * แสดง result message ใน result-box
+ */
+function showResult(id, message, success = true) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = message;
+    el.style.color = success ? 'var(--color-ok)' : 'var(--color-err)';
+    el.style.display = 'block';
+    setTimeout(() => { if (el) el.style.color = 'var(--text-secondary)'; }, 4000);
+}
+
+// ── Form helpers ──────────────────────────────────────────────────────────────
+function setCheck(id, val)   { const el = document.getElementById(id); if (el) el.checked = !!val; }
+function setNumVal(id, val)  { const el = document.getElementById(id); if (el && val != null) el.value = val; }
+function getCheck(id)        { return document.getElementById(id)?.checked ?? false; }
+function getNumVal(id)       { return parseFloat(document.getElementById(id)?.value || '0'); }
+
+// ── API helpers ───────────────────────────────────────────────────────────────
+async function apiPost(url, body = {}) {
+    try {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        return await res.json();
+    } catch (e) {
+        console.error(`POST ${url} failed:`, e);
+        return { success: false, message: e.message };
+    }
+}

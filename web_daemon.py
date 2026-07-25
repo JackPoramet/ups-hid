@@ -9,6 +9,7 @@ import re
 import sys
 import threading
 import time
+import platform
 from pathlib import Path
 from typing import Optional
 
@@ -148,6 +149,28 @@ class UPSPoller(threading.Thread):
                 )
                 ups = decode_feature_reports(raw)
                 ups.update(infer_tentative_live_values(raw, ups))
+                
+                # --- Windows libusb0 fallback for 0x31 (Input Voltage) ---
+                if "input.voltage" not in ups and platform.system().lower() == "windows":
+                    try:
+                        import usb.core
+                        import usb.backend.libusb0
+                        dll_path = r"C:\Program Files\WinpowerG2\libUSB_driver\amd64\libusb0.dll"
+                        if os.path.exists(dll_path):
+                            backend = usb.backend.libusb0.get_backend(find_library=lambda x: dll_path)
+                            dev = usb.core.find(idVendor=self.vid, idProduct=self.pid, backend=backend)
+                            if dev:
+                                # bmRequestType=0xA1, bRequest=0x01, wValue=0x0331, wIndex=0
+                                payload = dev.ctrl_transfer(0xA1, 0x01, 0x0331, 0, 5, timeout=1000)
+                                if payload and len(payload) >= 5:
+                                    # payload[0] = Report ID 0x31
+                                    # payload[1:3] = Frequency
+                                    # payload[3:5] = Voltage
+                                    volt_raw = payload[3] | (payload[4] << 8)
+                                    ups["input.voltage"] = volt_raw / 10.0
+                    except Exception as e:
+                        logging.debug(f"libusb0 fallback failed: {e}")
+                
                 _update_api_store(self._info, ups, status_message="Connected")
             except Exception as exc:
                 logging.error(f"Poll error: {exc}")

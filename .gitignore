@@ -1,3 +1,45 @@
-.venv/
+# Byte-compiled / optimized / DLL files
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Build & Distribution Artifacts (PyInstaller, Inno Setup, Setuptools)
 build/
+dist/
+*.exe
+*.msi
+Output/
+*.egg-info/
+.eggs/
+
+# Database & Log Files
+*.db
+*.sqlite
+*.sqlite3
+*.log
+logs/
+
+# Temporary Files & Folders
+temp/
+*.tmp
+
+# Editor & IDE Settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# Windows OS Junk
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
