@@ -73,7 +73,7 @@ def _win_get_feature(rid: int, length: int) -> Optional[List[int]]:
         return None
 
 
-DEFAULT_REPORT_SIZES = (8, 16, 32, 64)
+DEFAULT_REPORT_SIZES = (64,)
 DEFAULT_DESCRIPTOR_TXT = "report_descriptor_live.txt"
 DEFAULT_DESCRIPTOR_BIN = "report_descriptor_live.bin"
 
@@ -529,6 +529,12 @@ def read_feature_report_best(
     sizes: Sequence[int] = DEFAULT_REPORT_SIZES,
     retries: int = 1,
 ) -> Tuple[Optional[List[int]], dict]:
+    """อ่าน feature report จาก HID device.
+
+    ลองแต่ละ size ใน *sizes* และเลือก result ที่มี non-zero bytes มากที่สุด.
+    เนื่องจาก HID feature reports มีขนาดคงที่ การใช้ sizes=(64,) ก็เพียงพอ
+    (device จะ return payload จริงๆ ไม่ขึ้นกับ buffer size ที่ขอ)
+    """
     best = None
     best_size = None
     best_non_zero = -1
