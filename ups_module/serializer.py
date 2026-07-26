@@ -1,32 +1,16 @@
 """
-ups_module/serializer.py
-~~~~~~~~~~~~~~~~~~~~~~~~
-JSON serialization helpers.
-
-Converts raw HID data (which may contain bytes/bytearrays) to
-JSON-safe Python types.
+JSON serialization helpers for raw HID data.
 """
 
 from __future__ import annotations
 
 import json
-import time
 from typing import Any, Dict
 
 
 def sanitize_for_json(d: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Recursively convert a dict of raw UPS values to JSON-serializable types.
-
-    - bytes/bytearray   -> utf-8 decoded string
-    - int/float/str/bool/None -> unchanged
-    - list              -> sanitized element-by-element
-    - anything else     -> str(value)
-    """
-    out: Dict[str, Any] = {}
-    for k, v in d.items():
-        out[k] = _sanitize_value(v)
-    return out
+    """Recursively convert raw UPS dict values to JSON-serializable types."""
+    return {k: _sanitize_value(v) for k, v in d.items()}
 
 
 def _sanitize_value(v: Any) -> Any:
@@ -49,21 +33,10 @@ def build_response_envelope(
     driver_name: str = "ups-hid",
     driver_version: str = "1.0.0",
 ) -> Dict[str, Any]:
-    """
-    Build the full NUT-style JSON response envelope used by the REST API.
-
-    Structure::
-
-        {
-          "driver":  { "name": "ups-hid", "version": "1.0.0" },
-          "device":  { "manufacturer": ..., "model": ..., ... },
-          "ups":     { "ups.status": "OL", "battery.charge": 95, ... },
-          "meta":    { "timestamp": ..., "connected": true, "message": ... }
-        }
-    """
-    manufacturer = device.get("manufacturer_string", "")
-    model = device.get("product_string", "")
-    serial = device.get("serial_number", "")
+    """Build the standard NUT-style JSON response envelope."""
+    mfr = device.get("manufacturer_string") or device.get("manufacturer", "")
+    model = device.get("product_string") or device.get("model", "")
+    serial = device.get("serial_number") or device.get("serial", "")
 
     return {
         "driver": {
@@ -71,7 +44,7 @@ def build_response_envelope(
             "version": driver_version,
         },
         "device": {
-            "manufacturer": manufacturer,
+            "manufacturer": mfr,
             "model": model,
             "serial": serial,
             "type": "ups",
@@ -86,5 +59,5 @@ def build_response_envelope(
 
 
 def to_json_string(data: Dict[str, Any], indent: int = 2) -> str:
-    """Serialize *data* to a JSON string, handling non-serializable types."""
+    """Serialize data dict to JSON string."""
     return json.dumps(data, ensure_ascii=False, indent=indent, default=str)

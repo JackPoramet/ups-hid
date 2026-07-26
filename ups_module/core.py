@@ -428,7 +428,9 @@ def open_ups_device(vid: int = VID, pid: int = PID, verbose: bool = False):
 
     target = next((d for d in devices if d.get("usage_page") == 0x84 and d.get("usage") == 0x04), None)
     if target is None:
-        target = next((d for d in devices if d.get("usage_page") == 0x84), devices[0])
+        target = next((d for d in devices if d.get("usage_page") == 0x84), None)
+    if target is None:
+        target = next((d for d in devices if d.get("manufacturer_string") or d.get("product_string")), devices[0])
 
     h = hid.device()
     h.open_path(target["path"])

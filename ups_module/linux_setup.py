@@ -73,6 +73,21 @@ def check_system_deps() -> List[dict]:
             "detail": found or f"ไม่พบ {lib_name} ในระบบ",
         })
 
+    # ดึง user site-packages เผื่อติดตั้งผ่าน pip install --user (รวมกรณีรันด้วย sudo)
+    import site
+    try:
+        user_site = site.getusersitepackages()
+        if user_site and user_site not in sys.path:
+            sys.path.append(user_site)
+    except Exception:
+        pass
+
+    if os.name == "posix":
+        for p in Path("/home").glob("*/.local/lib/python*/site-packages"):
+            p_str = str(p)
+            if p_str not in sys.path:
+                sys.path.append(p_str)
+
     # ตรวจ Python packages
     for module_name, pip_name in REQUIRED_PYTHON_PACKAGES:
         try:
