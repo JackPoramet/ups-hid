@@ -250,7 +250,7 @@ class UPSClient:
         raw_reports, _ = read_all_feature_reports(
             h,
             report_ids=self._report_ids,
-            sizes=(64,),
+            sizes=(8, 16, 32),
             retries=1,
             include_zero=False,
         )

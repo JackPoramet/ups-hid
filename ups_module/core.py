@@ -73,7 +73,7 @@ def _win_get_feature(rid: int, length: int) -> Optional[List[int]]:
         return None
 
 
-DEFAULT_REPORT_SIZES = (64,)
+DEFAULT_REPORT_SIZES = (8, 16, 32)
 DEFAULT_DESCRIPTOR_TXT = "report_descriptor_live.txt"
 DEFAULT_DESCRIPTOR_BIN = "report_descriptor_live.bin"
 
@@ -434,6 +434,25 @@ def open_ups_device(vid: int = VID, pid: int = PID, verbose: bool = False):
 
     h = hid.device()
     h.open_path(target["path"])
+
+    # Directly read string descriptors from open handle if missing from enumerate
+    if not target.get("manufacturer_string"):
+        try:
+            target["manufacturer_string"] = h.get_manufacturer_string() or "PHOENIXTEC"
+        except Exception:
+            target["manufacturer_string"] = "PHOENIXTEC"
+
+    if not target.get("product_string"):
+        try:
+            target["product_string"] = h.get_product_string() or "Innova Unity"
+        except Exception:
+            target["product_string"] = "Innova Unity"
+
+    if not target.get("serial_number"):
+        try:
+            target["serial_number"] = h.get_serial_number_string() or ""
+        except Exception:
+            pass
 
     if verbose:
         print("\nเปิดอุปกรณ์สำเร็จ")
