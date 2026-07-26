@@ -76,6 +76,9 @@ async function pollOnce() {
         if (currentTab === 'device') {
             updateDeviceInfo(upsRes.device || {}, upsRes.ups || {});
         }
+        if (currentTab === 'history') {
+            loadHistoryData();
+        }
 
     } catch (err) {
         consecutiveErrors++;
@@ -501,7 +504,7 @@ async function loadHistoryData() {
         ]);
 
         if (histRes.status === 'ok') {
-            renderHistoryChart('history-canvas', histRes.data || []);
+            updateAllHistoryCharts(histRes.data || []);
         }
         if (eventRes.status === 'ok') {
             renderEventsTable('events-table-body', eventRes.events || []);
@@ -577,12 +580,73 @@ function escapeHtml(str) {
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function renderHistoryChart(canvasId, data) {
+// ══════════════════════════════════════════════════════════════════════════════
+// 3 Separate History Canvas Charts Rendering
+// ══════════════════════════════════════════════════════════════════════════════
+
+const chartHoverStates = {};
+
+/**
+ * อัปเดตข้อมูลและแสดงผลกราฟแยกทั้ง 3 อัน (Battery, Voltage, Load)
+ * @param {Array} data - ข้อมูล telemetry จาก API
+ */
+function updateAllHistoryCharts(data) {
+    if (!data || data.length === 0) {
+        setText('chart-val-battery', '—');
+        setText('chart-val-voltage', '—');
+        setText('chart-val-load', '—');
+        renderSingleMetricChart('chart-battery', [], null, 0, 100, '%', '#10B981');
+        renderSingleMetricChart('chart-voltage', [], null, 0, 300, 'V', '#3B82F6');
+        renderSingleMetricChart('chart-load', [], null, 0, 100, '%', '#F59E0B');
+        return;
+    }
+
+    const getBatt = (d) => d.battery_charge ?? d.battery_capacity_pct ?? null;
+    const getVolt = (d) => d.input_voltage ?? d.input_voltage_v ?? null;
+    const getLoad = (d) => d.output_load ?? d.percent_load ?? null;
+
+    // Update Header Value Badges
+    const latest = data[data.length - 1];
+    const latestBatt = getBatt(latest);
+    const latestVolt = getVolt(latest);
+    const latestLoad = getLoad(latest);
+
+    setText('chart-val-battery', latestBatt != null ? `${Math.round(latestBatt)}%` : '—');
+    setText('chart-val-voltage', latestVolt != null ? `${Number(latestVolt).toFixed(1)} V` : '—');
+    setText('chart-val-load', latestLoad != null ? `${Math.round(latestLoad)}%` : '—');
+
+    // Render 3 Individual Charts
+    renderSingleMetricChart('chart-battery', data, getBatt, 0, 100, '%', '#10B981');
+    renderSingleMetricChart('chart-voltage', data, getVolt, 0, 300, 'V', '#3B82F6');
+    renderSingleMetricChart('chart-load', data, getLoad, 0, 100, '%', '#F59E0B');
+}
+
+function renderSingleMetricChart(canvasId, data, valExtractor, minVal, maxVal, unit, color) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
 
-    // High DPI scaling
+    // Bind mouse events once per canvas
+    if (!canvas.dataset.hoverBound) {
+        canvas.dataset.hoverBound = 'true';
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            chartHoverStates[canvasId] = {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            };
+            drawSingleMetricChartContent(canvas, ctx, data, valExtractor, minVal, maxVal, unit, color, chartHoverStates[canvasId]);
+        });
+        canvas.addEventListener('mouseleave', () => {
+            chartHoverStates[canvasId] = null;
+            drawSingleMetricChartContent(canvas, ctx, data, valExtractor, minVal, maxVal, unit, color, null);
+        });
+    }
+
+    drawSingleMetricChartContent(canvas, ctx, data, valExtractor, minVal, maxVal, unit, color, chartHoverStates[canvasId]);
+}
+
+function drawSingleMetricChartContent(canvas, ctx, data, valExtractor, minVal, maxVal, unit, color, hoverPos) {
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
     canvas.width = rect.width * dpr;
@@ -594,60 +658,155 @@ function renderHistoryChart(canvasId, data) {
 
     ctx.clearRect(0, 0, width, height);
 
-    if (!data || data.length === 0) {
-        ctx.fillStyle = '#94A3B8';
-        ctx.font = '14px Inter, sans-serif';
+    if (!data || data.length === 0 || !valExtractor) {
+        ctx.fillStyle = '#64748B';
+        ctx.font = '13px Inter, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('ยังไม่มีข้อมูล Telemetry สำหรับช่วงเวลานี้', width / 2, height / 2);
+        ctx.fillText('ยังไม่มีข้อมูลสำหรับช่วงเวลานี้', width / 2, height / 2);
         return;
     }
 
-    const padding = { top: 20, right: 30, bottom: 40, left: 50 };
+    const padding = { top: 15, right: 45, bottom: 25, left: 45 };
     const chartW = width - padding.left - padding.right;
     const chartH = height - padding.top - padding.bottom;
 
-    // Draw Grid Lines (Y axis: 0 - 100%)
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    // Draw horizontal grid lines & Y labels (4 ticks)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
     ctx.lineWidth = 1;
 
-    for (let i = 0; i <= 4; i++) {
-        const y = padding.top + (chartH / 4) * i;
+    for (let i = 0; i <= 3; i++) {
+        const y = padding.top + (chartH / 3) * i;
         ctx.beginPath();
         ctx.moveTo(padding.left, y);
         ctx.lineTo(width - padding.right, y);
         ctx.stroke();
 
-        // Y Labels
-        const labelVal = Math.round(100 - i * 25);
+        const stepVal = minVal + ((maxVal - minVal) * (3 - i)) / 3;
         ctx.fillStyle = '#64748B';
-        ctx.font = '11px JetBrains Mono, monospace';
+        ctx.font = '10px JetBrains Mono, monospace';
         ctx.textAlign = 'right';
-        ctx.fillText(`${labelVal}%`, padding.left - 8, y + 4);
+        ctx.fillText(`${Math.round(stepVal)}${unit}`, padding.left - 6, y + 3);
     }
 
     const n = data.length;
     const getX = (idx) => padding.left + (idx / Math.max(1, n - 1)) * chartW;
 
-    // 1. Draw Battery Line (Green: #10B981)
-    drawLineSeries(ctx, data, getX, (d) => d.battery_charge, padding, chartH, 0, 100, '#10B981');
+    // Create Gradient Fill below the line
+    const gradient = ctx.createLinearGradient(0, padding.top, 0, height - padding.bottom);
+    const alphaColor = color === '#10B981' ? 'rgba(16, 185, 129, 0.2)' : (color === '#3B82F6' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(245, 158, 11, 0.2)');
+    gradient.addColorStop(0, alphaColor);
+    gradient.addColorStop(1, 'rgba(15, 23, 42, 0.0)');
 
-    // 2. Draw Output Load Line (Amber: #F59E0B)
-    drawLineSeries(ctx, data, getX, (d) => d.output_load, padding, chartH, 0, 100, '#F59E0B');
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    let started = false;
+    let lastX = padding.left;
 
-    // 3. Draw Input Voltage Line (Scaled 0-300V to 0-100% height) (Blue: #3B82F6)
-    drawLineSeries(ctx, data, getX, (d) => (d.input_voltage ? (d.input_voltage / 300) * 100 : null), padding, chartH, 0, 100, '#3B82F6');
+    for (let i = 0; i < n; i++) {
+        const rawVal = valExtractor(data[i]);
+        if (rawVal == null) continue;
 
-    // Draw X Time Labels (Start, Middle, End)
+        const clamped = Math.max(minVal, Math.min(maxVal, rawVal));
+        const norm = (clamped - minVal) / (maxVal - minVal);
+        const x = getX(i);
+        const y = padding.top + chartH * (1 - norm);
+
+        if (!started) {
+            ctx.moveTo(x, padding.top + chartH);
+            ctx.lineTo(x, y);
+            started = true;
+        } else {
+            ctx.lineTo(x, y);
+        }
+        lastX = x;
+    }
+    if (started) {
+        ctx.lineTo(lastX, padding.top + chartH);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    // Draw Line Series
+    drawLineSeries(ctx, data, getX, valExtractor, padding, chartH, minVal, maxVal, color);
+
+    // X Time Labels (Start, Middle, End)
     ctx.fillStyle = '#64748B';
-    ctx.font = '11px JetBrains Mono, monospace';
+    ctx.font = '10px JetBrains Mono, monospace';
     ctx.textAlign = 'left';
-    ctx.fillText(formatTimeShort(data[0].timestamp), padding.left, height - 10);
+    ctx.fillText(formatTimeShort(data[0].timestamp), padding.left, height - 6);
 
     ctx.textAlign = 'center';
-    ctx.fillText(formatTimeShort(data[Math.floor(n / 2)].timestamp), padding.left + chartW / 2, height - 10);
+    ctx.fillText(formatTimeShort(data[Math.floor(n / 2)].timestamp), padding.left + chartW / 2, height - 6);
 
     ctx.textAlign = 'right';
-    ctx.fillText(formatTimeShort(data[n - 1].timestamp), width - padding.right, height - 10);
+    ctx.fillText(formatTimeShort(data[n - 1].timestamp), width - padding.right, height - 6);
+
+    // Hover Tooltip & Guideline
+    if (hoverPos && hoverPos.x >= padding.left && hoverPos.x <= width - padding.right) {
+        const relativeX = (hoverPos.x - padding.left) / chartW;
+        const nearestIdx = Math.min(n - 1, Math.max(0, Math.round(relativeX * (n - 1))));
+        const item = data[nearestIdx];
+        if (item) {
+            const pointX = getX(nearestIdx);
+            const val = valExtractor(item);
+
+            // Vertical Guide Line
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(pointX, padding.top);
+            ctx.lineTo(pointX, height - padding.bottom);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            if (val != null) {
+                const clamped = Math.max(minVal, Math.min(maxVal, val));
+                const norm = (clamped - minVal) / (maxVal - minVal);
+                const py = padding.top + chartH * (1 - norm);
+
+                // Draw Highlight Dot
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(pointX, py, 4, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#0F172A';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Tooltip Box
+                const ttTime = formatIsoTime(item.timestamp);
+                const valStr = typeof val === 'number' ? (unit === 'V' ? val.toFixed(1) : Math.round(val)) + ' ' + unit : '—';
+                const ttText = `${ttTime} | ${valStr}`;
+
+                ctx.font = '11px Inter, sans-serif';
+                const textWidth = ctx.measureText(ttText).width;
+                const ttW = textWidth + 16;
+                const ttH = 24;
+
+                let ttX = pointX - ttW / 2;
+                if (ttX < padding.left) ttX = padding.left;
+                if (ttX + ttW > width - padding.right) ttX = width - padding.right - ttW;
+                let ttY = py - 32;
+                if (ttY < padding.top) ttY = py + 10;
+
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                if (typeof ctx.roundRect === 'function') {
+                    ctx.roundRect(ttX, ttY, ttW, ttH, 4);
+                } else {
+                    ctx.rect(ttX, ttY, ttW, ttH);
+                }
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = '#F8FAFC';
+                ctx.textAlign = 'center';
+                ctx.fillText(ttText, ttX + ttW / 2, ttY + 16);
+            }
+        }
+    }
 }
 
 function drawLineSeries(ctx, data, getX, valExtractor, padding, chartH, minVal, maxVal, color) {

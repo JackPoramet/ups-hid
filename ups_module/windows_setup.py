@@ -1,19 +1,31 @@
+"""
+ups_module/windows_setup.py
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Windows-only: ติดตั้ง libusb0.sys filter driver ผ่าน UAC prompt
+
+บน Linux ไม่ต้องใช้ไฟล์นี้ — ใช้ linux_setup.py แทน
+"""
+
+import logging
 import os
 import sys
-import ctypes
-import logging
 import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+
 def install_filter(vid: int, pid: int) -> bool:
     """
     Triggers the UAC prompt to install the libusb0.sys filter driver.
+
+    Windows-only — บน Linux จะ return False ทันที
     Uses install-filter-win.exe from the libusb-win32 project.
     """
     if sys.platform != "win32":
         return False
+
+    import ctypes
         
     drivers_dir = Path(__file__).parent / "drivers" / "windows"
     installer_exe = drivers_dir / "install-filter-win.exe"

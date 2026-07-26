@@ -137,11 +137,17 @@ class DatabaseManager:
         ac_present_raw = state.get("ac_present")
         ac_val = 1 if ac_present_raw is True else (0 if ac_present_raw is False else None)
 
-        charge = state.get("battery.charge")
-        runtime = state.get("battery.runtime")
-        in_v = state.get("input.voltage")
-        out_v = state.get("output.voltage")
-        load = state.get("output.load")
+        def _get(d: Dict[str, Any], *keys: str) -> Any:
+            for k in keys:
+                if d.get(k) is not None:
+                    return d.get(k)
+            return None
+
+        charge = _get(state, "battery.charge", "battery_charge", "battery_capacity_percent")
+        runtime = _get(state, "battery.runtime", "battery_runtime")
+        in_v = _get(state, "input.voltage", "input_voltage", "input_voltage_v")
+        out_v = _get(state, "output.voltage", "output_voltage", "output_voltage_v")
+        load = _get(state, "percent_load", "output.load", "output_load")
 
         try:
             with self._lock, self._get_connection() as conn:

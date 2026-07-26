@@ -48,10 +48,10 @@ from .serializer import sanitize_for_json
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Lazy-import core_hid_ups (may not be present in dev environments)
+# Lazy-import core (bundled core.py, or legacy core_hid_ups)
 # ---------------------------------------------------------------------------
 try:
-    from core_hid_ups import (
+    from .core import (
         VID,
         PID,
         decode_feature_reports,
@@ -64,13 +64,43 @@ try:
         DEFAULT_DESCRIPTOR_TXT,
     )
     HID_AVAILABLE = True
-except ImportError as _e:
-    logger.warning("core_hid_ups not available: %s", _e)
-    HID_AVAILABLE = False
-    VID = 0x06DA
-    PID = 0xFFFF
-    DEFAULT_DESCRIPTOR_BIN = "report_descriptor_live.bin"
-    DEFAULT_DESCRIPTOR_TXT = "report_descriptor_live.txt"
+except ImportError:
+    try:
+        from .core_hid_ups import (
+            VID,
+            PID,
+            decode_feature_reports,
+            get_descriptor_feature_ids,
+            infer_tentative_live_values,
+            load_descriptor_profile,
+            open_ups_device,
+            read_all_feature_reports,
+            DEFAULT_DESCRIPTOR_BIN,
+            DEFAULT_DESCRIPTOR_TXT,
+        )
+        HID_AVAILABLE = True
+    except ImportError:
+        try:
+            from core_hid_ups import (
+                VID,
+                PID,
+                decode_feature_reports,
+                get_descriptor_feature_ids,
+                infer_tentative_live_values,
+                load_descriptor_profile,
+                open_ups_device,
+                read_all_feature_reports,
+                DEFAULT_DESCRIPTOR_BIN,
+                DEFAULT_DESCRIPTOR_TXT,
+            )
+            HID_AVAILABLE = True
+        except ImportError as _e:
+            logger.warning("core protocol engine not available: %s", _e)
+            HID_AVAILABLE = False
+            VID = 0x06DA
+            PID = 0xFFFF
+            DEFAULT_DESCRIPTOR_BIN = "report_descriptor_live.bin"
+            DEFAULT_DESCRIPTOR_TXT = "report_descriptor_live.txt"
 
 
 class UPSClient:
@@ -250,8 +280,8 @@ class UPSClient:
             
             # Auto-Install Filter Driver on Windows if pyusb fails to find it or access it
             if not dev and system == "windows":
-                from . import driver_installer
-                if driver_installer.install_filter(self._vid, self._pid):
+                from . import windows_setup
+                if windows_setup.install_filter(self._vid, self._pid):
                     # Retry finding device after installation
                     dev = usb.core.find(idVendor=self._vid, idProduct=self._pid, backend=backend)
             
@@ -281,8 +311,8 @@ class UPSClient:
             logger.debug("pyusb fallback access denied: %s", e)
             if platform.system().lower() == "windows":
                 # The device might be present but locked (filter driver not fully active)
-                from . import driver_installer
-                driver_installer.install_filter(self._vid, self._pid)
+                from . import windows_setup
+                windows_setup.install_filter(self._vid, self._pid)
         except ImportError:
             pass # pyusb not installed
         except Exception as e:
