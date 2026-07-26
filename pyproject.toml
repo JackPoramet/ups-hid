@@ -48,6 +48,8 @@ include = ["ups_module*"]
 [tool.setuptools.package-data]
 ups_module = [
     "core.py",
+    "install.sh",
+    "requirements.txt",
     "drivers/**/*",
     "README.md",
 ]

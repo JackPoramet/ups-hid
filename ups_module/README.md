@@ -156,24 +156,35 @@ python -m ups_module.linux_setup --check
 python -m ups_module.demo --check
 ```
 
-### สรุปขั้นตอนติดตั้งบน RPi4
+### สรุปขั้นตอนติดตั้งบน RPi4 / Linux
+
+**วิธีอัตโนมัติด้วย Auto-Installer Script (แนะนำ):**
+
+```bash
+cd ups_module
+chmod +x install.sh
+./install.sh
+```
+
+**หรือวิธีด้วยตัวเอง (Manual):**
 
 ```bash
 # 1. ติดตั้ง system dependencies
 sudo apt update
 sudo apt install -y libhidapi-hidraw0 libhidapi-dev libusb-1.0-0
 
-# 2. ติดตั้ง ups_module
-pip install ups-hid
+# 2. ติดตั้ง Python dependencies
+pip install -r requirements.txt
 
 # 3. ตั้งค่า udev rule
-sudo python -m ups_module.linux_setup
+sudo env "PATH=$PATH" python3 linux_setup.py
 
-# 4. ถอด USB แล้วเสียบใหม่ (หรือ reboot)
+# 4. ถอด USB แล้วเสียบใหม่ (หรือ reload udev)
+sudo udevadm control --reload-rules && sudo udevadm trigger
 
 # 5. ทดสอบ
-python -m ups_module.demo --check
-python -m ups_module.demo --mode oneshot
+python3 demo.py --check
+python3 demo.py
 ```
 
 ---
