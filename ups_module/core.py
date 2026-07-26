@@ -416,13 +416,15 @@ def print_candidate_devices(devices: List[dict]) -> None:
         )
 
 
-def open_ups_device(vid: int = VID, pid: int = PID):
+def open_ups_device(vid: int = VID, pid: int = PID, verbose: bool = False):
     devices = hid.enumerate(vid, pid)
     if not devices:
-        print(f"ไม่พบ VID={vid:04X} PID={pid:04X}")
+        if verbose:
+            print(f"ไม่พบ VID={vid:04X} PID={pid:04X}")
         return None, None
 
-    print_candidate_devices(devices)
+    if verbose:
+        print_candidate_devices(devices)
 
     target = next((d for d in devices if d.get("usage_page") == 0x84 and d.get("usage") == 0x04), None)
     if target is None:
@@ -431,21 +433,24 @@ def open_ups_device(vid: int = VID, pid: int = PID):
     h = hid.device()
     h.open_path(target["path"])
 
-    print("\nเปิดอุปกรณ์สำเร็จ")
-    print(f"  Manufacturer : {target.get('manufacturer_string')}")
-    print(f"  Product      : {target.get('product_string')}")
-    print(f"  Serial       : {target.get('serial_number')}")
-    print(f"  Release      : {target.get('release_number')}")
-    print(f"  Usage Page   : 0x{(target.get('usage_page') or 0):04X}")
-    print(f"  Usage        : 0x{(target.get('usage') or 0):04X}")
+    if verbose:
+        print("\nเปิดอุปกรณ์สำเร็จ")
+        print(f"  Manufacturer : {target.get('manufacturer_string')}")
+        print(f"  Product      : {target.get('product_string')}")
+        print(f"  Serial       : {target.get('serial_number')}")
+        print(f"  Release      : {target.get('release_number')}")
+        print(f"  Usage Page   : 0x{(target.get('usage_page') or 0):04X}")
+        print(f"  Usage        : 0x{(target.get('usage') or 0):04X}")
 
-    # Windows: เปิด handle แบบ direct ด้วย WinHidApi เพื่อใช้เป็น fallback
-    # สำหรับ report ที่ Windows HID class driver block เช่น RID 0x31 (Input Voltage)
-    if platform.system().lower() == "windows":
-        if _win_open_direct(target["path"]):
-            print("  Win direct   : HidD_GetFeature fallback ready")
-        else:
-            print("  Win direct   : fallback unavailable (win32_hid_wrapper.py not found)")
+        if platform.system().lower() == "windows":
+            if _win_open_direct(target["path"]):
+                print("  Win direct   : HidD_GetFeature fallback ready")
+            else:
+                print("  Win direct   : fallback unavailable (win32_hid_wrapper.py not found)")
+
+    else:
+        if platform.system().lower() == "windows":
+            _win_open_direct(target["path"])
 
     return h, target
 

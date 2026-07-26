@@ -249,9 +249,7 @@ def check_device_permission(
 # ---------------------------------------------------------------------------
 
 def _print_header(text: str) -> None:
-    print(f"\n{'=' * 60}")
-    print(f"  {text}")
-    print(f"{'=' * 60}")
+    print(f"\n--- {text} ---")
 
 
 def _print_result(label: str, ok: bool, detail: str = "") -> None:
