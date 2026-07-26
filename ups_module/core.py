@@ -73,7 +73,7 @@ def _win_get_feature(rid: int, length: int) -> Optional[List[int]]:
         return None
 
 
-DEFAULT_REPORT_SIZES = (8, 16, 32, 64, 128, 255)
+DEFAULT_REPORT_SIZES = (64,)
 DEFAULT_DESCRIPTOR_TXT = "report_descriptor_live.txt"
 DEFAULT_DESCRIPTOR_BIN = "report_descriptor_live.bin"
 
