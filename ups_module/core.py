@@ -416,28 +416,28 @@ def print_candidate_devices(devices: List[dict]) -> None:
         )
 
 
-def _probe_interface(path: object) -> bool:
-    """ลอง get_feature_report(0x01, 64) บน path ที่กำหนด — คืน True ถ้าได้ข้อมูล (มี non-zero byte).
+def _probe_and_open(path: object) -> "Optional[hid.device]":
+    """เปิดเท HID device และทดสอบว่าตอบสนอง feature report จริง — คืน handle
+    ที่เปิดค้างอยู่ถ้าสำเร็จ (caller ต้องปิดเอง) หรือ None ถ้าไม่มีข้อมูล.
 
-    ใช้สำหรับ Linux hidraw ที่ไม่รายงาน usage_page ทำให้ต้องลองเปิดเองเพื่อหา
-    interface ที่ตอบสนองต่อ UPS Power-Device HID feature reports จริงๆ
+    ใช้สำหรับ Linux hidraw ที่ไม่รายงาน usage_page (เป็น 0x0000 เสมอ)
+    การคืน handle ที่เปิดค้างอยู่ตัดปัญหา open→close→open ที่ทำให้ device reset state
     """
     try:
         h = hid.device()
         h.open_path(path)
-        try:
-            data = h.get_feature_report(0x01, 64)
-            if data and any(b != 0 for b in data):
-                return True
-            # Also try 0x06 (battery charge) as secondary probe
-            data2 = h.get_feature_report(0x06, 64)
-            if data2 and any(b != 0 for b in data2):
-                return True
-        finally:
-            h.close()
+        # Probe with report 0x01 (status) and 0x06 (battery)
+        for probe_rid in (0x01, 0x06):
+            try:
+                data = h.get_feature_report(probe_rid, 8)
+                if data and any(b != 0 for b in data):
+                    return h  # Caller keeps this open handle
+            except Exception:
+                pass
+        h.close()
     except Exception:
         pass
-    return False
+    return None
 
 
 def open_ups_device(vid: int = VID, pid: int = PID, verbose: bool = False):
@@ -459,19 +459,28 @@ def open_ups_device(vid: int = VID, pid: int = PID, verbose: bool = False):
     # Priority 2: any usage_page=0x84
     if target is None:
         target = next((d for d in devices if d.get("usage_page") == 0x84), None)
-    # Priority 3 (Linux hidraw — usage_page is always 0): probe each interface by
-    # actually reading a feature report and picking the one that responds.
-    if target is None:
+
+    h: Optional[hid.device] = None
+
+    if target is not None:
+        # Known good interface from usage_page — open directly
+        h = hid.device()
+        h.open_path(target["path"])
+    else:
+        # Priority 3 (Linux hidraw — usage_page always 0):
+        # Probe each interface by reading a feature report and reuse the handle
+        # to avoid close→reopen which resets device state on some kernels.
         for d in devices:
-            if _probe_interface(d["path"]):
+            probe_h = _probe_and_open(d["path"])
+            if probe_h is not None:
+                h = probe_h
                 target = d
                 break
-    # Fallback: just use the first device
-    if target is None:
-        target = devices[0]
-
-    h = hid.device()
-    h.open_path(target["path"])
+        # Fallback: just use the first device
+        if h is None:
+            target = devices[0]
+            h = hid.device()
+            h.open_path(target["path"])
 
     # Read string descriptors from open handle when enumerate returns empty strings
     if not target.get("manufacturer_string"):

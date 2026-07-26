@@ -263,12 +263,20 @@ class UPSClient:
     def _fallback_read_input_voltage(self, ups: dict) -> None:
         """Fallback: read input voltage via pyusb ctrl_transfer if HID missed it.
 
-        The entire operation is wrapped in a thread with a 3-second timeout
-        to prevent hangs on Linux where the kernel HID driver may hold the
-        USB interface and cause ctrl_transfer to block indefinitely.
+        On Linux, report 0x31 is read directly via HID feature reports so this
+        fallback is not needed. Skipping avoids the 3-second thread wait caused
+        by pyusb ctrl_transfer failing/hanging on a hidraw-bound interface.
+
+        On Windows, the entire operation is wrapped in a thread with a 3-second
+        timeout to prevent hangs when the filter driver is not fully active.
         """
         if "input.voltage" in ups:
             return
+
+        import platform as _plat
+        if _plat.system().lower() == "linux":
+            return  # Report 0x31 already covers this on Linux
+
 
         result: Dict[str, Any] = {}
 
