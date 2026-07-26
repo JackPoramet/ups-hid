@@ -1,8 +1,5 @@
 # ups_module -- UPS HID Python Library
 
-Pure Python library สำหรับสื่อสารกับ UPS ผ่าน USB HID โดยตรง  
-ใช้ key naming ตามมาตรฐาน **NUT (Network UPS Tools)** -- ไม่ต้องรัน daemon ใดๆ
-
 ## สารบัญ
 
 - [ภาพรวม](#ภาพรวม)
@@ -28,37 +25,6 @@ Pure Python library สำหรับสื่อสารกับ UPS ผ่�
 - ต้องการ **embedded solution** บน SBC (เช่น Raspberry Pi, Orange Pi) โดยไม่ต้องติดตั้ง NUT ทั้งระบบ
 - ต้องการ **Python-native API** ที่ import แล้วใช้งานได้ทันที
 - ต้องการ **real-time event monitoring** พร้อม callback function
-
-### เปรียบเทียบกับ NUT
-
-| รายการ | NUT (usbhid-ups + upsd) | ups_module |
-|--------|------------------------|------------|
-| Architecture | Daemon-based (upsd) | Library (import) |
-| การติดตั้ง | apt install nut | pip install ups-hid |
-| การเรียกใช้ | subprocess/socket | Python function call |
-| ข้อมูลที่ได้ | NUT variables (text) | NUT variables (typed) |
-| Event system | NOTIFYCMD (exec script) | Python callback |
-| Dependencies | C daemon + driver | hidapi (Python) |
-
----
-
-## ความเข้ากันได้
-
-### UPS ที่รองรับ
-
-| Manufacturer | Model | VID | PID | สถานะ |
-|-------------|-------|-----|-----|-------|
-| Phoenixtec | Innova Unity IOT Tower | 0x06DA | 0xFFFF | ทดสอบแล้ว |
-| Phoenixtec | อื่นๆ (VID 0x06DA) | 0x06DA | * | ควรใช้ได้ |
-
-### ระบบปฏิบัติการ
-
-| OS | Architecture | สถานะ |
-|----|-------------|-------|
-| Linux (Debian/Ubuntu) | ARM (aarch64, armhf) | รองรับ |
-| Linux (Debian/Ubuntu) | x86_64 | รองรับ |
-| Raspberry Pi OS | ARM | รองรับ |
-| Windows 10/11 | x86_64 | รองรับ |
 
 ### Python
 

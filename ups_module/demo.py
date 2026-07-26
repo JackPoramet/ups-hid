@@ -73,7 +73,10 @@ def demo_oneshot(output_json: bool = False) -> None:
                 print(json.dumps(data.to_nut_dict(), ensure_ascii=False, indent=2))
             else:
                 info = client.get_device_info()
-                print(f"  UPS: {info.get('manufacturer')} {info.get('model')} (SN: {info.get('serial')})")
+                mfr = info.get("manufacturer") or info.get("manufacturer_string") or "?"
+                model = info.get("model") or info.get("product_string") or "?"
+                serial = info.get("serial") or info.get("serial_number") or "?"
+                print(f"  UPS: {mfr} {model} (SN: {serial})")
                 print("-" * 40)
                 vars_dict = client.get_vars()
                 for k in sorted(vars_dict.keys()):

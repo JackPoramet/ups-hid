@@ -103,6 +103,12 @@ except ImportError:
             DEFAULT_DESCRIPTOR_TXT = "report_descriptor_live.txt"
 
 
+DEFAULT_REPORT_IDS = [
+    0x01, 0x02, 0x03, 0x05, 0x06, 0x07, 0x08, 0x0C, 0x0D, 0x10,
+    0x14, 0x17, 0x24, 0x25, 0x26, 0x27, 0x29, 0x31, 0x42, 0x4A, 0x74
+]
+
+
 class UPSClient:
     """
     Pure Python HID-UPS client — ใช้งานเหมือน PyNUT library.
@@ -124,7 +130,7 @@ class UPSClient:
     name : str
         Logical UPS name (เหมือน ``<upsname>`` ใน NUT config).
     report_ids : list[int] | None
-        Report IDs ที่จะ poll (None = 0x01–0x7F ทั้งหมด).
+        Report IDs ที่จะ poll (None = ใช้ DEFAULT_REPORT_IDS).
     """
 
     def __init__(
@@ -137,7 +143,7 @@ class UPSClient:
         self.name = name
         self._vid = vid
         self._pid = pid
-        self._report_ids: List[int] = report_ids or list(range(0x01, 0x80))
+        self._report_ids: List[int] = report_ids or list(DEFAULT_REPORT_IDS)
 
         self._handle = None                        # hid.device handle
         self._device_info: Dict[str, Any] = {}    # raw device metadata
@@ -388,23 +394,14 @@ class UPSClient:
         return data.ups_status or NotifyType.NOCOMM
 
     def get_device_info(self) -> Dict[str, Any]:
-        """
-        Return device identification info.
-
-        Equivalent to PyNUT's ``GetUPSInfo(upsname)``::
-
-            {
-              "manufacturer": "Phoenixtec",
-              "model": "Innova Unity",
-              "serial": "",
-              "type": "ups"
-            }
-        """
         info = self._device_info
+        mfr = info.get("manufacturer_string") or info.get("manufacturer") or ""
+        model = info.get("product_string") or info.get("model") or ""
+        serial = info.get("serial_number") or info.get("serial") or ""
         return {
-            "manufacturer": info.get("manufacturer_string", ""),
-            "model":        info.get("product_string", ""),
-            "serial":       info.get("serial_number", ""),
+            "manufacturer": mfr,
+            "model":        model,
+            "serial":       serial,
             "type":         "ups",
         }
 
