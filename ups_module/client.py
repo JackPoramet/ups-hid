@@ -260,69 +260,102 @@ class UPSClient:
         return decoded
 
     def _fallback_read_input_voltage(self, ups: dict) -> None:
+        """Fallback: read input voltage via pyusb ctrl_transfer if HID missed it.
+
+        The entire operation is wrapped in a thread with a 3-second timeout
+        to prevent hangs on Linux where the kernel HID driver may hold the
+        USB interface and cause ctrl_transfer to block indefinitely.
+        """
         if "input.voltage" in ups:
             return
 
-        try:
-            import usb.core
-            import platform
-            import os
+        result: Dict[str, Any] = {}
 
-            system = platform.system().lower()
-            backend = None
+        def _do_pyusb_read() -> None:
+            try:
+                import usb.core
+                import platform as _plat
+                import os
 
-            if system == "windows":
-                import usb.backend.libusb0
-                # Prioritize our bundled driver
-                local_dll = os.path.join(os.path.dirname(__file__), "drivers", "windows", "libusb0.dll")
-                fallback_dll = r"C:\Program Files\WinpowerG2\libUSB_driver\amd64\libusb0.dll"
-                
-                if os.path.exists(local_dll):
-                    backend = usb.backend.libusb0.get_backend(find_library=lambda x: local_dll)
-                elif os.path.exists(fallback_dll):
-                    backend = usb.backend.libusb0.get_backend(find_library=lambda x: fallback_dll)
+                system = _plat.system().lower()
+                backend = None
 
-            dev = usb.core.find(idVendor=self._vid, idProduct=self._pid, backend=backend)
-            
-            # Auto-Install Filter Driver on Windows if pyusb fails to find it or access it
-            if not dev and system == "windows":
-                from . import windows_setup
-                if windows_setup.install_filter(self._vid, self._pid):
-                    # Retry finding device after installation
-                    dev = usb.core.find(idVendor=self._vid, idProduct=self._pid, backend=backend)
-            
-            if not dev:
-                return
+                if system == "windows":
+                    import usb.backend.libusb0
+                    local_dll = os.path.join(
+                        os.path.dirname(__file__), "drivers", "windows", "libusb0.dll"
+                    )
+                    fallback_dll = (
+                        r"C:\Program Files\WinpowerG2\libUSB_driver\amd64\libusb0.dll"
+                    )
+                    if os.path.exists(local_dll):
+                        backend = usb.backend.libusb0.get_backend(
+                            find_library=lambda x: local_dll
+                        )
+                    elif os.path.exists(fallback_dll):
+                        backend = usb.backend.libusb0.get_backend(
+                            find_library=lambda x: fallback_dll
+                        )
 
-            if system == "linux":
+                dev = usb.core.find(
+                    idVendor=self._vid, idProduct=self._pid, backend=backend
+                )
+
+                # Auto-Install Filter Driver on Windows
+                if not dev and system == "windows":
+                    from . import windows_setup
+
+                    if windows_setup.install_filter(self._vid, self._pid):
+                        dev = usb.core.find(
+                            idVendor=self._vid, idProduct=self._pid, backend=backend
+                        )
+
+                if not dev:
+                    return
+
+                detached = False
+                if system == "linux":
+                    try:
+                        if dev.is_kernel_driver_active(0):
+                            dev.detach_kernel_driver(0)
+                            detached = True
+                    except Exception:
+                        # Cannot detach — kernel holds interface, skip to avoid hang
+                        logger.debug("pyusb: cannot detach kernel driver, skipping")
+                        return
+
                 try:
-                    if dev.is_kernel_driver_active(0):
-                        dev.detach_kernel_driver(0)
-                except Exception:
-                    pass
+                    # GET_REPORT: RID=0x31 (input voltage + frequency)
+                    payload = dev.ctrl_transfer(
+                        0xA1, 0x01, 0x0331, 0, 5, timeout=1000
+                    )
+                    if payload and len(payload) >= 5:
+                        volt_raw = payload[3] | (payload[4] << 8)
+                        result["input.voltage"] = volt_raw / 10.0
+                finally:
+                    if detached and system == "linux":
+                        try:
+                            dev.attach_kernel_driver(0)
+                        except Exception:
+                            pass
 
-            # GET_REPORT: bmRequestType=0xA1, bRequest=0x01, wValue=0x0331, wIndex=0, length=5
-            payload = dev.ctrl_transfer(0xA1, 0x01, 0x0331, 0, 5, timeout=1000)
-            if payload and len(payload) >= 5:
-                volt_raw = payload[3] | (payload[4] << 8)
-                ups["input.voltage"] = volt_raw / 10.0
+            except ImportError:
+                pass  # pyusb not installed
+            except Exception as e:
+                logger.debug("pyusb fallback failed: %s", e)
 
-            if system == "linux":
-                try:
-                    dev.attach_kernel_driver(0)
-                except Exception:
-                    pass
+        # Run with a hard timeout to prevent blocking the main read cycle
+        t = threading.Thread(target=_do_pyusb_read, daemon=True)
+        t.start()
+        t.join(timeout=3.0)
 
-        except usb.core.USBError as e:
-            logger.debug("pyusb fallback access denied: %s", e)
-            if platform.system().lower() == "windows":
-                # The device might be present but locked (filter driver not fully active)
-                from . import windows_setup
-                windows_setup.install_filter(self._vid, self._pid)
-        except ImportError:
-            pass # pyusb not installed
-        except Exception as e:
-            logger.debug("pyusb fallback failed: %s", e)
+        if t.is_alive():
+            logger.debug("pyusb fallback timed out after 3s, skipping")
+            # Thread will die on its own (daemon); we just move on
+            return
+
+        if "input.voltage" in result:
+            ups["input.voltage"] = result["input.voltage"]
 
     def get_data(self) -> UPSData:
         """
