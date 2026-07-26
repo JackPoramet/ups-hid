@@ -14,6 +14,12 @@ chmod +x install.sh
 ./install.sh
 ```
 
+### ทดสอบการใช้โมดูล
+
+```bash
+python3 demo.py
+```
+
 ### การเรียกใช้งานใน Python
 
 ```python

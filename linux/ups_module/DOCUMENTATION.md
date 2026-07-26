@@ -6,8 +6,6 @@
 
 ## 1. ภาพรวมสถาปัตยกรรมระบบ (System Architecture)
 
-`ups_module` ถูกออกแบบมาให้ทำงานในลักษณะ **Pure Python Client Library** ที่รองรับรูปแบบมาตรฐาน **NUT (Network UPS Tools)** โดยไม่ต้องพึ่งพา NUT Daemon (`upsd`) หรือบริการภายนอก ระบบแบ่งออกเป็นชั้นการทำงาน (Layered Architecture) ดังนี้:
-
 ```mermaid
 graph TD
     subgraph User / Application Layer
@@ -255,13 +253,3 @@ sequenceDiagram
         end
     end
 ```
-
----
-
-## 5. สรุปจุดเด่นและหลักการออกแบบ (Design Principles)
-
-1.  **Pure Python & Zero External Daemon Dependency**: ไม่จำเป็นต้องติดตั้ง NUT Service (`upsd`) หรือโปรแกรมเสริมอื่นๆ ใช้งานเพียง `hidapi` ผ่าน Python
-2.  **High-Performance USB I/O**: ใช้การอ่าน Feature Report ขนาด `64-byte` ครั้งเดียวต่อ Report ID ช่วยลด USB Transaction คงเหลือเพียง 21 ครั้ง รวดเร็ว แม่นยำ และไม่ทำให้ CPU หรือ USB Bus ทำงานหนัก
-3.  **Linux-Native Optimization**: มีระบบ `_probe_and_open` เพื่อแก้ปัญหาของ Linux `hidraw` โดยเฉพาะ รวมถึงมีสคริปต์ตั้งค่า `udev rule` แบบอัตโนมัติ
-4.  **NUT Compatible**: ใช้โครงสร้างและชื่อตัวแปรที่ตรงตามมาตรฐาน NUT ทำให้ง่ายต่อการนำไปเชื่อมต่อกับระบบอื่น หรือย้ายมาจาก NUT Driver เดิม
-5.  **Thread-Safe & Event-Driven**: สถาปัตยกรรมรองรับการทำงานแบบ Multi-threading มี DataStore ป้องกัน Race Condition และมีระบบ Event Bus ในการแจ้งเตือนเมื่อเกิดเหตุการณ์สำคัญเกี่ยวกับระบบไฟฟ้า
