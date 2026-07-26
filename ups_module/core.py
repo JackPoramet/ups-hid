@@ -73,7 +73,7 @@ def _win_get_feature(rid: int, length: int) -> Optional[List[int]]:
         return None
 
 
-DEFAULT_REPORT_SIZES = (8, 16, 32)
+DEFAULT_REPORT_SIZES = (8, 16, 32, 64)
 DEFAULT_DESCRIPTOR_TXT = "report_descriptor_live.txt"
 DEFAULT_DESCRIPTOR_BIN = "report_descriptor_live.bin"
 
@@ -416,6 +416,30 @@ def print_candidate_devices(devices: List[dict]) -> None:
         )
 
 
+def _probe_interface(path: object) -> bool:
+    """ลอง get_feature_report(0x01, 64) บน path ที่กำหนด — คืน True ถ้าได้ข้อมูล (มี non-zero byte).
+
+    ใช้สำหรับ Linux hidraw ที่ไม่รายงาน usage_page ทำให้ต้องลองเปิดเองเพื่อหา
+    interface ที่ตอบสนองต่อ UPS Power-Device HID feature reports จริงๆ
+    """
+    try:
+        h = hid.device()
+        h.open_path(path)
+        try:
+            data = h.get_feature_report(0x01, 64)
+            if data and any(b != 0 for b in data):
+                return True
+            # Also try 0x06 (battery charge) as secondary probe
+            data2 = h.get_feature_report(0x06, 64)
+            if data2 and any(b != 0 for b in data2):
+                return True
+        finally:
+            h.close()
+    except Exception:
+        pass
+    return False
+
+
 def open_ups_device(vid: int = VID, pid: int = PID, verbose: bool = False):
     devices = hid.enumerate(vid, pid)
     if not devices:
@@ -426,16 +450,30 @@ def open_ups_device(vid: int = VID, pid: int = PID, verbose: bool = False):
     if verbose:
         print_candidate_devices(devices)
 
-    target = next((d for d in devices if d.get("usage_page") == 0x84 and d.get("usage") == 0x04), None)
+    # --- Interface selection ---
+    # Priority 1: usage_page=0x84 usage=0x04  (UPS Power Device — explicit)
+    target = next(
+        (d for d in devices if d.get("usage_page") == 0x84 and d.get("usage") == 0x04),
+        None,
+    )
+    # Priority 2: any usage_page=0x84
     if target is None:
         target = next((d for d in devices if d.get("usage_page") == 0x84), None)
+    # Priority 3 (Linux hidraw — usage_page is always 0): probe each interface by
+    # actually reading a feature report and picking the one that responds.
     if target is None:
-        target = next((d for d in devices if d.get("manufacturer_string") or d.get("product_string")), devices[0])
+        for d in devices:
+            if _probe_interface(d["path"]):
+                target = d
+                break
+    # Fallback: just use the first device
+    if target is None:
+        target = devices[0]
 
     h = hid.device()
     h.open_path(target["path"])
 
-    # Directly read string descriptors from open handle if missing from enumerate
+    # Read string descriptors from open handle when enumerate returns empty strings
     if not target.get("manufacturer_string"):
         try:
             target["manufacturer_string"] = h.get_manufacturer_string() or "PHOENIXTEC"

@@ -247,10 +247,11 @@ class UPSClient:
         if h is None:
             raise RuntimeError("Not connected. Call connect() first.")
 
+        from .core import DEFAULT_REPORT_SIZES as _SIZES  # noqa: PLC0415
         raw_reports, _ = read_all_feature_reports(
             h,
             report_ids=self._report_ids,
-            sizes=(8, 16, 32),
+            sizes=_SIZES,
             retries=1,
             include_zero=False,
         )
