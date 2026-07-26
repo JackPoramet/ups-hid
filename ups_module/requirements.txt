@@ -1,0 +1,8 @@
+# ups_module -- Python dependencies
+# Install with: pip install -r requirements.txt
+
+# ── Core HID Device Communication (Required) ──────────────────────────────────
+hidapi>=0.14.0      # hid module -- อ่าน Feature Report ผ่าน USB HID
+
+# ── Fallbacks & Optional Enhancements ─────────────────────────────────────────
+pyusb>=1.2.0        # pyusb (usb.core) -- ใช้อ่าน Input Voltage ผ่าน USB Control Transfer

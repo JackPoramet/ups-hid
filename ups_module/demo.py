@@ -34,8 +34,15 @@ from typing import Optional
 # -- ups_module imports --
 try:
     from ups_module import UPSClient, NotifyType, UPSData
-except ImportError:
-    from . import UPSClient, NotifyType, UPSData
+except (ImportError, ValueError):
+    # รองรับกรณีรันด้วย python3 demo.py จากในโฟลเดอร์ ups_module โดยตรง
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    try:
+        from ups_module import UPSClient, NotifyType, UPSData
+    except ImportError:
+        from client import UPSClient
+        from models import NotifyType, UPSData
 
 
 # ---------------------------------------------------------------------------
