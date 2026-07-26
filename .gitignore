@@ -13,9 +13,6 @@ env/
 # Build & Distribution Artifacts (PyInstaller, Inno Setup, Setuptools)
 build/
 dist/
-*.exe
-*.msi
-Output/
 *.egg-info/
 .eggs/
 
