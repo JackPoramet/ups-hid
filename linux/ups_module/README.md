@@ -14,13 +14,13 @@ chmod +x install.sh
 ./install.sh
 ```
 
-> **หมายเหตุ (System Dependencies):** `install.sh` จะทำการติดตั้ง `pkg-config`, `build-essential`, `python3-dev`, `libhidapi-dev` และ `libusb-1.0-0-dev` ให้อัตโนมัติ (หากยังไม่ได้ติดตั้งแพ็กเกจ dev อาจเจอข้อผิดพลาด `Exception: pkg-config package 'libusb-1.0 >= 1.0.9' not found`)
+> **หมายเหตุ (System Dependencies):** `install.sh` จะทำการติดตั้ง `pkg-config`, `build-essential`, `python3-dev`, `libudev-dev`, `libhidapi-dev` และ `libusb-1.0-0-dev` ให้อัตโนมัติ (หากขาด `libudev-dev` จะเจอข้อผิดพลาด `fatal error: libudev.h: No such file or directory` ขณะคอมไพล์ `hidapi`)
 
 ### ติดตั้งแบบ Manual (กรณีไม่ใช้ install.sh)
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y pkg-config build-essential python3-dev libhidapi-hidraw0 libhidapi-dev libusb-1.0-0-dev
+sudo apt-get install -y pkg-config build-essential python3-dev libudev-dev libhidapi-hidraw0 libhidapi-dev libusb-1.0-0-dev
 pip install -r requirements.txt
 sudo python3 linux_setup.py
 ```

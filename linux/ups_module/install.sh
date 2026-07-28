@@ -8,10 +8,17 @@ fi
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-echo "Installing system dependencies..."
+echo "Installing system dependencies"
 if command -v apt-get &> /dev/null; then
     sudo apt-get update -qq
-    sudo apt-get install -y pkg-config build-essential python3-dev libhidapi-hidraw0 libhidapi-dev libusb-1.0-0-dev > /dev/null
+    sudo apt-get install -y \
+        pkg-config \
+        build-essential \
+        python3-dev \
+        libudev-dev \
+        libhidapi-hidraw0 \
+        libhidapi-dev \
+        libusb-1.0-0-dev
 fi
 
 echo "Installing Python dependencies..."
