@@ -320,7 +320,7 @@ def main() -> int:
     if not all_deps_ok:
         print("\n  วิธีติดตั้ง system dependencies:")
         print("    sudo apt update")
-        print("    sudo apt install -y libhidapi-hidraw0 libhidapi-dev libusb-1.0-0")
+        print("    sudo apt install -y pkg-config build-essential python3-dev libhidapi-hidraw0 libhidapi-dev libusb-1.0-0")
         print("    pip install hidapi pyusb")
 
     # --- ตรวจสอบ udev rule ---

@@ -14,6 +14,17 @@ chmod +x install.sh
 ./install.sh
 ```
 
+> **หมายเหตุ (System Dependencies):** `install.sh` จะทำการติดตั้ง `pkg-config`, `build-essential`, `python3-dev`, `libhidapi-dev` และ `libusb-1.0-0` ให้อัตโนมัติ (หากเครื่องย้อนหลังยังไม่ได้ติดตั้ง อาจเจอข้อผิดพลาด `FileNotFoundError: pkg-config` ให้แน่ใจว่าได้อัปเดตสคริปต์นี้แล้ว)
+
+### ติดตั้งแบบ Manual (กรณีไม่ใช้ install.sh)
+
+```bash
+sudo apt-get update
+sudo apt-get install -y pkg-config build-essential python3-dev libhidapi-hidraw0 libhidapi-dev libusb-1.0-0
+pip install -r requirements.txt
+sudo python3 linux_setup.py
+```
+
 ### ทดสอบการใช้โมดูล
 
 ```bash
