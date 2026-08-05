@@ -29,7 +29,11 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from .device_registry import DeviceRegistry
+
 logger = logging.getLogger(__name__)
+
+_registry = DeviceRegistry()
 
 # Lazy import: bundled core.py first, then legacy fallbacks
 try:
@@ -79,8 +83,9 @@ except ImportError:
         except ImportError as _e:
             logger.warning("core protocol engine not available: %s", _e)
             HID_AVAILABLE = False
-            VID = 0x06DA
-            PID = 0xFFFF
+            _fallback = _registry.get_default()
+            VID = _fallback.vid
+            PID = _fallback.pid
             DEFAULT_DESCRIPTOR_BIN = "report_descriptor_live.bin"
             DEFAULT_DESCRIPTOR_TXT = "report_descriptor_live.txt"
 
@@ -117,10 +122,13 @@ class UPSPoller(threading.Thread):
         Thread-safe data store where poll results are written.
     detector:
         Event detector that compares successive polls and fires notifications.
+    model:
+        Registered model id from meta.json. If provided, VID/PID are
+        loaded from the registry.
     vid:
-        USB Vendor ID (default: 0x06DA Phoenixtec).
+        USB Vendor ID. Overrides the registry value if provided.
     pid:
-        USB Product ID (default: 0xFFFF Innova Unity).
+        USB Product ID. Overrides the registry value if provided.
     poll_interval:
         Seconds between polls (default: 1.0 s).
     """
@@ -129,15 +137,25 @@ class UPSPoller(threading.Thread):
         self,
         store,
         detector=None,
-        vid: int = VID,
-        pid: int = PID,
+        model: Optional[str] = None,
+        vid: Optional[int] = None,
+        pid: Optional[int] = None,
         poll_interval: float = 1.0,
     ) -> None:
         super().__init__(daemon=True, name="UPSPoller")
         self.store = store
         self.detector = detector
-        self.vid = vid
-        self.pid = pid
+
+        # Resolve device profile
+        if model:
+            profile = _registry.get_by_id(model)
+            if not profile:
+                raise ValueError(f"Unknown model: {model!r}")
+        else:
+            profile = _registry.get_default()
+
+        self.vid = vid if vid is not None else profile.vid
+        self.pid = pid if pid is not None else profile.pid
         self.poll_interval = poll_interval
 
         self._stop_event = threading.Event()
@@ -145,7 +163,7 @@ class UPSPoller(threading.Thread):
         self._device_handle = None
         self._device_info: dict = {}
         self._descriptor_profile: Optional[dict] = None
-        self._report_ids: list = list(range(0x01, 0x80))
+        self._report_ids: list = list(profile.report_ids) if profile.report_ids else list(range(0x01, 0x80))
 
     # -------------------------------------------------------------------------
     # Public control interface

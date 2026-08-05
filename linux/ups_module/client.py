@@ -44,8 +44,11 @@ from typing import Any, Callable, Dict, List, Optional
 from .events import EventBus, EventDetector, EventHandler
 from .models import NotifyType, UPSData, UPSEvent, ups_data_from_raw
 from .serializer import sanitize_for_json
+from .device_registry import DeviceRegistry, DeviceProfile
 
 logger = logging.getLogger(__name__)
+
+_registry = DeviceRegistry()
 
 # ---------------------------------------------------------------------------
 # Lazy-import core (bundled core.py, or legacy core_hid_ups)
@@ -97,13 +100,15 @@ except ImportError:
         except ImportError as _e:
             logger.warning("core protocol engine not available: %s", _e)
             HID_AVAILABLE = False
-            VID = 0x06DA
-            PID = 0xFFFF
+            _fallback = _registry.get_default()
+            VID = _fallback.vid
+            PID = _fallback.pid
             DEFAULT_DESCRIPTOR_BIN = "report_descriptor_live.bin"
             DEFAULT_DESCRIPTOR_TXT = "report_descriptor_live.txt"
 
 
-DEFAULT_REPORT_IDS = [
+_default_profile = _registry.get_default()
+DEFAULT_REPORT_IDS = list(_default_profile.report_ids) if _default_profile.report_ids else [
     0x01, 0x02, 0x03, 0x05, 0x06, 0x07, 0x08, 0x0C, 0x0D, 0x10,
     0x14, 0x17, 0x24, 0x25, 0x26, 0x27, 0x29, 0x31, 0x42, 0x4A, 0x74
 ]
@@ -123,27 +128,41 @@ class UPSClient:
 
     Parameters
     ----------
-    vid : int
-        USB Vendor ID (default: 0x06DA Phoenixtec).
-    pid : int
-        USB Product ID (default: 0xFFFF Innova Unity).
+    model : str | None
+        Registered model id from meta.json (e.g. ``"phoenixtec_innova_unity"``).
+        If provided, VID/PID/report_ids are loaded from the registry.
+    vid : int | None
+        USB Vendor ID. Overrides the registry value if provided.
+    pid : int | None
+        USB Product ID. Overrides the registry value if provided.
     name : str
         Logical UPS name (เหมือน ``<upsname>`` ใน NUT config).
     report_ids : list[int] | None
-        Report IDs ที่จะ poll (None = ใช้ DEFAULT_REPORT_IDS).
+        Report IDs ที่จะ poll (None = ใช้ registry defaults).
     """
 
     def __init__(
         self,
-        vid: int = VID,
-        pid: int = PID,
+        model: Optional[str] = None,
+        vid: Optional[int] = None,
+        pid: Optional[int] = None,
         name: str = "ups@local",
         report_ids: Optional[List[int]] = None,
     ) -> None:
         self.name = name
-        self._vid = vid
-        self._pid = pid
-        self._report_ids: List[int] = report_ids or list(DEFAULT_REPORT_IDS)
+
+        # Resolve device profile
+        if model:
+            profile = _registry.get_by_id(model)
+            if not profile:
+                raise ValueError(f"Unknown model: {model!r}. Available: {[d.id for d in _registry.devices]}")
+        else:
+            profile = _default_profile
+
+        self._vid = vid if vid is not None else profile.vid
+        self._pid = pid if pid is not None else profile.pid
+        self._profile = profile
+        self._report_ids: List[int] = report_ids or list(profile.report_ids) or list(DEFAULT_REPORT_IDS)
 
         self._handle = None                        # hid.device handle
         self._device_info: Dict[str, Any] = {}    # raw device metadata

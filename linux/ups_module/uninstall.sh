@@ -1,26 +1,43 @@
 #!/usr/bin/env bash
-# uninstall.sh — ถอนการติดตั้ง ups_module dependencies
-# ย้อนกลับสิ่งที่ install.sh ทำ:
-#   1. ลบ Python packages (hidapi, pyusb)
-#   2. ลบ udev rule
-#   3. Reload udev
+# =============================================================================
+# uninstall.sh — UPS HID Module Uninstaller (Linux)
+# =============================================================================
+#
+# Reverses the installation performed by install.sh:
+#   1. Remove Python packages listed in requirements.txt (hidapi, pyusb)
+#   2. Remove the udev rule (/etc/udev/rules.d/99-ups-hid.rules)
+#   3. Reload udev rules
+#
+# Note:
+#   System libraries (libhidapi-hidraw0, libusb, build-essential, etc.)
+#   are NOT removed, as they may be shared with other applications.
+#   Instructions for manual removal are printed at the end.
+#
+# Prerequisites:
+#   - Root privileges (sudo) for udev rule removal
 #
 # Usage:
-#   sudo bash uninstall.sh          # ถอนการติดตั้ง (ถามยืนยันทีละขั้น)
-#   sudo bash uninstall.sh --yes    # ถอนการติดตั้งโดยไม่ถาม
+#   sudo bash uninstall.sh          # Interactive — confirm each step
+#   sudo bash uninstall.sh --yes    # Non-interactive — skip all prompts
+#
+# See also:
+#   install.sh     — Install all dependencies and configure the system
+#   linux_setup.py --check  — Check system status without modifying anything
+# =============================================================================
 
 set -e
 
+# -- Platform guard -----------------------------------------------------------
 if [ "$(uname)" != "Linux" ]; then
-    echo "Error: Linux only"
+    echo "Error: This script is intended for Linux only."
     exit 1
 fi
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-# ---------------------------------------------------------------------------
-# Parse arguments
-# ---------------------------------------------------------------------------
+# =============================================================================
+# Argument parsing
+# =============================================================================
 AUTO_YES=false
 for arg in "$@"; do
     case "$arg" in
@@ -28,6 +45,8 @@ for arg in "$@"; do
     esac
 done
 
+# Prompt the user for confirmation. Returns 0 (yes) or 1 (no).
+# Automatically returns 0 when --yes flag is set.
 confirm() {
     if [ "$AUTO_YES" = true ]; then
         return 0
@@ -39,9 +58,9 @@ confirm() {
     esac
 }
 
-# ---------------------------------------------------------------------------
-# ค่าคงที่
-# ---------------------------------------------------------------------------
+# =============================================================================
+# Constants
+# =============================================================================
 UDEV_RULE="/etc/udev/rules.d/99-ups-hid.rules"
 PYTHON_BIN="python3"
 if [ -n "$VIRTUAL_ENV" ]; then
@@ -52,73 +71,71 @@ echo ""
 echo "=== ups_module uninstaller ==="
 echo ""
 
-# ---------------------------------------------------------------------------
-# 1. ลบ Python packages
-# ---------------------------------------------------------------------------
+# =============================================================================
+# Step 1: Remove Python packages
+# =============================================================================
 echo "--- Python Packages ---"
 
-# อ่านรายชื่อ package จาก requirements.txt
+# Parse package names from requirements.txt (strips comments and version specifiers)
 PACKAGES=()
 if [ -f "requirements.txt" ]; then
     while IFS= read -r line; do
-        # ข้ามบรรทัดว่างและ comment
         line="$(echo "$line" | sed 's/#.*//' | xargs)"
         [ -z "$line" ] && continue
-        # ดึงเฉพาะชื่อ package (ตัดตัว specifier เช่น >=1.0 ออก)
         pkg="$(echo "$line" | sed 's/[><=!].*//' | xargs)"
         [ -n "$pkg" ] && PACKAGES+=("$pkg")
     done < requirements.txt
 fi
 
 if [ ${#PACKAGES[@]} -eq 0 ]; then
-    echo "  ไม่พบ requirements.txt หรือไม่มี package ที่ต้องลบ"
+    echo "  No packages found in requirements.txt — nothing to remove."
 else
-    echo "  จะลบ packages: ${PACKAGES[*]}"
-    if confirm "ลบ Python packages?"; then
+    echo "  Packages to remove: ${PACKAGES[*]}"
+    if confirm "Remove Python packages?"; then
         "$PYTHON_BIN" -m pip uninstall -y "${PACKAGES[@]}" 2>/dev/null || true
-        echo "  [OK] ลบ Python packages แล้ว"
+        echo "  [OK] Python packages removed."
     else
-        echo "  [SKIP] ข้ามการลบ Python packages"
+        echo "  [SKIP] Skipped Python package removal."
     fi
 fi
 
-# ---------------------------------------------------------------------------
-# 2. ลบ udev rule
-# ---------------------------------------------------------------------------
+# =============================================================================
+# Step 2: Remove udev rule
+# =============================================================================
 echo ""
 echo "--- udev Rule ---"
 
 if [ -f "$UDEV_RULE" ]; then
-    echo "  พบ udev rule: $UDEV_RULE"
-    if confirm "ลบ udev rule?"; then
+    echo "  Found udev rule: $UDEV_RULE"
+    if confirm "Remove udev rule?"; then
         if [ "$(id -u)" -ne 0 ]; then
-            echo "  [NG] ต้องรันด้วย sudo เพื่อลบ udev rule"
+            echo "  [NG] Root privileges required. Please run with sudo."
         else
             rm -f "$UDEV_RULE"
-            echo "  [OK] ลบ udev rule แล้ว"
+            echo "  [OK] udev rule removed."
 
-            # Reload udev
+            # Reload udev to apply changes immediately
             if command -v udevadm &> /dev/null; then
                 udevadm control --reload-rules && udevadm trigger
-                echo "  [OK] Reload udev rules แล้ว"
+                echo "  [OK] udev rules reloaded."
             fi
         fi
     else
-        echo "  [SKIP] ข้ามการลบ udev rule"
+        echo "  [SKIP] Skipped udev rule removal."
     fi
 else
-    echo "  [OK] ไม่พบ udev rule (ไม่ต้องลบ)"
+    echo "  [OK] No udev rule found — nothing to remove."
 fi
 
-# ---------------------------------------------------------------------------
-# สรุป
-# ---------------------------------------------------------------------------
+# =============================================================================
+# Summary
+# =============================================================================
 echo ""
-echo "--- สรุป ---"
-echo "  ถอนการติดตั้งเสร็จสิ้น"
+echo "--- Summary ---"
+echo "  Uninstallation complete."
 echo ""
-echo "  หมายเหตุ: system packages (libhidapi-hidraw0, libusb-1.0-0, ฯลฯ)"
-echo "  ไม่ถูกลบ เพราะอาจมีโปรแกรมอื่นใช้งานอยู่"
-echo "  หากต้องการลบด้วยตนเอง:"
+echo "  Note: System libraries (libhidapi-hidraw0, libusb-1.0-0, etc.)"
+echo "  were intentionally kept, as they may be used by other applications."
+echo "  To remove them manually:"
 echo "    sudo apt remove -y libhidapi-hidraw0 libhidapi-dev libusb-1.0-0-dev"
 echo ""

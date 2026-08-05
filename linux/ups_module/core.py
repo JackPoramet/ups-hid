@@ -1,7 +1,5 @@
 """
-HID UPS Deep Scanner - Phoenixtec Innova Unity IOT Tower
-VID: 0x06DA (Phoenixtec Power Co., Ltd.)
-PID: 0xFFFF (Innova Unity)
+HID UPS Deep Scanner — Multi-model support via device registry
 
 สคริปต์นี้เน้น 3 อย่าง:
 1) เลือก Report IDs แบบ dynamic จาก descriptor (caps text fallback)
@@ -20,9 +18,13 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import hid
 
+from .device_registry import DeviceRegistry, DeviceProfile
 
-VID = 0x06DA
-PID = 0xFFFF
+_registry = DeviceRegistry()
+_default_profile = _registry.get_default()
+
+VID = _default_profile.vid
+PID = _default_profile.pid
 
 
 DEFAULT_REPORT_SIZES = (64,)
@@ -434,18 +436,21 @@ def open_ups_device(vid: int = VID, pid: int = PID, verbose: bool = False):
             h = hid.device()
             h.open_path(target["path"])
 
+    # Look up the profile for this device to get model-specific fallback strings
+    _profile = _registry.get_by_vid_pid(vid, pid) or _default_profile
+
     # Read string descriptors from open handle when enumerate returns empty strings
     if not target.get("manufacturer_string"):
         try:
-            target["manufacturer_string"] = h.get_manufacturer_string() or "PHOENIXTEC"
+            target["manufacturer_string"] = h.get_manufacturer_string() or _profile.manufacturer
         except Exception:
-            target["manufacturer_string"] = "PHOENIXTEC"
+            target["manufacturer_string"] = _profile.manufacturer
 
     if not target.get("product_string"):
         try:
-            target["product_string"] = h.get_product_string() or "Innova Unity"
+            target["product_string"] = h.get_product_string() or _profile.model
         except Exception:
-            target["product_string"] = "Innova Unity"
+            target["product_string"] = _profile.model
 
     if not target.get("serial_number"):
         try:
@@ -1218,8 +1223,11 @@ def save_json_report(path: Path, payload: dict) -> None:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Deep USB HID scanner for UPS")
-    p.add_argument("--vid", type=auto_int, default=VID, help="USB Vendor ID (default: 0x06DA)")
-    p.add_argument("--pid", type=auto_int, default=PID, help="USB Product ID (default: 0xFFFF)")
+    model_ids = [dev.id for dev in _registry.devices]
+    p.add_argument("--model", choices=model_ids, default=None,
+                   help=f"Select registered UPS model (available: {', '.join(model_ids)})")
+    p.add_argument("--vid", type=auto_int, default=None, help=f"USB Vendor ID (default: from registry)")
+    p.add_argument("--pid", type=auto_int, default=None, help=f"USB Product ID (default: from registry)")
 
     p.add_argument("--descriptor-bin", default=DEFAULT_DESCRIPTOR_BIN, help="Raw descriptor bin for hid-parser")
     p.add_argument("--descriptor-txt", default=DEFAULT_DESCRIPTOR_TXT, help="HID caps text fallback")
@@ -1257,15 +1265,27 @@ def main() -> int:
         print("ช่วง Report ID ไม่ถูกต้อง (ต้องอยู่ใน 0x00..0xFF และ min <= max)")
         return 2
 
-    print("Phoenixtec Innova Unity IOT Tower - HID UPS Deep Scanner")
-    print(f"Target: VID=0x{args.vid:04X} PID=0x{args.pid:04X}")
+    # Resolve device profile: --model flag > --vid/--pid > registry default
+    if args.model:
+        profile = _registry.get_by_id(args.model)
+        if not profile:
+            print(f"Unknown model: {args.model}")
+            return 2
+    else:
+        profile = _default_profile
+
+    scan_vid = args.vid if args.vid is not None else profile.vid
+    scan_pid = args.pid if args.pid is not None else profile.pid
+
+    print(f"{profile.manufacturer} {profile.model} - HID UPS Deep Scanner")
+    print(f"Target: VID=0x{scan_vid:04X} PID=0x{scan_pid:04X}")
     print(
         "Feature scan config: "
         f"RID=0x{args.rid_min:02X}..0x{args.rid_max:02X}, "
         f"passes={args.passes}, retries={args.retries}, sizes={DEFAULT_REPORT_SIZES}"
     )
 
-    h, info = open_ups_device(args.vid, args.pid)
+    h, info = open_ups_device(scan_vid, scan_pid)
     if not h:
         return 1
 

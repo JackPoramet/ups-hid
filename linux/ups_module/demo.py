@@ -35,6 +35,10 @@ except (ImportError, ValueError):
 
 def _check_system() -> bool:
     """ตรวจสอบความพร้อมของระบบแบบย่อ"""
+    from ups_module.device_registry import DeviceRegistry
+
+    registry = DeviceRegistry()
+
     print("\n--- ตรวจสอบระบบ (System Check) ---")
     system = platform.system()
     print(f"  OS        : {system} {platform.machine()}")
@@ -42,13 +46,17 @@ def _check_system() -> bool:
     ok = True
     try:
         import hid
-        devices = hid.enumerate(0x06DA, 0xFFFF)
-        if devices:
-            d = devices[0]
-            mfr = d.get('manufacturer_string') or '?'
-            prod = d.get('product_string') or '?'
-            print(f"  hidapi    : OK ({mfr} / {prod})")
-        else:
+        found_any = False
+        for profile in registry.devices:
+            devices = hid.enumerate(profile.vid, profile.pid)
+            if devices:
+                d = devices[0]
+                mfr = d.get('manufacturer_string') or profile.manufacturer
+                prod = d.get('product_string') or profile.model
+                print(f"  hidapi    : OK ({mfr} / {prod})")
+                found_any = True
+                break
+        if not found_any:
             print("  hidapi    : OK (ไม่พบ UPS - เช็คสาย USB)")
             ok = False
     except ImportError:

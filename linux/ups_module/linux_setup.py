@@ -25,14 +25,19 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from .device_registry import DeviceRegistry
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # ค่าคงที่
 # ---------------------------------------------------------------------------
 
-DEFAULT_VID = 0x06DA
-DEFAULT_PID = 0xFFFF
+_registry = DeviceRegistry()
+_default_profile = _registry.get_default()
+
+DEFAULT_VID = _default_profile.vid
+DEFAULT_PID = _default_profile.pid
 
 UDEV_RULE_PATH = Path("/etc/udev/rules.d/99-ups-hid.rules")
 
@@ -148,13 +153,6 @@ def generate_udev_rule(vid: int = DEFAULT_VID, pid: int = DEFAULT_PID) -> str:
     vid_hex = f"{vid:04x}"
     pid_hex = f"{pid:04x}"
     return (
-        f"# UPS HID device — VID={vid_hex} PID={pid_hex}\n"
-        f"# สร้างโดย: python -m ups_module.linux_setup\n"
-        f"#\n"
-        f"# อนุญาตให้ user ทั่วไปเข้าถึง HID device ได้โดยไม่ต้องใช้ sudo\n"
-        f"# hidraw: สำหรับ hidapi (อ่าน Feature Report)\n"
-        f"# usb:    สำหรับ pyusb fallback (อ่าน Input Voltage ผ่าน control transfer)\n"
-        f"\n"
         f'SUBSYSTEM=="hidraw", ATTRS{{idVendor}}=="{vid_hex}", '
         f'ATTRS{{idProduct}}=="{pid_hex}", MODE="0666"\n'
         f'SUBSYSTEM=="usb", ATTRS{{idVendor}}=="{vid_hex}", '
@@ -162,15 +160,39 @@ def generate_udev_rule(vid: int = DEFAULT_VID, pid: int = DEFAULT_PID) -> str:
     )
 
 
+def generate_udev_rules_all() -> str:
+    """สร้างเนื้อหา udev rule สำหรับทุก device ที่ลงทะเบียนใน meta.json"""
+    lines = [
+        "# UPS HID devices — auto-generated from meta.json",
+        "# สร้างโดย: python -m ups_module.linux_setup",
+        "#",
+        "# อนุญาตให้ user ทั่วไปเข้าถึง HID device ได้โดยไม่ต้องใช้ sudo",
+        "# hidraw: สำหรับ hidapi (อ่าน Feature Report)",
+        "# usb:    สำหรับ pyusb fallback (อ่าน Input Voltage ผ่าน control transfer)",
+        "",
+    ]
+    for profile in _registry.devices:
+        lines.append(f"# {profile.manufacturer} {profile.model} (VID={profile.vid:04x} PID={profile.pid:04x})")
+        lines.append(generate_udev_rule(profile.vid, profile.pid))
+    return "\n".join(lines) + "\n"
+
+
 def install_udev_rule(
     vid: int = DEFAULT_VID,
     pid: int = DEFAULT_PID,
     rule_path: Path = UDEV_RULE_PATH,
+    all_devices: bool = False,
 ) -> Tuple[bool, str]:
     """
     สร้างไฟล์ udev rule และ reload udevadm
 
     ต้องรันด้วย root (sudo)
+
+    Parameters
+    ----------
+    all_devices : bool
+        If True, generate rules for all devices in the registry.
+        If False, generate a rule for the specified VID/PID only.
 
     Returns
     -------
@@ -180,7 +202,10 @@ def install_udev_rule(
     if os.geteuid() != 0:
         return False, "ต้องรันด้วย sudo เพื่อสร้าง udev rule"
 
-    content = generate_udev_rule(vid, pid)
+    if all_devices:
+        content = generate_udev_rules_all()
+    else:
+        content = generate_udev_rule(vid, pid)
 
     try:
         rule_path.write_text(content, encoding="utf-8")
@@ -289,12 +314,12 @@ def main() -> int:
         help="เช็คสถานะเท่านั้น ไม่ติดตั้งอะไร (ไม่ต้อง sudo)",
     )
     parser.add_argument(
-        "--vid", type=lambda x: int(x, 0), default=DEFAULT_VID,
-        help=f"USB Vendor ID (default: 0x{DEFAULT_VID:04X})",
+        "--vid", type=lambda x: int(x, 0), default=None,
+        help="USB Vendor ID (override; default: all devices from meta.json)",
     )
     parser.add_argument(
-        "--pid", type=lambda x: int(x, 0), default=DEFAULT_PID,
-        help=f"USB Product ID (default: 0x{DEFAULT_PID:04X})",
+        "--pid", type=lambda x: int(x, 0), default=None,
+        help="USB Product ID (override; default: all devices from meta.json)",
     )
     args = parser.parse_args()
 
@@ -303,6 +328,16 @@ def main() -> int:
         return 1
 
     check_only = args.check
+
+    # Determine which devices to check
+    if args.vid is not None and args.pid is not None:
+        # Manual override: single device
+        check_targets = [(args.vid, args.pid)]
+        use_all_devices = False
+    else:
+        # Use all devices from registry
+        check_targets = _registry.get_all_vid_pid_pairs()
+        use_all_devices = True
 
     # --- ตรวจสอบ system dependencies ---
     _print_header("ตรวจสอบ System Dependencies")
@@ -334,24 +369,33 @@ def main() -> int:
 
     if not has_rule and not check_only:
         print("\n  กำลังสร้าง udev rule...")
-        ok, msg = install_udev_rule(args.vid, args.pid)
+        if use_all_devices:
+            ok, msg = install_udev_rule(all_devices=True)
+        else:
+            ok, msg = install_udev_rule(args.vid, args.pid)
         _print_result("สร้าง udev rule", ok, msg)
         print(f"  {msg}")
         if ok:
             has_rule = True
     elif not has_rule and check_only:
         print("\n  สร้าง udev rule ด้วยคำสั่ง:")
-        print(f"    sudo python -m ups_module.linux_setup --vid 0x{args.vid:04X} --pid 0x{args.pid:04X}")
+        print("    sudo python -m ups_module.linux_setup")
 
     # --- ตรวจสอบสิทธิ์ device ---
     _print_header("ตรวจสอบการเข้าถึง UPS Device")
-    accessible, msg = check_device_permission(args.vid, args.pid)
-    _print_result(f"UPS (VID=0x{args.vid:04X} PID=0x{args.pid:04X})", accessible, msg)
-    print(f"  {msg}")
+    any_accessible = False
+    for vid, pid in check_targets:
+        accessible, msg = check_device_permission(vid, pid)
+        profile = _registry.get_by_vid_pid(vid, pid)
+        label = f"{profile.model} (VID=0x{vid:04X} PID=0x{pid:04X})" if profile else f"UPS (VID=0x{vid:04X} PID=0x{pid:04X})"
+        _print_result(label, accessible, msg)
+        if accessible:
+            print(f"  {msg}")
+            any_accessible = True
 
     # --- สรุป ---
     _print_header("สรุป")
-    if all_deps_ok and has_rule and accessible:
+    if all_deps_ok and has_rule and any_accessible:
         print("  ระบบพร้อมใช้งาน ups_module แล้ว")
         return 0
     else:
