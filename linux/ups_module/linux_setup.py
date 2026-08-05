@@ -337,6 +337,8 @@ def main() -> int:
         ok, msg = install_udev_rule(args.vid, args.pid)
         _print_result("สร้าง udev rule", ok, msg)
         print(f"  {msg}")
+        if ok:
+            has_rule = True
     elif not has_rule and check_only:
         print("\n  สร้าง udev rule ด้วยคำสั่ง:")
         print(f"    sudo python -m ups_module.linux_setup --vid 0x{args.vid:04X} --pid 0x{args.pid:04X}")
