@@ -1,6 +1,6 @@
 # ups_module — Pure Python HID-UPS Client & Driver Library
 
-ไลบรารี Python สำหรับสื่อสารกับอุปกรณ์ UPS ผ่านโปรโตคอล USB HID บนระบบปฏิบัติการ Linux โดยตรง โดยไม่ต้องติดตั้ง daemon `upsd` หรือระบบ NUT (Network UPS Tools)
+ไลบรารี Python สำหรับสื่อสารกับอุปกรณ์ UPS ผ่านโปรโตคอล USB HID บนระบบปฏิบัติการ Linux
 
 ---
 
@@ -76,8 +76,6 @@ sudo bash uninstall.sh --yes    # ถอนการติดตั้งแบ�
 ---
 
 ## 4. ระบบการลงทะเบียนอุปกรณ์ (Multi-Model Device Registry)
-
-อุปกรณ์ UPS ถูกลงทะเบียนในไฟล์ [meta.json](file:///d:/Work/CoE/Project/UPS/linux/ups_module/meta.json) โดยโมดูล [device_registry.py](file:///d:/Work/CoE/Project/UPS/linux/ups_module/device_registry.py) ทำหน้าที่โหลดข้อมูลและค้นหาอุปกรณ์
 
 ### โครงสร้างไฟล์ `meta.json`
 

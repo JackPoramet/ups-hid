@@ -51,7 +51,7 @@ graph TD
     EventBus -->|Callback| App
     Core -->|HID Feature Reports| Device
     Core -->|Map to Raw Dict| Models
-    Models -->|to_nut_dict()| App
+    Models -->|"to_nut_dict()"| App
 ```
 
 ---
