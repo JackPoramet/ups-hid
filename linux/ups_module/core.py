@@ -18,7 +18,10 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import hid
 
-from .device_registry import DeviceRegistry, DeviceProfile
+try:
+    from .device_registry import DeviceRegistry, DeviceProfile
+except ImportError:
+    from device_registry import DeviceRegistry, DeviceProfile
 
 _registry = DeviceRegistry()
 _default_profile = _registry.get_default()

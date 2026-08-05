@@ -29,7 +29,10 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from .device_registry import DeviceRegistry
+try:
+    from .device_registry import DeviceRegistry
+except ImportError:
+    from device_registry import DeviceRegistry
 
 logger = logging.getLogger(__name__)
 

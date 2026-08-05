@@ -25,7 +25,10 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from .device_registry import DeviceRegistry
+try:
+    from .device_registry import DeviceRegistry
+except ImportError:
+    from device_registry import DeviceRegistry
 
 logger = logging.getLogger(__name__)
 

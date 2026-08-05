@@ -44,7 +44,10 @@ from typing import Any, Callable, Dict, List, Optional
 from .events import EventBus, EventDetector, EventHandler
 from .models import NotifyType, UPSData, UPSEvent, ups_data_from_raw
 from .serializer import sanitize_for_json
-from .device_registry import DeviceRegistry, DeviceProfile
+try:
+    from .device_registry import DeviceRegistry, DeviceProfile
+except ImportError:
+    from device_registry import DeviceRegistry, DeviceProfile
 
 logger = logging.getLogger(__name__)
 
