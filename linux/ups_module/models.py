@@ -286,7 +286,7 @@ class UPSData:
 
 def ups_data_from_raw(raw: Dict[str, Any]) -> UPSData:
     """
-    Convert the raw dict returned by ``core_hid_ups.decode_feature_reports``
+    Convert the raw dict returned by ``core.decode_feature_reports``
     (and ``infer_tentative_live_values``) into a typed ``UPSData`` instance.
     """
 

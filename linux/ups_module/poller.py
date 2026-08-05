@@ -38,59 +38,34 @@ logger = logging.getLogger(__name__)
 
 _registry = DeviceRegistry()
 
-# Lazy import: bundled core.py first, then legacy fallbacks
+# Lazy import: bundled core.py
 try:
     from .core import (
-        DEFAULT_DESCRIPTOR_BIN,
-        DEFAULT_DESCRIPTOR_TXT,
         VID,
         PID,
         decode_feature_reports,
-        get_descriptor_feature_ids,
         infer_tentative_live_values,
-        load_descriptor_profile,
         open_ups_device,
         read_all_feature_reports,
     )
     HID_AVAILABLE = True
 except ImportError:
     try:
-        from .core_hid_ups import (
-            DEFAULT_DESCRIPTOR_BIN,
-            DEFAULT_DESCRIPTOR_TXT,
+        from core import (
             VID,
             PID,
             decode_feature_reports,
-            get_descriptor_feature_ids,
             infer_tentative_live_values,
-            load_descriptor_profile,
             open_ups_device,
             read_all_feature_reports,
         )
         HID_AVAILABLE = True
-    except ImportError:
-        try:
-            from core_hid_ups import (
-                DEFAULT_DESCRIPTOR_BIN,
-                DEFAULT_DESCRIPTOR_TXT,
-                VID,
-                PID,
-                decode_feature_reports,
-                get_descriptor_feature_ids,
-                infer_tentative_live_values,
-                load_descriptor_profile,
-                open_ups_device,
-                read_all_feature_reports,
-            )
-            HID_AVAILABLE = True
-        except ImportError as _e:
-            logger.warning("core protocol engine not available: %s", _e)
-            HID_AVAILABLE = False
-            _fallback = _registry.get_default()
-            VID = _fallback.vid
-            PID = _fallback.pid
-            DEFAULT_DESCRIPTOR_BIN = "report_descriptor_live.bin"
-            DEFAULT_DESCRIPTOR_TXT = "report_descriptor_live.txt"
+    except ImportError as _e:
+        logger.warning("core protocol engine not available: %s", _e)
+        HID_AVAILABLE = False
+        _fallback = _registry.get_default()
+        VID = _fallback.vid
+        PID = _fallback.pid
 
 
 def _read_descriptor_from_sysfs(device_path: object) -> Optional[bytes]:
@@ -236,34 +211,10 @@ class UPSPoller(threading.Thread):
         with self._device_lock:
             self._device_handle = h
         self._device_info = info or {}
-        self._load_descriptor()
 
         mfr = self._device_info.get("manufacturer_string", "?")
         prod = self._device_info.get("product_string", "?")
         logger.info("Connected to UPS: %s %s", mfr, prod)
-
-    def _load_descriptor(self) -> None:
-        """Try to read the HID descriptor from sysfs and build report ID list."""
-        raw_path = self._device_info.get("path")
-        if not raw_path:
-            return
-
-        descriptor_bytes = _read_descriptor_from_sysfs(raw_path)
-        if not descriptor_bytes:
-            return
-
-        bin_path = Path(DEFAULT_DESCRIPTOR_BIN)
-        try:
-            bin_path.write_bytes(descriptor_bytes)
-            self._descriptor_profile = load_descriptor_profile(
-                bin_path, Path(DEFAULT_DESCRIPTOR_TXT)
-            )
-            ids = get_descriptor_feature_ids(self._descriptor_profile)
-            if ids:
-                self._report_ids = ids
-                logger.info("Descriptor loaded: %d feature report IDs.", len(ids))
-        except Exception as exc:
-            logger.error("Profile load error: %s", exc)
 
     def _poll_once(self) -> None:
         """Perform a single HID read cycle and update the store."""
@@ -314,12 +265,7 @@ class UPSPoller(threading.Thread):
             if system == "windows":
                 import usb.backend.libusb0
                 
-                # 1. Check if WinpowerG2 is installed in the default path
                 dll_path = r"C:\Program Files\WinpowerG2\libUSB_driver\amd64\libusb0.dll"
-                
-                # 2. Check if the user placed libusb0.dll inside the ups_module folder
-                local_dll = os.path.join(os.path.dirname(__file__), "libusb0.dll")
-                # Prioritize our bundled driver
                 local_dll = os.path.join(os.path.dirname(__file__), "drivers", "windows", "libusb0.dll")
                 fallback_dll = r"C:\Program Files\WinpowerG2\libUSB_driver\amd64\libusb0.dll"
                 
@@ -329,13 +275,6 @@ class UPSPoller(threading.Thread):
                     backend = usb.backend.libusb0.get_backend(find_library=lambda x: fallback_dll)
 
             dev = usb.core.find(idVendor=self.vid, idProduct=self.pid, backend=backend)
-            
-            # Auto-Install Filter Driver on Windows if pyusb fails to find it or access it
-            if not dev and system == "windows":
-                from . import windows_setup
-                if windows_setup.install_filter(self.vid, self.pid):
-                    # Retry finding device after installation
-                    dev = usb.core.find(idVendor=self.vid, idProduct=self.pid, backend=backend)
             
             if not dev:
                 return
@@ -361,10 +300,6 @@ class UPSPoller(threading.Thread):
                     
         except usb.core.USBError as e:
             logger.debug("pyusb fallback access denied: %s", e)
-            if platform.system().lower() == "windows":
-                # The device might be present but locked (filter driver not fully active)
-                from . import windows_setup
-                windows_setup.install_filter(self.vid, self.pid)
         except ImportError:
             pass # pyusb not installed
         except Exception as e:

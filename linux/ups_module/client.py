@@ -54,60 +54,35 @@ logger = logging.getLogger(__name__)
 _registry = DeviceRegistry()
 
 # ---------------------------------------------------------------------------
-# Lazy-import core (bundled core.py, or legacy core_hid_ups)
+# Lazy-import core
 # ---------------------------------------------------------------------------
 try:
     from .core import (
         VID,
         PID,
         decode_feature_reports,
-        get_descriptor_feature_ids,
         infer_tentative_live_values,
-        load_descriptor_profile,
         open_ups_device,
         read_all_feature_reports,
-        DEFAULT_DESCRIPTOR_BIN,
-        DEFAULT_DESCRIPTOR_TXT,
     )
     HID_AVAILABLE = True
 except ImportError:
     try:
-        from .core_hid_ups import (
+        from core import (
             VID,
             PID,
             decode_feature_reports,
-            get_descriptor_feature_ids,
             infer_tentative_live_values,
-            load_descriptor_profile,
             open_ups_device,
             read_all_feature_reports,
-            DEFAULT_DESCRIPTOR_BIN,
-            DEFAULT_DESCRIPTOR_TXT,
         )
         HID_AVAILABLE = True
-    except ImportError:
-        try:
-            from core_hid_ups import (
-                VID,
-                PID,
-                decode_feature_reports,
-                get_descriptor_feature_ids,
-                infer_tentative_live_values,
-                load_descriptor_profile,
-                open_ups_device,
-                read_all_feature_reports,
-                DEFAULT_DESCRIPTOR_BIN,
-                DEFAULT_DESCRIPTOR_TXT,
-            )
-            HID_AVAILABLE = True
-        except ImportError as _e:
-            logger.warning("core protocol engine not available: %s", _e)
-            HID_AVAILABLE = False
-            _fallback = _registry.get_default()
-            VID = _fallback.vid
-            PID = _fallback.pid
-            DEFAULT_DESCRIPTOR_BIN = "report_descriptor_live.bin"
-            DEFAULT_DESCRIPTOR_TXT = "report_descriptor_live.txt"
+    except ImportError as _e:
+        logger.warning("core protocol engine not available: %s", _e)
+        HID_AVAILABLE = False
+        _fallback = _registry.get_default()
+        VID = _fallback.vid
+        PID = _fallback.pid
 
 
 _default_profile = _registry.get_default()
@@ -189,7 +164,7 @@ class UPSClient:
         Raises
         ------
         RuntimeError
-            If ``core_hid_ups`` is not installed or the device is not found.
+            If ``core`` protocol engine is not installed or the device is not found.
 
         Returns
         -------
@@ -197,7 +172,7 @@ class UPSClient:
             *self* — enables chaining: ``client = UPSClient().connect()``
         """
         if not HID_AVAILABLE:
-            raise RuntimeError("core_hid_ups / hidapi not installed.")
+            raise RuntimeError("core / hidapi not installed.")
 
         h, info = open_ups_device(self._vid, self._pid)
         if h is None:

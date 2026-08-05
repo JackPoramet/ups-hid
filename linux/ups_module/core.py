@@ -31,26 +31,6 @@ PID = _default_profile.pid
 
 
 DEFAULT_REPORT_SIZES = (64,)
-DEFAULT_DESCRIPTOR_TXT = "report_descriptor_live.txt"
-DEFAULT_DESCRIPTOR_BIN = "report_descriptor_live.bin"
-
-# ใช้เฉพาะเพื่อ decode ค่าที่ยืนยันแล้วในสคริปต์นี้
-LEGACY_DECODE_REPORT_IDS = {
-    0x01,
-    0x06,
-    0x07,
-    0x0C,
-    0x0D,
-    0x10,
-    0x14,
-    0x17,
-    0x24,
-    0x25,
-    0x26,
-    0x27,
-    0x29,
-    0x31,
-}
 
 
 def auto_int(value: str) -> int:
@@ -102,266 +82,6 @@ def stringify_device_info(info: dict) -> dict:
         else:
             clean[k] = v
     return clean
-
-
-def empty_descriptor_profile(source: str = "none", notes: Optional[List[str]] = None) -> dict:
-    return {
-        "source": source,
-        "input": {},
-        "feature": {},
-        "output": {},
-        "input_report_ids": [],
-        "feature_report_ids": [],
-        "output_report_ids": [],
-        "notes": notes or [],
-    }
-
-
-def _parse_caps_items_from_text(text: str, cap_name: str) -> Dict[int, dict]:
-    header_re = re.compile(r"^\s*-+\s*" + re.escape(cap_name) + r"\[(\d+)\]\s*-+\s*$", re.MULTILINE)
-    usage_re = re.compile(r"^\s*Usage\s*:\s*0x([0-9A-Fa-f]+)\s*\(([^)]*)\)", re.MULTILINE)
-
-    def find_hex(body: str, field: str) -> Optional[int]:
-        m = re.search(r"^\s*" + re.escape(field) + r"\s*:\s*0x([0-9A-Fa-f]+)", body, re.MULTILINE)
-        return int(m.group(1), 16) if m else None
-
-    out: Dict[int, dict] = {}
-    headers = list(header_re.finditer(text))
-    if not headers:
-        return out
-
-    for i, hdr in enumerate(headers):
-        start = hdr.end()
-        end = headers[i + 1].start() if i + 1 < len(headers) else len(text)
-        body = text[start:end]
-
-        rid = find_hex(body, "ReportID")
-        if rid is None:
-            continue
-
-        usage_page = find_hex(body, "UsagePage")
-        usage = None
-        usage_name = None
-        m_usage = usage_re.search(body)
-        if m_usage:
-            usage = int(m_usage.group(1), 16)
-            usage_name = m_usage.group(2).strip()
-
-        bit_size = find_hex(body, "BitSize") or 0
-        report_count = find_hex(body, "ReportCount") or 1
-
-        item = {
-            "usage_page": usage_page,
-            "usage": usage,
-            "usage_name": usage_name,
-            "bit_size": bit_size,
-            "report_count": report_count,
-        }
-
-        bucket = out.setdefault(rid, {"items": [], "report_size_bits_est": 0})
-        bucket["items"].append(item)
-        bucket["report_size_bits_est"] += bit_size * max(1, report_count)
-
-    return out
-
-
-def parse_descriptor_profile_from_caps_txt(path: Path) -> Optional[dict]:
-    if not path.exists():
-        return None
-
-    text = path.read_text(encoding="utf-8", errors="ignore")
-    input_caps = _parse_caps_items_from_text(text, "InputCaps")
-    feature_caps = _parse_caps_items_from_text(text, "FeatureCaps")
-
-    if not input_caps and not feature_caps:
-        return None
-
-    profile = empty_descriptor_profile(source="caps_text")
-    profile["source_file"] = str(path)
-    profile["input"] = input_caps
-    profile["feature"] = feature_caps
-    profile["input_report_ids"] = sorted(input_caps.keys())
-    profile["feature_report_ids"] = sorted(feature_caps.keys())
-    return profile
-
-
-def parse_descriptor_profile_with_hid_parser(path: Path) -> Tuple[Optional[dict], Optional[str]]:
-    if not path.exists():
-        return None, f"descriptor bin not found: {path}"
-
-    raw = path.read_bytes()
-    if not raw:
-        return None, f"descriptor bin is empty: {path}"
-
-    # Windows preparsed collection blob, not HID report descriptor bytes.
-    if raw.startswith(b"HidP KDR"):
-        return None, "descriptor bin is preparsed collection blob (HidP KDR), hid-parser needs raw HID report descriptor"
-
-    try:
-        import hid_parser
-    except Exception as exc:
-        return None, f"hid-parser import failed: {exc}"
-
-    try:
-        rdesc = hid_parser.ReportDescriptor(list(raw))
-    except Exception as exc:
-        return None, f"hid-parser parse failed: {exc}"
-
-    def build_pool(kind: str) -> Dict[int, dict]:
-        ids = getattr(rdesc, f"{kind}_report_ids")
-        get_items = getattr(rdesc, f"get_{kind}_items")
-        get_size = getattr(rdesc, f"get_{kind}_report_size")
-
-        pool: Dict[int, dict] = {}
-        for rid in ids:
-            if rid is None:
-                continue
-            rows = []
-            for item in get_items(rid):
-                row = {"kind": type(item).__name__, "size_bits": int(getattr(item, "size", 0))}
-                usage = getattr(item, "usage", None)
-                if usage is not None:
-                    row["usage"] = str(usage)
-                usages = getattr(item, "usages", None)
-                if usages is not None:
-                    try:
-                        row["usages"] = [str(x) for x in usages]
-                    except Exception:
-                        row["usages"] = [str(usages)]
-                rows.append(row)
-
-            try:
-                size_bits = int(get_size(rid))
-            except Exception:
-                size_bits = 0
-
-            pool[int(rid)] = {"report_size_bits": size_bits, "items": rows}
-        return pool
-
-    input_pool = build_pool("input")
-    feature_pool = build_pool("feature")
-    output_pool = build_pool("output")
-
-    profile = empty_descriptor_profile(source="hid_parser")
-    profile["source_file"] = str(path)
-    profile["input"] = input_pool
-    profile["feature"] = feature_pool
-    profile["output"] = output_pool
-    profile["input_report_ids"] = sorted(input_pool.keys())
-    profile["feature_report_ids"] = sorted(feature_pool.keys())
-    profile["output_report_ids"] = sorted(output_pool.keys())
-    return profile, None
-
-
-def load_descriptor_profile(descriptor_bin_path: Path, descriptor_txt_path: Path) -> dict:
-    notes: List[str] = []
-
-    profile, err = parse_descriptor_profile_with_hid_parser(descriptor_bin_path)
-    if profile is not None:
-        profile["notes"] = notes
-        return profile
-    if err:
-        notes.append(err)
-
-    profile = parse_descriptor_profile_from_caps_txt(descriptor_txt_path)
-    if profile is not None:
-        profile["notes"] = notes
-        return profile
-
-    profile = empty_descriptor_profile()
-    profile["notes"] = notes
-    return profile
-
-
-def get_descriptor_feature_ids(profile: dict) -> List[int]:
-    return [int(x) for x in profile.get("feature_report_ids", []) if isinstance(x, int)]
-
-
-def get_descriptor_all_ids(profile: dict) -> List[int]:
-    return merge_report_ids(
-        profile.get("feature_report_ids", []),
-        profile.get("input_report_ids", []),
-        profile.get("output_report_ids", []),
-    )
-
-
-def _usage_preview(bucket: Optional[dict], max_items: int = 2) -> str:
-    if not bucket:
-        return "-"
-
-    raw: List[str] = []
-    for item in bucket.get("items", []):
-        usage_name = item.get("usage_name")
-        usage_page = item.get("usage_page")
-        usage = item.get("usage")
-        if usage_name and usage_page is not None and usage is not None:
-            raw.append(f"0x{usage_page:04X}:0x{usage:04X} {usage_name}")
-            continue
-
-        if isinstance(item.get("usage"), str):
-            raw.append(item["usage"])
-
-        for u in item.get("usages", []) or []:
-            raw.append(str(u))
-
-    uniq = []
-    seen = set()
-    for x in raw:
-        if x and x not in seen:
-            uniq.append(x)
-            seen.add(x)
-
-    if not uniq:
-        return "-"
-
-    preview = "; ".join(uniq[:max_items])
-    if len(uniq) > max_items:
-        preview += f" (+{len(uniq) - max_items})"
-    return preview
-
-
-def print_descriptor_profile_summary(profile: dict) -> None:
-    print("\nDescriptor profile:")
-    print(f"  source       : {profile.get('source', 'none')}")
-    print(f"  input IDs    : {len(profile.get('input_report_ids', []))}")
-    print(f"  feature IDs  : {len(profile.get('feature_report_ids', []))}")
-    print(f"  output IDs   : {len(profile.get('output_report_ids', []))}")
-
-    merged = get_descriptor_all_ids(profile)
-    if merged:
-        preview = ", ".join(f"0x{x:02X}" for x in merged[:32])
-        print(f"  merged IDs   : {preview}")
-        if len(merged) > 32:
-            print(f"  ... and {len(merged) - 32} more")
-
-    for note in profile.get("notes", []) or []:
-        print(f"  note         : {note}")
-
-
-def print_descriptor_report_table(profile: dict, max_rows: int = 40) -> None:
-    all_ids = get_descriptor_all_ids(profile)
-    if not all_ids:
-        print("\nDescriptor report table: not available")
-        return
-
-    print("\nDescriptor report table (dynamic mapping):")
-    print("-" * 108)
-    print(f"  {'RID':>6}  {'FeatureBits':>11}  {'InputBits':>9}  {'FeatureUsage':<35}  {'InputUsage':<35}")
-    print("  " + "-" * 104)
-
-    for rid in all_ids[:max_rows]:
-        f_bucket = profile.get("feature", {}).get(rid)
-        i_bucket = profile.get("input", {}).get(rid)
-        f_bits = (f_bucket or {}).get("report_size_bits") or (f_bucket or {}).get("report_size_bits_est") or 0
-        i_bits = (i_bucket or {}).get("report_size_bits") or (i_bucket or {}).get("report_size_bits_est") or 0
-        f_usage = _usage_preview(f_bucket)
-        i_usage = _usage_preview(i_bucket)
-        print(f"  0x{rid:02X}  {f_bits:>11}  {i_bits:>9}  {f_usage:<35}  {i_usage:<35}")
-
-    if len(all_ids) > max_rows:
-        print(f"  ... and {len(all_ids) - max_rows} more rows")
-
-
 def print_candidate_devices(devices: List[dict]) -> None:
     print("พบอุปกรณ์ที่ match VID/PID:")
     for idx, d in enumerate(devices, start=1):
@@ -1125,7 +845,6 @@ def print_monitor_snapshot(ups: dict) -> None:
         ("output_voltage_v", "Output Voltage", "V"),
         ("output_current_a", "Output Current", "A"),
         ("output_frequency_hz", "Output Frequency", "Hz"),
-        ("output_active_power_w", "Output Active Power", "W"),
         ("output_apparent_power_va", "Output Apparent Power", "VA"),
         ("input.frequency", "Input Frequency", "Hz"),
         ("input.voltage.nominal", "Nominal Voltage", "V (config)"),
@@ -1149,34 +868,21 @@ def print_monitor_snapshot(ups: dict) -> None:
         print(f"  {label:<30} {val}{suffix}")
 
 
-def monitor_ups(h, report_ids: Sequence[int], interval: float = 1.0, count: int = 20) -> None:
-    print(f"\n{'=' * 78}")
-    print(f"Monitor (poll ทุก {interval}s)  กด Ctrl+C หยุด")
-    print(f"{'=' * 78}")
-
-    try:
-        for _ in range(max(1, count)):
-            raw, _ = read_all_feature_reports(
-                h,
-                report_ids=report_ids,
-                sizes=(64,),
-                retries=1,
-                include_zero=False,
-            )
-            u = decode_feature_reports(raw)
-            u.update(infer_tentative_live_values(raw, u))
-            print("\033[H\033[J", end="")
-            print("=== UPS Monitor (1s) ===")
-            print(f"Updated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-            print_monitor_snapshot(u)
-            time.sleep(interval)
-    except KeyboardInterrupt:
-        print("\n  หยุด monitor")
+def stringify_device_info(info: dict) -> dict:
+    out = {}
+    for k, v in info.items():
+        if isinstance(v, (bytes, bytearray)):
+            out[k] = v.hex()
+        else:
+            out[k] = str(v) if v is not None else ""
+    return out
 
 
-def resolve_json_path(user_value: str) -> Path:
+def resolve_json_path(user_value: Optional[str]) -> Path:
+    if user_value is None:
+        return Path("ups_scan.json")
     if user_value == "":
-        ts = time.strftime("%Y%m%d_%H%M%S")
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         return Path(f"ups_scan_{ts}.json")
     return Path(user_value)
 
@@ -1189,7 +895,6 @@ def build_export_payload(
     history: Dict[int, List[str]],
     decoded: dict,
     input_reports: dict,
-    descriptor_profile: Optional[dict] = None,
 ) -> dict:
     feature_reports = {}
     for rid, data in sorted(raw.items()):
@@ -1208,10 +913,8 @@ def build_export_payload(
             "requested_ids": [f"0x{rid:02X}" for rid in requested_ids],
             "captured_ids": [f"0x{rid:02X}" for rid in sorted(raw.keys())],
             "captured_count": len(raw),
-            "descriptor_profile_source": (descriptor_profile or {}).get("source", "none"),
         },
         "decoded": decoded,
-        "descriptor_profile": descriptor_profile or {},
         "feature_reports": feature_reports,
         "input_reports": input_reports,
     }
@@ -1229,12 +932,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     model_ids = [dev.id for dev in _registry.devices]
     p.add_argument("--model", choices=model_ids, default=None,
                    help=f"Select registered UPS model (available: {', '.join(model_ids)})")
-    p.add_argument("--vid", type=auto_int, default=None, help=f"USB Vendor ID (default: from registry)")
-    p.add_argument("--pid", type=auto_int, default=None, help=f"USB Product ID (default: from registry)")
-
-    p.add_argument("--descriptor-bin", default=DEFAULT_DESCRIPTOR_BIN, help="Raw descriptor bin for hid-parser")
-    p.add_argument("--descriptor-txt", default=DEFAULT_DESCRIPTOR_TXT, help="HID caps text fallback")
-    p.add_argument("--no-descriptor-profile", action="store_true", help="Disable descriptor-driven mapping")
+    p.add_argument("--vid", type=auto_int, default=None, help="USB Vendor ID (default: from registry)")
+    p.add_argument("--pid", type=auto_int, default=None, help="USB Product ID (default: from registry)")
 
     p.add_argument("--rid-min", type=auto_int, default=0x01, help="Min Report ID (default: 0x01)")
     p.add_argument("--rid-max", type=auto_int, default=0xFF, help="Max Report ID (default: 0xFF)")
@@ -1285,7 +984,7 @@ def main() -> int:
     print(
         "Feature scan config: "
         f"RID=0x{args.rid_min:02X}..0x{args.rid_max:02X}, "
-        f"passes={args.passes}, retries={args.retries}, sizes={DEFAULT_REPORT_SIZES}"
+        f"passes={args.passes}, retries={args.retries}"
     )
 
     h, info = open_ups_device(scan_vid, scan_pid)
@@ -1293,25 +992,7 @@ def main() -> int:
         return 1
 
     try:
-        if args.no_descriptor_profile:
-            descriptor_profile = empty_descriptor_profile(notes=["disabled by --no-descriptor-profile"])
-        else:
-            descriptor_profile = load_descriptor_profile(Path(args.descriptor_bin), Path(args.descriptor_txt))
-
-        print_descriptor_profile_summary(descriptor_profile)
-        print_descriptor_report_table(descriptor_profile)
-
-        descriptor_feature_ids = [
-            rid for rid in get_descriptor_feature_ids(descriptor_profile) if args.rid_min <= rid <= args.rid_max
-        ]
-
-        if descriptor_feature_ids:
-            base_ids = descriptor_feature_ids
-            print("\nใช้ Feature IDs จาก descriptor profile: " + ", ".join(f"0x{x:02X}" for x in base_ids))
-        else:
-            base_ids = list(range(args.rid_min, args.rid_max + 1))
-            print("\nไม่มี Feature IDs จาก descriptor profile -> fallback scan ตามช่วง RID ที่กำหนด")
-
+        base_ids = profile.report_ids if profile.report_ids else list(range(args.rid_min, args.rid_max + 1))
         pre_scan_ids = merge_report_ids(base_ids, [0x10])
 
         pre_raw, _ = read_all_feature_reports(
@@ -1340,7 +1021,7 @@ def main() -> int:
             report_ids=request_ids,
             passes=args.passes,
             delay_sec=args.scan_delay,
-            sizes=DEFAULT_REPORT_SIZES,
+            sizes=(64,),
             retries=args.retries,
             include_zero=args.include_zero,
         )
@@ -1351,7 +1032,7 @@ def main() -> int:
         ups = decode_feature_reports(raw)
         ups.update(infer_tentative_live_values(raw, ups))
         print_ups_data(ups)
-        print_unknown_reports(raw, descriptor_profile=descriptor_profile)
+        print_unknown_reports(raw, known_report_ids=request_ids)
         print_report_variants(history)
 
         print(f"\n{'=' * 68}")
@@ -1367,15 +1048,28 @@ def main() -> int:
         )
 
         if not args.no_monitor and args.monitor_count > 0:
-            monitor_ids = merge_report_ids(sorted(raw.keys()), pre_supported, get_descriptor_all_ids(descriptor_profile))
+            monitor_ids = merge_report_ids(sorted(raw.keys()), pre_supported)
             if not monitor_ids:
                 monitor_ids = request_ids
-            monitor_ups(
-                h,
-                report_ids=monitor_ids,
-                interval=args.monitor_interval,
-                count=args.monitor_count,
-            )
+            print(f"\nMonitor mode ({args.monitor_count} passes, interval={args.monitor_interval}s)...")
+            try:
+                for pass_idx in range(1, args.monitor_count + 1):
+                    m_raw, _ = read_all_feature_reports(
+                        h,
+                        report_ids=monitor_ids,
+                        sizes=(64,),
+                        retries=1,
+                        include_zero=False,
+                    )
+                    m_ups = decode_feature_reports(m_raw)
+                    m_ups.update(infer_tentative_live_values(m_raw, m_ups))
+                    status_str = m_ups.get("ups.status", "UNKNOWN")
+                    batt_str = m_ups.get("battery.charge", "?")
+                    volt_str = m_ups.get("input.voltage", "?")
+                    print(f"  [{pass_idx}/{args.monitor_count}] Status={status_str} Battery={batt_str}% Input={volt_str}V")
+                    time.sleep(args.monitor_interval)
+            except KeyboardInterrupt:
+                print("\n  [!] Monitor stopped by user")
 
         if args.json_path is not None:
             out_path = resolve_json_path(args.json_path)
@@ -1387,7 +1081,6 @@ def main() -> int:
                 history=history,
                 decoded=ups,
                 input_reports=input_summary,
-                descriptor_profile=descriptor_profile,
             )
             save_json_report(out_path, payload)
 
