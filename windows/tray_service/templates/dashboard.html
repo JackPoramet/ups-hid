@@ -76,7 +76,25 @@
     <div class="app-content">
         <main class="main" id="main-content">
 
-    <!-- ─── Live PC Shutdown Countdown Alert Banner ─────────────────────── -->
+            <!-- ─── Top Header Bar (มุมขวาบนมีเมนูเลือกอุปกรณ์) ───────────────── -->
+            <header class="topbar" id="topbar">
+                <div class="topbar__left">
+                    <div class="topbar__device-status">
+                        <span class="status-dot connected" id="status-dot"></span>
+                        <div class="topbar__device-info">
+                            <span class="topbar__device-title" id="header-subtitle">กำลังเชื่อมต่อ UPS...</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="topbar__right">
+                    <button class="btn btn--primary btn--md btn--header-select" onclick="openDeviceModal()" title="เปิดเมนูเลือกอุปกรณ์ UPS">
+                        <span class="material-symbols-outlined">devices</span>
+                        <span>เลือกอุปกรณ์ UPS</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- ─── Live PC Shutdown Countdown Alert Banner ─────────────────────── -->
     <div class="shutdown-banner" id="shutdown-banner" style="display:none">
         <div class="shutdown-banner__inner">
             <div class="shutdown-banner__content">
@@ -101,6 +119,27 @@
 
     <!-- ─── Tab: Dashboard ──────────────────────────────────────── -->
     <section class="tab-panel tab-panel--active" id="panel-dashboard" role="tabpanel">
+
+        <!-- ─── Dashboard Disconnected Alert Card ─────────────────── -->
+        <div class="disconnected-card" id="dashboard-disconnected-card" style="display: none;">
+            <div class="disconnected-card__inner">
+                <div class="disconnected-card__icon-box">
+                    <span class="material-symbols-outlined">power_off</span>
+                </div>
+                <div class="disconnected-card__content">
+                    <div class="disconnected-card__title">ไม่ได้เชื่อมต่ออุปกรณ์ UPS</div>
+                    <div class="disconnected-card__desc">
+                        ขณะนี้ระบบไม่ได้เชื่อมต่อกับอุปกรณ์ UPS ผ่าน USB HID (Disconnected) กรุณาตรวจสอบการเสียบสาย USB ของอุปกรณ์ หรือคลิกเลือกอุปกรณ์จากเมนูปุ่มมุมขวาบน
+                    </div>
+                </div>
+                <div class="disconnected-card__actions">
+                    <button class="btn btn--secondary btn--md" onclick="retryConnect()">
+                        <span class="material-symbols-outlined">refresh</span>
+                        <span>ลองเชื่อมต่อใหม่</span>
+                    </button>
+                </div>
+            </div>
+        </div>
 
         <!-- Hero Cards Row -->
         <div class="hero-cards">
@@ -650,10 +689,43 @@
     </div> <!-- /.app-content -->
 </div> <!-- /.app-layout -->
 
-<!-- Disconnect overlay -->
-<div class="disconnect-banner" id="disconnect-banner" style="display:none">
-    <span class="material-symbols-outlined">sync_problem</span>
-    <span>ไม่สามารถเชื่อมต่ออุปกรณ์ UPS — กำลังลองใหม่อัตโนมัติ...</span>
+<!-- ═══════════════════════════════════════════════════════════════
+     Device Selection Modal (หน้าต่างเลือกอุปกรณ์ UPS)
+════════════════════════════════════════════════════════════════ -->
+<div class="modal-backdrop" id="device-modal" style="display: none;" onclick="handleModalBackdropClick(event)">
+    <div class="modal-window">
+        <div class="modal-header">
+            <div class="modal-header__title-group">
+                <span class="material-symbols-outlined modal-header__icon">developer_board</span>
+                <div>
+                    <h3 class="modal-header__title">รายการอุปกรณ์ UPS ที่เชื่อมต่ออยู่</h3>
+                    <p class="modal-header__subtitle">เลือกอุปกรณ์ UPS HID ที่ต้องการเชื่อมต่อเพื่ออ่านค่าและเฝ้าระวังระบบ</p>
+                </div>
+            </div>
+            <button class="modal-close-btn" onclick="closeDeviceModal()" title="ปิดหน้าต่าง">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+
+        <div class="modal-toolbar">
+            <div class="modal-toolbar__status" id="modal-scan-status">
+                <span class="material-symbols-outlined spin" id="modal-spinner" style="display:none;">sync</span>
+                <span id="modal-status-text">กำลังสแกนหาอุปกรณ์ USB HID...</span>
+            </div>
+            <button class="btn btn--secondary btn--sm" onclick="fetchDevices()">
+                <span class="material-symbols-outlined">refresh</span>
+                <span>สแกนค้นหาใหม่</span>
+            </button>
+        </div>
+
+        <div class="modal-body" id="modal-device-list">
+            <!-- Rendered dynamically by app.js -->
+        </div>
+
+        <div class="modal-footer">
+            <button class="btn btn--secondary" onclick="closeDeviceModal()">ปิดหน้าต่าง</button>
+        </div>
+    </div>
 </div>
 
 <script src="/static/js/app.js"></script>

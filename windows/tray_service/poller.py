@@ -50,6 +50,7 @@ try:
         PID,
         decode_feature_reports,
         infer_tentative_live_values,
+        list_ups_devices,
         open_ups_device,
         read_all_feature_reports,
         load_descriptor_profile,
@@ -114,6 +115,8 @@ class UPSPoller(threading.Thread):
         self,
         vid: int = VID,
         pid: int = PID,
+        target_path: Optional[str] = None,
+        target_serial: Optional[str] = None,
         poll_interval_s: float = 1.0,
         battery_low_threshold: int = 20,
         battery_critical_threshold: int = 10,
@@ -131,6 +134,8 @@ class UPSPoller(threading.Thread):
 
         self.vid = vid
         self.pid = pid
+        self.target_path = target_path
+        self.target_serial = target_serial
         self.poll_interval_s = poll_interval_s
         self.battery_low_threshold = battery_low_threshold
         self.battery_critical_threshold = battery_critical_threshold
@@ -155,6 +160,7 @@ class UPSPoller(threading.Thread):
         self._report_ids: list[int] = list(range(0x01, 0x80))
         self._descriptor_profile: Optional[dict] = None
         self._last_telemetry_time = 0.0
+        self._last_target_check_time = 0.0
 
         # Previous values สำหรับตรวจ state change
         self._prev_ac_present: Any = _UNSET
@@ -188,46 +194,38 @@ class UPSPoller(threading.Thread):
         logger.info("UPSPoller resumed")
 
     def get_state(self) -> StateDict:
-        """
-        อ่านค่า UPS state ล่าสุด (thread-safe)
-
-        Returns:
-            dict ที่มีค่า UPS ทั้งหมด เช่น::
-
-                {
-                    "ac_present": True,
-                    "battery.charge": 85,
-                    "battery.runtime": 3600,
-                    "output_voltage_v": 220.0,
-                    "ups.status": "OL",
-                    ...
-                }
-        """
         with self._state_lock:
             return dict(self._state)
 
     def get_device_info(self) -> dict:
-        """
-        อ่านข้อมูล device (Manufacturer, Product, Serial ฯลฯ)
-
-        Returns:
-            dict ของ device info หรือ empty dict ถ้าไม่ได้เชื่อมต่อ
-        """
         return dict(self._device_info)
 
     def is_connected(self) -> bool:
-        """Return True ถ้า UPS กำลังเชื่อมต่ออยู่"""
         return self._connected
 
     def is_monitoring(self) -> bool:
-        """Return True ถ้า polling กำลังทำงาน"""
         return self._monitoring
+
+    def select_device(self, vid: int, pid: int, path: Optional[str] = None, serial: Optional[str] = None) -> None:
+        """
+        สลับอุปกรณ์เป้าหมายและเริ่มเชื่อมต่อใหม่ทันที
+        """
+        logger.info(f"Selecting new UPS target: VID=0x{vid:04X} PID=0x{pid:04X} serial={serial} path={path}")
+        self.vid = vid
+        self.pid = pid
+        self.target_path = path
+        self.target_serial = serial
+        self._close_device()
+        self._connected = False
+        self._device_info = {}
+        with self._state_lock:
+            self._state = {}
 
     # ── Thread main loop ─────────────────────────────────────────────────────
 
     def run(self) -> None:
         """Main loop ของ poller thread"""
-        logger.info(f"UPSPoller started — VID=0x{self.vid:04X} PID=0x{self.pid:04X}")
+        logger.info(f"UPSPoller started — VID=0x{self.vid:04X} PID=0x{self.pid:04X} serial={self.target_serial} path={self.target_path}")
 
         while not self._stop_event.is_set():
             if not self._monitoring:
@@ -238,6 +236,40 @@ class UPSPoller(threading.Thread):
                 logger.error("core_hid_ups not available — polling disabled")
                 time.sleep(5)
                 continue
+
+            # Check if preferred remembered device came online (every 5s)
+            now = time.time()
+            if (self.target_serial or self.target_path) and (now - self._last_target_check_time >= 5.0):
+                self._last_target_check_time = now
+                current_serial = self._device_info.get("serial_number")
+                current_path = self._device_info.get("path_str") or str(self._device_info.get("path") or "")
+
+                is_current_preferred = False
+                if self.target_serial and current_serial and str(current_serial).strip() == str(self.target_serial).strip():
+                    is_current_preferred = True
+                elif self.target_path and current_path and current_path == self.target_path:
+                    is_current_preferred = True
+
+                if not is_current_preferred:
+                    try:
+                        devices = list_ups_devices(target_vid=self.vid)
+                        target_online = False
+                        for d in devices:
+                            s = d.get("serial_number")
+                            p = d.get("path_str")
+                            if self.target_serial and s and str(s).strip() == str(self.target_serial).strip():
+                                target_online = True
+                                break
+                            if self.target_path and p and p == self.target_path:
+                                target_online = True
+                                break
+                        if target_online:
+                            logger.info("Remembered preferred UPS device is now online! Reconnecting to preferred UPS...")
+                            self._close_device()
+                            self._connected = False
+                            self._connect()
+                    except Exception as ex:
+                        logger.debug(f"Error checking preferred target: {ex}")
 
             if self._handle is None:
                 self._connect()
@@ -255,14 +287,17 @@ class UPSPoller(threading.Thread):
     def _connect(self) -> None:
         """เชื่อมต่อ UPS device"""
         import os
-        # Force UTF-8 ก่อนเรียก hidapi เพื่อป้องกัน charmap error บน Windows
         os.environ["PYTHONIOENCODING"] = "utf-8"
         os.environ["PYTHONUTF8"] = "1"
 
         try:
-            h, info = open_ups_device(self.vid, self.pid)
+            h, info = open_ups_device(self.vid, self.pid, target_path=self.target_path, target_serial=self.target_serial)
             if h is None:
-                logger.debug(f"UPS not found (VID=0x{self.vid:04X} PID=0x{self.pid:04X})")
+                logger.debug(f"UPS not found (VID=0x{self.vid:04X} PID=0x{self.pid:04X} serial={self.target_serial} path={self.target_path})")
+                self._connected = False
+                self._device_info = {}
+                with self._state_lock:
+                    self._state = {}
                 return
 
             # Sanitize info strings: decode bytes → str อย่างปลอดภัย
@@ -374,6 +409,9 @@ class UPSPoller(threading.Thread):
             logger.warning(f"Poll error: {exc}")
             self._close_device()
             self._connected = False
+            self._device_info = {}
+            with self._state_lock:
+                self._state = {}
             if self._on_disconnect:
                 self._safe_call(self._on_disconnect, str(exc))
 

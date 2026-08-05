@@ -104,13 +104,19 @@ function updateDashboard(data, power) {
     const device = data.device || {};
     const connected = data.connected;
 
+    // Toggle Dashboard Disconnected Card
+    const disCard = document.getElementById('dashboard-disconnected-card');
+    if (disCard) {
+        disCard.style.display = connected ? 'none' : 'block';
+    }
+
     // Update Header Subtitle
     if (connected) {
         const prod = device['product_string'] || device['product'] || 'Innova Unity';
         const mode = ups['ups_mode'] || 'เชื่อมต่อสำเร็จ';
         setText('header-subtitle', `${prod} — ${mode}`);
     } else {
-        setText('header-subtitle', 'กำลังเชื่อมต่อ UPS...');
+        setText('header-subtitle', 'ไม่ได้เชื่อมต่ออุปกรณ์ UPS');
     }
 
     // Update timestamp
@@ -129,21 +135,67 @@ function updateDashboard(data, power) {
     updateAcCard(acPresent, charging, connected, upsStatus, discharging);
 
     // Battery
-    if (charge != null) {
+    if (connected && charge != null) {
         setText('battery-pct', `${Math.round(charge)}%`);
         setBatteryBar(charge);
+    } else if (!connected) {
+        setText('battery-pct', 'ไม่ได้เชื่อมต่อ');
+        setBatteryBar(0);
     } else {
         setText('battery-pct', '—');
         setBatteryBar(0);
     }
 
     // Runtime
-    setText('runtime-val', formatRuntime(runtime));
+    if (connected && runtime != null) {
+        setText('runtime-val', formatRuntime(runtime));
+    } else if (!connected) {
+        setText('runtime-val', 'ไม่ได้เชื่อมต่อ');
+    } else {
+        setText('runtime-val', '—');
+    }
 
     // Load
-    setText('load-val', load != null ? `${Math.round(load)} %` : '—');
+    if (connected && load != null) {
+        setText('load-val', `${Math.round(load)} %`);
+    } else if (!connected) {
+        setText('load-val', 'ไม่ได้เชื่อมต่อ');
+    } else {
+        setText('load-val', '—');
+    }
 
     // ── Status Section ────────────────────────────────────────────────────────
+    if (!connected) {
+        setValWithColor('val-ups-status', 'ไม่ได้เชื่อมต่ออุปกรณ์', 'err');
+        setText('val-charging',     'ไม่ได้เชื่อมต่อ');
+        setText('val-discharging',  'ไม่ได้เชื่อมต่อ');
+        setText('val-status-good',  'ไม่ได้เชื่อมต่อ');
+        setText('val-battery-test', 'ไม่ได้เชื่อมต่อ');
+
+        setText('val-batt-charge',   'ไม่ได้เชื่อมต่อ');
+        setText('val-batt-capacity', 'ไม่ได้เชื่อมต่อ');
+        setText('val-batt-runtime',  'ไม่ได้เชื่อมต่อ');
+        setText('val-batt-voltage',  'ไม่ได้เชื่อมต่อ');
+        setText('val-batt-low-alert','ไม่ได้เชื่อมต่อ');
+
+        setText('val-internal-failure', 'ไม่ได้เชื่อมต่อ');
+        setText('val-need-replacement', 'ไม่ได้เชื่อมต่อ');
+        setText('val-overload',         'ไม่ได้เชื่อมต่อ');
+        setText('val-shutdown-imminent','ไม่ได้เชื่อมต่อ');
+        setText('val-over-temp',        'ไม่ได้เชื่อมต่อ');
+
+        setText('val-input-voltage',   'ไม่ได้เชื่อมต่อ');
+        setText('val-input-freq',      'ไม่ได้เชื่อมต่อ');
+        setText('val-output-voltage',  'ไม่ได้เชื่อมต่อ');
+        setText('val-output-freq',     'ไม่ได้เชื่อมต่อ');
+        setText('val-active-power',    'ไม่ได้เชื่อมต่อ');
+        setText('val-apparent-power',  'ไม่ได้เชื่อมต่อ');
+        setText('val-temperature',     'ไม่ได้เชื่อมต่อ');
+
+        setStatusDot('disconnected');
+        return;
+    }
+
     let formattedStatus = upsStatus || '—';
     let statusColor = 'ok';
 
@@ -214,9 +266,9 @@ function updateAcCard(acPresent, charging, connected, upsStatus, discharging) {
     card.className = 'hero-card hero-card--ac';
 
     if (!connected || acPresent == null) {
-        statusEl.textContent = '—';
-        statusEl.style.color = 'var(--color-dim)';
-        if (iconEl) iconEl.textContent = 'help_outline';
+        statusEl.textContent = 'ไม่ได้เชื่อมต่อ';
+        statusEl.style.color = 'var(--color-err)';
+        if (iconEl) iconEl.textContent = 'usb_off';
         card.classList.add('status-dim');
     } else if (upsStatus && upsStatus.includes('OFF')) {
         statusEl.textContent = 'Standby (ปิดการจ่ายไฟ)';
@@ -965,4 +1017,201 @@ async function apiPost(url, body = {}) {
         console.error(`POST ${url} failed:`, e);
         return { success: false, message: e.message };
     }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Device List & Selection Modal Functions
+// ══════════════════════════════════════════════════════════════════════════════
+
+function openDeviceModal() {
+    const modal = document.getElementById('device-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        fetchDevices();
+    }
+}
+
+function closeDeviceModal() {
+    const modal = document.getElementById('device-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+function handleModalBackdropClick(event) {
+    if (event.target && event.target.id === 'device-modal') {
+        closeDeviceModal();
+    }
+}
+
+async function fetchDevices() {
+    const statusText = document.getElementById('modal-status-text');
+    const spinner = document.getElementById('modal-spinner');
+    const listContainer = document.getElementById('modal-device-list');
+
+    if (statusText) statusText.textContent = 'กำลังสแกนหาอุปกรณ์ UPS (VID 0x06DA)...';
+    if (spinner) spinner.style.display = 'inline-block';
+    if (listContainer) {
+        listContainer.innerHTML = '<div class="modal-loading-box"><span class="material-symbols-outlined spin">sync</span><p>กำลังค้นหาอุปกรณ์ UPS ในระบบ...</p></div>';
+    }
+
+    try {
+        const res = await fetch('/api/ups/devices').then(r => r.json());
+        if (spinner) spinner.style.display = 'none';
+
+        if (!res.success || !res.devices || res.devices.length === 0) {
+            if (statusText) statusText.textContent = 'ไม่พบอุปกรณ์ UPS (VID 0x06DA) ที่เชื่อมต่ออยู่';
+            renderEmptyDeviceList(listContainer);
+            return;
+        }
+
+        if (statusText) {
+            statusText.textContent = `พบอุปกรณ์ UPS (VID 0x06DA) ทั้งหมด ${res.devices.length} รายการ`;
+        }
+
+        renderDeviceList(listContainer, res.devices);
+    } catch (err) {
+        console.error('Failed to fetch devices:', err);
+        if (spinner) spinner.style.display = 'none';
+        if (statusText) statusText.textContent = 'เกิดข้อผิดพลาดในการดึงรายการอุปกรณ์';
+        if (listContainer) {
+            listContainer.innerHTML = '<div class="modal-empty-box"><span class="material-symbols-outlined text-danger">error</span><p>ไม่สามารถเชื่อมต่อ API สแกนอุปกรณ์ได้</p></div>';
+        }
+    }
+}
+
+function renderEmptyDeviceList(container) {
+    if (!container) return;
+    container.innerHTML = `
+        <div class="modal-empty-box">
+            <span class="material-symbols-outlined modal-empty-icon">usb_off</span>
+            <h4>ไม่พบอุปกรณ์ UPS (VID 0x06DA) ที่เชื่อมต่ออยู่</h4>
+            <p>กรุณาตรวจสอบว่าได้เสียบสาย USB จากอุปกรณ์ UPS เข้ากับเครื่องคอมพิวเตอร์แล้ว และลองกดปุ่ม "สแกนค้นหาใหม่"</p>
+            <button class="btn btn--primary btn--sm" onclick="fetchDevices()" style="margin-top: 12px;">
+                <span class="material-symbols-outlined">refresh</span>
+                <span>สแกนค้นหาใหม่</span>
+            </button>
+        </div>
+    `;
+}
+
+function renderDeviceList(container, devices) {
+    if (!container) return;
+
+    let html = '<div class="device-cards-grid">';
+    devices.forEach((dev) => {
+        const isUps = dev.is_ups;
+        const isSelected = dev.is_selected;
+        const isActive = dev.is_active;
+
+        const manufacturer = dev.manufacturer_string || 'Generic HID Device';
+        const product = dev.product_string || 'USB HID Device';
+        const serial = dev.serial_number || 'N/A';
+        const vidHex = dev.vendor_id_hex || `0x${(dev.vendor_id || 0).toString(16).padStart(4, '0')}`;
+        const pidHex = dev.product_id_hex || `0x${(dev.product_id || 0).toString(16).padStart(4, '0')}`;
+        const usagePage = dev.usage_page_hex || '—';
+        const pathStr = dev.path_str || dev.path || '';
+
+        let badgeHtml = '';
+        if (isActive) {
+            badgeHtml = '<span class="badge badge--success" style="display:inline-flex; align-items:center; gap:4px;"><span class="material-symbols-outlined" style="font-size:14px;">check_circle</span> เชื่อมต่อใช้งานอยู่</span>';
+        } else if (isSelected) {
+            badgeHtml = '<span class="badge badge--primary" style="display:inline-flex; align-items:center; gap:4px;"><span class="material-symbols-outlined" style="font-size:14px;">star</span> อุปกรณ์ที่เลือกไว้</span>';
+        } else if (isUps) {
+            badgeHtml = '<span class="badge badge--enterprise">อุปกรณ์ UPS</span>';
+        } else {
+            badgeHtml = '<span class="badge badge--neutral">USB HID</span>';
+        }
+
+        const iconName = isUps ? 'battery_charging_full' : 'usb';
+        const activeClass = isSelected ? 'device-card--selected' : '';
+
+        const escapedPath = encodeURIComponent(pathStr);
+        const escapedVid = encodeURIComponent(vidHex);
+        const escapedPid = encodeURIComponent(pidHex);
+        const escapedSerial = encodeURIComponent(serial || '');
+
+        html += `
+            <div class="device-card ${activeClass}">
+                <div class="device-card__header">
+                    <div class="device-card__icon-box ${isUps ? 'is-ups' : ''}">
+                        <span class="material-symbols-outlined">${iconName}</span>
+                    </div>
+                    <div class="device-card__title-wrap">
+                        <div class="device-card__title">${escapeHtml(manufacturer)} — ${escapeHtml(product)}</div>
+                        <div class="device-card__subtitle">${badgeHtml}</div>
+                    </div>
+                </div>
+                <div class="device-card__body">
+                    <div class="dev-info-row">
+                        <span class="dev-info-label">VID / PID:</span>
+                        <span class="dev-info-val mono">${vidHex} : ${pidHex}</span>
+                    </div>
+                    <div class="dev-info-row">
+                        <span class="dev-info-label">Serial Number:</span>
+                        <span class="dev-info-val mono">${escapeHtml(serial)}</span>
+                    </div>
+                    <div class="dev-info-row">
+                        <span class="dev-info-label">Usage Page:</span>
+                        <span class="dev-info-val mono">${usagePage}</span>
+                    </div>
+                </div>
+                <div class="device-card__footer">
+                    ${isActive ? `
+                        <button class="btn btn--secondary btn--sm" disabled style="opacity: 0.8;">
+                            <span class="material-symbols-outlined">check</span>
+                            <span>กำลังใช้งานอยู่</span>
+                        </button>
+                    ` : `
+                        <button class="btn btn--primary btn--sm" onclick="selectDevice('${escapedPath}', '${escapedVid}', '${escapedPid}', '${escapedSerial}')">
+                            <span class="material-symbols-outlined">link</span>
+                            <span>เลือกเชื่อมต่ออุปกรณ์นี้</span>
+                        </button>
+                    `}
+                </div>
+            </div>
+        `;
+    });
+
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+async function selectDevice(escapedPath, escapedVid, escapedPid, escapedSerial) {
+    const path = decodeURIComponent(escapedPath);
+    const vid = decodeURIComponent(escapedVid);
+    const pid = decodeURIComponent(escapedPid);
+    const serial = escapedSerial ? decodeURIComponent(escapedSerial) : '';
+
+    try {
+        const res = await fetch('/api/ups/select_device', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path, vid, pid, serial })
+        }).then(r => r.json());
+
+        if (res.success) {
+            closeDeviceModal();
+            pollOnce();
+        } else {
+            alert(`ไม่สามารถสลับอุปกรณ์ได้: ${res.message}`);
+        }
+    } catch (err) {
+        console.error('Select device error:', err);
+        alert('เกิดข้อผิดพลาดในการส่งคำสั่งเลือกอุปกรณ์');
+    }
+}
+
+function retryConnect() {
+    pollOnce();
+    fetchDevices();
 }

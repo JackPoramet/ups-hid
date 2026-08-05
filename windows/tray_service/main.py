@@ -130,6 +130,8 @@ def main() -> None:
     poller = UPSPoller(
         vid=cfg.get("vid", 0x06DA),
         pid=cfg.get("pid", 0xFFFF),
+        target_path=cfg.get("selected_device_path"),
+        target_serial=cfg.get("selected_device_serial"),
         poll_interval_s=cfg.get("poll_interval_s", 1.0),
         battery_low_threshold=cfg.get("shutdown_battery_threshold", 20),
         battery_critical_threshold=max(cfg.get("shutdown_battery_threshold", 20) - 10, 5),

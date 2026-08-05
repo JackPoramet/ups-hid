@@ -217,11 +217,14 @@ class TrayApp:
             time.sleep(2)
 
 
-# ── Helper functions ──────────────────────────────────────────────────────────
+from pathlib import Path
+
+_LOGO_PATH = Path(__file__).parent / "static" / "img" / "logo.png"
+
 
 def _make_icon(color: tuple[int, int, int], size: int = 64) -> "Image.Image":
     """
-    สร้าง tray icon เป็น circle ด้วย Pillow
+    สร้าง tray icon จาก logo.png พร้อมแนบ status indicator dot ที่มุมล่างขวา
 
     Args:
         color: RGB tuple เช่น (78, 202, 110)
@@ -230,23 +233,44 @@ def _make_icon(color: tuple[int, int, int], size: int = 64) -> "Image.Image":
     Returns:
         PIL.Image.Image ขนาด size x size (RGBA)
     """
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    img = None
+    if _LOGO_PATH.exists():
+        try:
+            logo = Image.open(_LOGO_PATH).convert("RGBA")
+            logo.thumbnail((size - 4, size - 4), Image.Resampling.LANCZOS)
+            img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+            offset_x = (size - logo.width) // 2
+            offset_y = (size - logo.height) // 2
+            img.paste(logo, (offset_x, offset_y), logo)
+        except Exception as exc:
+            logger.debug(f"Could not load logo.png for tray icon: {exc}")
+            img = None
+
+    if img is None:
+        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        margin = 4
+        draw.ellipse(
+            [margin, margin, size - margin, size - margin],
+            fill=(*color, 255),
+        )
+        return img
+
+    # Overlay status indicator dot at bottom right
     draw = ImageDraw.Draw(img)
+    dot_radius = size // 5
+    center_x = size - dot_radius - 2
+    center_y = size - dot_radius - 2
 
-    # วงกลมหลัก
-    margin = 4
+    # Border for contrast
     draw.ellipse(
-        [margin, margin, size - margin, size - margin],
-        fill=(*color, 255),
+        [center_x - dot_radius - 2, center_y - dot_radius - 2, center_x + dot_radius + 2, center_y + dot_radius + 2],
+        fill=(15, 23, 42, 255),
     )
-
-    # Inner highlight (gradient effect แบบง่าย)
-    inner_margin = size // 5
-    lighter = tuple(min(255, c + 60) for c in color)
+    # Status dot fill
     draw.ellipse(
-        [inner_margin, inner_margin,
-         size - inner_margin * 2, size - inner_margin * 2],
-        fill=(*lighter, 80),
+        [center_x - dot_radius, center_y - dot_radius, center_x + dot_radius, center_y + dot_radius],
+        fill=(*color, 255),
     )
 
     return img

@@ -14,11 +14,11 @@
 ; ══════════════════════════════════════════════════════════════
 
 #define AppName        "ENEREX UPS Monitor"
-#define AppVersion     "1.0.0"
+#define AppVersion     "0.1.0"
 #define AppPublisher   "ENEREX"
 #define AppURL         "https://github.com/JackPoramet/ups-hid"
 #define AppExeName     "ENEREX-UPS-Monitor.exe"
-#define AppDescription "ENEREX UPS Monitor — Windows System Tray Service"
+#define AppDescription "ENEREX UPS Monitor DEMO Version"
 
 [Setup]
 ; ── Identity ───────────────────────────────────────────────────

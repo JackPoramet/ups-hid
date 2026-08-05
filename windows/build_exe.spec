@@ -41,24 +41,17 @@ a = Analysis(
 
         # Icons
         (str(ROOT / 'windows' / 'assets'), 'assets'),
-
-        # ups_module filter drivers (libusb0.dll, libusb0.sys, install-filter-win.exe)
-        (str(ROOT / 'ups_module' / 'drivers'), 'ups_module/drivers') if (ROOT / 'ups_module' / 'drivers').exists() else (str(ROOT / 'windows'), '.'),
-
-        # HID descriptor cache (ถ้ามี)
-        (str(ROOT / 'report_descriptor_live.bin'), '.') if (ROOT / 'report_descriptor_live.bin').exists() else (str(ROOT / 'windows'), '.'),
-    ],
+    ] + (
+        [(str(ROOT / 'ups_module' / 'drivers'), 'ups_module/drivers')] if (ROOT / 'ups_module' / 'drivers').exists() else []
+    ) + (
+        [(str(ROOT / 'report_descriptor_live.bin'), '.')] if (ROOT / 'report_descriptor_live.bin').exists() else []
+    ),
 
     hiddenimports=[
         # HID & USB
         'hid',
-        'hidapi',
         'usb',
         'usb.core',
-        'usb.backend',
-        'usb.backend.libusb0',
-        'ups_module',
-        'ups_module.driver_installer',
 
         # Flask
         'flask',
@@ -66,7 +59,6 @@ a = Analysis(
         'jinja2',
         'werkzeug',
         'werkzeug.serving',
-        'werkzeug.middleware.shared_data',
 
         # Windows notifications
         'plyer',

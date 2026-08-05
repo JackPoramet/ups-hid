@@ -246,6 +246,100 @@ class WebServer:
                 "connected":     self._poller.is_connected(),
             })
 
+        @app.route("/api/ups/devices", methods=["GET"])
+        def api_ups_devices():
+            """
+            รายการอุปกรณ์ UPS / HID ทั้งหมดที่เชื่อมต่อกับระบบ
+            """
+            try:
+                from core_hid_ups import list_ups_devices
+                devices = list_ups_devices()
+            except Exception as exc:
+                logger.error(f"Error listing HID devices: {exc}")
+                devices = []
+
+            current_info = self._poller.get_device_info() if self._poller else {}
+            current_path = current_info.get("path")
+            if isinstance(current_path, (bytes, bytearray)):
+                current_path = current_path.decode("utf-8", errors="ignore")
+            else:
+                current_path = str(current_path) if current_path else ""
+
+            sel_serial = self._config.get("selected_device_serial")
+            sel_path = self._config.get("selected_device_path") or current_path
+            sel_vid = self._config.get("vid", 0x06DA)
+            sel_pid = self._config.get("pid", 0xFFFF)
+            is_connected = self._poller.is_connected() if self._poller else False
+
+            formatted = []
+            for dev in devices:
+                dev_path = dev.get("path_str", "")
+                dev_serial = dev.get("serial_number", "")
+                is_sel = (
+                    (sel_serial and dev_serial and str(dev_serial).strip() == str(sel_serial).strip())
+                    or (sel_path and dev_path == sel_path)
+                    or (dev.get("vendor_id") == sel_vid and dev.get("product_id") == sel_pid)
+                )
+                d_copy = dict(dev)
+                if "path" in d_copy:
+                    d_copy["path"] = dev_path
+                d_copy["is_selected"] = bool(is_sel)
+                d_copy["is_active"] = bool(is_sel and is_connected)
+                formatted.append(d_copy)
+
+            return jsonify({
+                "success": True,
+                "count": len(formatted),
+                "connected": is_connected,
+                "selected_path": sel_path,
+                "selected_serial": sel_serial,
+                "selected_vid": f"0x{sel_vid:04X}" if sel_vid else None,
+                "selected_pid": f"0x{sel_pid:04X}" if sel_pid else None,
+                "devices": formatted,
+            })
+
+        @app.route("/api/ups/select_device", methods=["POST"])
+        def api_ups_select_device():
+            """
+            สลับอุปกรณ์ UPS ที่ต้องการใช้งาน
+            """
+            data = request.get_json(silent=True) or {}
+            path = data.get("path")
+            serial = data.get("serial")
+            vid_raw = data.get("vid")
+            pid_raw = data.get("pid")
+
+            vid = 0x06DA
+            if vid_raw is not None:
+                try:
+                    vid = int(str(vid_raw), 16) if str(vid_raw).startswith("0x") else int(vid_raw)
+                except ValueError:
+                    vid = 0x06DA
+
+            pid = 0xFFFF
+            if pid_raw is not None:
+                try:
+                    pid = int(str(pid_raw), 16) if str(pid_raw).startswith("0x") else int(pid_raw)
+                except ValueError:
+                    pid = 0xFFFF
+
+            self._config.set("selected_device_path", path)
+            self._config.set("selected_device_serial", serial)
+            self._config.set("vid", vid)
+            self._config.set("pid", pid)
+            self._config.save()
+
+            if self._poller:
+                self._poller.select_device(vid=vid, pid=pid, path=path, serial=serial)
+
+            return jsonify({
+                "success": True,
+                "message": "เลือกอุปกรณ์ UPS เรียบร้อยแล้ว กำลังทำการเชื่อมต่อ...",
+                "selected_path": path,
+                "vid": vid,
+                "pid": pid,
+            })
+
         @app.route("/api/ups/power")
         def api_ups_power():
             """

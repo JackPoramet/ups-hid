@@ -3,3 +3,4 @@
 
 # ── Core HID Device Communication ─────────────────────────────────────────────
 hidapi>=0.14.0      # hid module -- อ่าน Feature Report ผ่าน USB HID
+pyusb>=1.2.1        # usb module -- fallback อ่าน Input Voltage ผ่าน control transfer

@@ -416,38 +416,119 @@ def print_candidate_devices(devices: List[dict]) -> None:
         )
 
 
-def open_ups_device(vid: int = VID, pid: int = PID):
-    devices = hid.enumerate(vid, pid)
+def list_ups_devices(target_vid: Optional[int] = 0x06DA, pid: Optional[int] = None) -> List[dict]:
+    """
+    Enumerate connected USB HID devices filtered strictly by Vendor ID (default: 0x06DA Phoenixtec Power).
+    Returns a list of device info dicts.
+    """
+    try:
+        raw_devices = hid.enumerate(0, 0)
+    except Exception as exc:
+        print(f"hid.enumerate error: {exc}")
+        return []
+
+    devices = []
+
+    for dev in raw_devices:
+        d = stringify_device_info(dev)
+        usage_page = d.get("usage_page") or 0
+        usage = d.get("usage") or 0
+        dev_vid = d.get("vendor_id") or 0
+        dev_pid = d.get("product_id") or 0
+
+        # Filter strictly by Vendor ID 0x06DA (or target_vid if specified)
+        if target_vid is not None and dev_vid != target_vid:
+            continue
+        if pid is not None and dev_pid != pid:
+            continue
+
+        d["is_ups"] = True
+        d["vendor_id_hex"] = f"0x{dev_vid:04X}"
+        d["product_id_hex"] = f"0x{dev_pid:04X}"
+        d["usage_page_hex"] = f"0x{usage_page:04X}"
+        d["usage_hex"] = f"0x{usage:04X}"
+
+        path_raw = d.get("path")
+        if isinstance(path_raw, (bytes, bytearray)):
+            d["path_str"] = path_raw.decode("utf-8", errors="ignore")
+        else:
+            d["path_str"] = str(path_raw or "")
+
+        devices.append(d)
+
+    devices.sort(key=lambda x: (x.get("manufacturer_string") or "", x.get("product_string") or ""))
+    return devices
+
+
+def open_ups_device(
+    vid: int = VID,
+    pid: int = PID,
+    target_path: Optional[str] = None,
+    target_serial: Optional[str] = None,
+):
+    devices = list_ups_devices(target_vid=vid)
     if not devices:
-        print(f"ไม่พบ VID={vid:04X} PID={pid:04X}")
+        print(f"ไม่พบอุปกรณ์ HID ใดๆ ที่เชื่อมต่ออยู่")
         return None, None
 
-    print_candidate_devices(devices)
+    target = None
 
-    target = next((d for d in devices if d.get("usage_page") == 0x84 and d.get("usage") == 0x04), None)
+    # Priority 1: Match target serial number
+    if target_serial:
+        for d in devices:
+            s = d.get("serial_number")
+            if s and str(s).strip() == str(target_serial).strip():
+                target = d
+                break
+
+    # Priority 2: Match target path
+    if target is None and target_path:
+        for d in devices:
+            if d.get("path_str") == target_path or str(d.get("path")) == str(target_path):
+                target = d
+                break
+
+    # Priority 3: Match VID/PID
+    if target is None and (vid or pid):
+        candidates = [d for d in devices if (not vid or d.get("vendor_id") == vid) and (not pid or d.get("product_id") == pid)]
+        if candidates:
+            target = next((d for d in candidates if d.get("usage_page") == 0x84 and d.get("usage") == 0x04), None)
+            if target is None:
+                target = next((d for d in candidates if d.get("usage_page") == 0x84), candidates[0])
+
     if target is None:
-        target = next((d for d in devices if d.get("usage_page") == 0x84), devices[0])
+        target = next((d for d in devices if d.get("is_ups")), None)
 
-    h = hid.device()
-    h.open_path(target["path"])
+    if target is None:
+        print(f"ไม่พบ UPS device ที่ตรงกับเงื่อนไข (VID=0x{vid:04X} PID=0x{pid:04X} serial={target_serial} path={target_path})")
+        return None, None
 
-    print("\nเปิดอุปกรณ์สำเร็จ")
-    print(f"  Manufacturer : {target.get('manufacturer_string')}")
-    print(f"  Product      : {target.get('product_string')}")
-    print(f"  Serial       : {target.get('serial_number')}")
-    print(f"  Release      : {target.get('release_number')}")
-    print(f"  Usage Page   : 0x{(target.get('usage_page') or 0):04X}")
-    print(f"  Usage        : 0x{(target.get('usage') or 0):04X}")
+    try:
+        h = hid.device()
+        path_arg = target["path"]
+        if isinstance(path_arg, str):
+            path_arg = path_arg.encode("utf-8")
+        h.open_path(path_arg)
 
-    # Windows: เปิด handle แบบ direct ด้วย WinHidApi เพื่อใช้เป็น fallback
-    # สำหรับ report ที่ Windows HID class driver block เช่น RID 0x31 (Input Voltage)
-    if platform.system().lower() == "windows":
-        if _win_open_direct(target["path"]):
-            print("  Win direct   : HidD_GetFeature fallback ready")
-        else:
-            print("  Win direct   : fallback unavailable (win32_hid_wrapper.py not found)")
+        print("\nเปิดอุปกรณ์สำเร็จ")
+        print(f"  Manufacturer : {target.get('manufacturer_string')}")
+        print(f"  Product      : {target.get('product_string')}")
+        print(f"  Serial       : {target.get('serial_number')}")
+        print(f"  Release      : {target.get('release_number')}")
+        print(f"  Usage Page   : 0x{(target.get('usage_page') or 0):04X}")
+        print(f"  Usage        : 0x{(target.get('usage') or 0):04X}")
 
-    return h, target
+        if platform.system().lower() == "windows":
+            if _win_open_direct(target["path"]):
+                print("  Win direct   : HidD_GetFeature fallback ready")
+            else:
+                print("  Win direct   : fallback unavailable (win32_hid_wrapper.py not found)")
+
+        return h, target
+    except Exception as exc:
+        print(f"ไม่สามารถเปิด HID device ได้: {exc}")
+        return None, None
+
 
 
 def read_feature_report_best(
