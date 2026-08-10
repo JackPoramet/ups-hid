@@ -45,11 +45,23 @@ chmod +x install.sh
 sudo ./install.sh
 ```
 
+สำหรับ Orange Pi ที่รันผ่าน SSH หรือ service ให้ระบุ account ที่จะรันโปรแกรม
+โดยตรงเมื่อ shell ไม่ได้ถูกเรียกผ่าน `sudo` จาก account นั้น:
+
+```bash
+sudo UPS_HID_USER=<application-user> ./install.sh
+```
+
+ตัวติดตั้งสร้าง group `ups-hid` และกำหนด `/dev/hidraw*` ของ UPS เป็น
+`root:ups-hid` mode `0660` แบบ least-privilege. หลังติดตั้งต้อง logout/login ใหม่
+หรือ restart service เพื่อให้ group มีผล และหาก node ยังใช้ rule เดิมให้ถอด–เสียบ UPS ใหม่.
+`TAG+="uaccess"` เพียงอย่างเดียวไม่เพียงพอสำหรับ SSH/headless session.
+
 ขั้นตอนที่ `install.sh` ดำเนินการ:
 1. ติดตั้ง System Shared Libraries ผ่าน `apt-get`
 2. ติดตั้ง Python Packages ตาม `requirements.txt`
 3. สร้าง udev rule ใน `/etc/udev/rules.d/99-ups-hid.rules` สำหรับทุกอุปกรณ์ใน `meta.json`
-4. สั่ง Reload และ Trigger `udevadm`
+4. สร้าง group `ups-hid`, เพิ่ม application user เข้า group, แล้ว Reload/Trigger `udevadm`
 5. ตรวจสอบสถานะความพร้อมของระบบผ่าน `linux_setup.py`
 
 ### 3.2 การติดตั้งแบบกำหนดเอง (Manual Installation)

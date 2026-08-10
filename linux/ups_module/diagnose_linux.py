@@ -231,8 +231,8 @@ class Diagnostic:
             stale_markers.append("core.py lacks multi-interface open loop")
         if 'h.open_path(target["path"])' in core_text:
             stale_markers.append("core.py still contains old direct target open")
-        if 'TAG+="uaccess"' not in setup_text:
-            stale_markers.append("linux_setup.py lacks current udev rule marker")
+        if 'GROUP="ups-hid"' not in setup_text:
+            stale_markers.append("linux_setup.py lacks headless ups-hid group rule")
         if "UPS_HID_VERBOSE" not in client_text:
             stale_markers.append("client.py lacks verbose diagnostic support")
 
@@ -318,6 +318,8 @@ class Diagnostic:
             f'ATTRS{{idVendor}}=="{vid}"',
             f'ATTRS{{idProduct}}=="{pid}"',
             'SUBSYSTEM=="hidraw"',
+            'GROUP="ups-hid"',
+            'MODE="0660"',
         ]
         missing = [marker for marker in expected if marker not in content]
         rule_data["expected_markers"] = expected
@@ -328,7 +330,7 @@ class Diagnostic:
             detail = "udev rule is missing or does not match the selected VID/PID."
         else:
             status = "OK"
-            detail = "udev rule file contains the expected hidraw VID/PID match."
+            detail = "udev rule file contains the expected hidraw VID/PID/group match."
         self.add("udev_rule", status, detail, rule=rule_data)
 
     def _enumerate(self) -> Optional[Any]:

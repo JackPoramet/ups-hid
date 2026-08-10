@@ -293,6 +293,14 @@ def ups_data_from_raw(raw: Dict[str, Any]) -> UPSData:
     def _get(key: str, default: Any = None) -> Any:
         return raw.get(key, default)
 
+    def _first_present(*keys: str) -> Any:
+        """Return the first present, non-None value without discarding zero."""
+        for key in keys:
+            value = raw.get(key)
+            if value is not None:
+                return value
+        return None
+
     return UPSData(
         # Status
         ups_status=_get("ups.status"),
@@ -307,14 +315,14 @@ def ups_data_from_raw(raw: Dict[str, Any]) -> UPSData:
         battery_test_status=_get("battery_test_status"),
 
         # Input
-        input_voltage=_get("input.voltage") or _get("tentative.input.voltage"),
-        input_voltage_nominal=_get("input.voltage.nominal") or _get("config_nominal_voltage_v"),
-        input_frequency=_get("input.frequency") or _get("tentative.input.frequency"),
-        input_frequency_nominal=_get("input.frequency.nominal") or _get("config_nominal_frequency_hz"),
+        input_voltage=_get("input.voltage"),
+        input_voltage_nominal=_first_present("input.voltage.nominal", "config_nominal_voltage_v"),
+        input_frequency=_get("input.frequency"),
+        input_frequency_nominal=_first_present("input.frequency.nominal", "config_nominal_frequency_hz"),
         input_transfer_low=_get("input.transfer.low"),
 
         # Output
-        output_voltage=_get("output.voltage") or _get("output_voltage_v") or _get("tentative.output.voltage"),
+        output_voltage=_first_present("output.voltage", "output_voltage_v"),
         output_frequency=_get("output_frequency_hz"),
         output_current=_get("output_current_a"),
         output_power=_get("output_active_power_w"),
@@ -322,7 +330,7 @@ def ups_data_from_raw(raw: Dict[str, Any]) -> UPSData:
 
         # UPS
         ups_load=_get("percent_load"),
-        ups_temperature=_get("ups.temperature") or _get("temperature_c"),
+        ups_temperature=_first_present("ups.temperature", "temperature_c"),
         ups_firmware=_get("ups.firmware"),
         ups_power_nominal=_get("config_max_active_power_w"),
         ups_apparent_power_nominal=_get("config_max_apparent_power_va"),

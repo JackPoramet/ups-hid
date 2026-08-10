@@ -334,8 +334,7 @@ graph TD
   # usb:    for pyusb fallback (read Input Voltage via control transfers)
 
   # PHOENIXTEC Innova Unity IOT Tower (VID=06da PID=ffff)
-  SUBSYSTEM=="hidraw", ATTRS{idVendor}=="06da", ATTRS{idProduct}=="ffff", MODE="0666"
-  SUBSYSTEM=="usb", ATTRS{idVendor}=="06da", ATTRS{idProduct}=="ffff", MODE="0666"
+  KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="06da", ATTRS{idProduct}=="ffff", GROUP="ups-hid", MODE="0660", TAG+="uaccess"
   ```
 * `install_udev_rule(vid, pid, rule_path, all_devices=True) -> tuple[bool, str]`: เขียนไฟล์ `/etc/udev/rules.d/99-ups-hid.rules` และรัน `udevadm control --reload-rules` และ `udevadm trigger` (ต้องใช้ sudo)
 * `check_device_permission(vid, pid) -> tuple[bool, str]`: ทดสอบเปิดอุปกรณ์จริงผ่าน `hid.device()` เพื่อยืนยันสิทธิ์การเข้าถึงแบบ non-root

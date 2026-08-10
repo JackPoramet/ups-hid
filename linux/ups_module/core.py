@@ -335,11 +335,13 @@ def read_all_feature_reports(
     for rid in report_ids:
         data, m = read_feature_report_best(h, rid, sizes=sizes, retries=retries)
         if not data:
+            meta[rid] = m
             continue
         payload = payload_of_report(data)
         has_non_zero = any(b != 0 for b in payload)
 
         if not has_non_zero and not include_zero:
+            meta[rid] = m
             continue
 
         raw[rid] = data
@@ -464,6 +466,10 @@ def decode_feature_reports(raw: Dict[int, List[int]]) -> dict:
     def payload(rid: int) -> Optional[List[int]]:
         d = raw.get(rid)
         return payload_of_report(d) if d else None
+
+    # Report 0x01 is the authoritative source for line/battery state. Do not
+    # synthesize an on-battery state when this report was not successfully read.
+    has_status_report = bool(payload(0x01))
 
     # Report 0x01: Status flags (mapping ตามไฟล์ UPS_data.py)
     d = payload(0x01)
@@ -637,30 +643,32 @@ def decode_feature_reports(raw: Dict[int, List[int]]) -> dict:
         ups["output_voltage_v"] = round((d[12] | (d[13] << 8)) / 10.0, 1)
         ups["output.voltage"] = ups["output_voltage_v"]
 
-    # Compose NUT-like status string from consolidated flags (after Report 0x42)
-    ac = bool(ups.get("ac_present", False))
-    discharging = bool(ups.get("discharging", False))
-    below_capacity = bool(ups.get("below_capacity_limit", False))
-    overload = bool(ups.get("overload", False))
-    bypass = bool(ups.get("bypass", False))
-    vout = float(ups.get("output_voltage_v", ups.get("output.voltage", 0.0)) or 0.0)
+    # Compose NUT-like status string only when the authoritative status report
+    # was read. Missing HID data must remain unknown, never become "OB".
+    if has_status_report:
+        ac = bool(ups.get("ac_present", False))
+        discharging = bool(ups.get("discharging", False))
+        below_capacity = bool(ups.get("below_capacity_limit", False))
+        overload = bool(ups.get("overload", False))
+        bypass = bool(ups.get("bypass", False))
+        vout = float(ups.get("output_voltage_v", ups.get("output.voltage", 0.0)) or 0.0)
 
-    if ac and vout < 50.0:
-        status_parts = ["OFF"]
-    elif bypass:
-        status_parts = ["BYPASS"]
-    elif ac:
-        status_parts = ["OL"]
-    else:
-        status_parts = ["OB"]
+        if ac and vout < 50.0:
+            status_parts = ["OFF"]
+        elif bypass:
+            status_parts = ["BYPASS"]
+        elif ac:
+            status_parts = ["OL"]
+        else:
+            status_parts = ["OB"]
 
-    if discharging:
-        status_parts.append("DISCHRG")
-    if below_capacity:
-        status_parts.append("LB")
-    if overload:
-        status_parts.append("OVER")
-    ups["ups.status"] = " ".join(status_parts)
+        if discharging:
+            status_parts.append("DISCHRG")
+        if below_capacity:
+            status_parts.append("LB")
+        if overload:
+            status_parts.append("OVER")
+        ups["ups.status"] = " ".join(status_parts)
 
     # Report 0x74: max power config
     d = payload(0x74)
@@ -686,7 +694,9 @@ def decode_feature_reports(raw: Dict[int, List[int]]) -> dict:
     is_bypass = bool(ups.get("bypass", False))
     vout = float(ups.get("output_voltage_v", ups.get("output.voltage", 0.0)) or 0.0)
 
-    if ac_in and vout < 50.0:
+    if not has_status_report:
+        ups["ups_mode"] = "Unknown (status report unavailable)"
+    elif ac_in and vout < 50.0:
         ups["ups_mode"] = "Standby Mode (เสียบปลั๊ก/ปิดเครื่อง)"
     elif is_bypass:
         ups["ups_mode"] = "Bypass Mode (โหมดบายพาส)"
@@ -833,10 +843,17 @@ def print_report_variants(history: Dict[int, List[str]]) -> None:
             print(f"    ... และอีก {len(variants) - 5} variants")
 
 
-def print_unknown_reports(raw: Dict[int, List[int]], descriptor_profile: Optional[dict] = None) -> None:
-    known_ids = set(LEGACY_DECODE_REPORT_IDS)
-    if descriptor_profile:
-        known_ids.update(get_descriptor_all_ids(descriptor_profile))
+KNOWN_DECODE_REPORT_IDS = {
+    0x01, 0x02, 0x03, 0x05, 0x06, 0x07, 0x08, 0x0C, 0x0D, 0x10,
+    0x14, 0x17, 0x24, 0x25, 0x26, 0x27, 0x29, 0x31, 0x42, 0x4A, 0x74,
+}
+
+
+def print_unknown_reports(
+    raw: Dict[int, List[int]],
+) -> None:
+    """Display reports without a confirmed decoder mapping."""
+    known_ids = set(KNOWN_DECODE_REPORT_IDS)
 
     unknown_ids = [rid for rid in sorted(raw.keys()) if rid not in known_ids]
     if not unknown_ids:
@@ -1046,6 +1063,15 @@ def main() -> int:
     if args.rid_min < 0 or args.rid_max > 0xFF or args.rid_min > args.rid_max:
         print("ช่วง Report ID ไม่ถูกต้อง (ต้องอยู่ใน 0x00..0xFF และ min <= max)")
         return 2
+    if args.passes < 1 or args.retries < 1 or args.scan_delay < 0:
+        print("passes/retries ต้องมากกว่าศูนย์ และ scan-delay ต้องไม่ติดลบ")
+        return 2
+    if args.input_sec < 0 or args.input_size < 1:
+        print("input-sec ต้องไม่ติดลบ และ input-size ต้องมากกว่าศูนย์")
+        return 2
+    if args.monitor_interval <= 0 or args.monitor_count < 0:
+        print("monitor-interval ต้องมากกว่าศูนย์ และ monitor-count ต้องไม่ติดลบ")
+        return 2
 
     # Resolve device profile: --model flag > --vid/--pid > registry default
     if args.model:
@@ -1072,8 +1098,10 @@ def main() -> int:
         return 1
 
     try:
-        base_ids = profile.report_ids if profile.report_ids else list(range(args.rid_min, args.rid_max + 1))
-        pre_scan_ids = merge_report_ids(base_ids, [0x10])
+        # The requested range is authoritative. Registered report IDs are a
+        # decoding aid, not a reason to silently narrow an explicit scan.
+        base_ids = list(range(args.rid_min, args.rid_max + 1))
+        pre_scan_ids = base_ids
 
         pre_raw, _ = read_all_feature_reports(
             h,
@@ -1090,7 +1118,10 @@ def main() -> int:
         else:
             print("\nไม่พบรายการ supported report IDs จาก 0x10 (จะใช้ช่วง RID ตามที่กำหนด)")
 
-        request_ids = merge_report_ids(base_ids, pre_supported)
+        request_ids = merge_report_ids(
+            base_ids,
+            [rid for rid in pre_supported if args.rid_min <= rid <= args.rid_max],
+        )
         if not request_ids:
             request_ids = base_ids
 
@@ -1112,7 +1143,7 @@ def main() -> int:
         ups = decode_feature_reports(raw)
         ups.update(infer_tentative_live_values(raw, ups))
         print_ups_data(ups)
-        print_unknown_reports(raw, known_report_ids=request_ids)
+        print_unknown_reports(raw)
         print_report_variants(history)
 
         print(f"\n{'=' * 68}")

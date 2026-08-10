@@ -124,6 +124,22 @@ class TestUPSDataFromRaw(unittest.TestCase):
         data = ups_data_from_raw(raw)
         self.assertTrue(data.is_charging())
 
+    def test_zero_measurements_are_not_replaced_by_tentative_values(self):
+        data = ups_data_from_raw({
+            "input.voltage": 0.0,
+            "tentative.input.voltage": 230.0,
+            "input.frequency": 0.0,
+            "tentative.input.frequency": 50.0,
+            "output.voltage": 0.0,
+            "output_voltage_v": 230.0,
+            "ups.temperature": 0.0,
+            "temperature_c": 28.0,
+        })
+        self.assertEqual(data.input_voltage, 0.0)
+        self.assertEqual(data.input_frequency, 0.0)
+        self.assertEqual(data.output_voltage, 0.0)
+        self.assertEqual(data.ups_temperature, 0.0)
+
 
 class TestNutDict(unittest.TestCase):
 

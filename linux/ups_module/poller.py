@@ -23,6 +23,7 @@ Usage::
 from __future__ import annotations
 
 import logging
+import math
 import re
 import threading
 import time
@@ -134,7 +135,9 @@ class UPSPoller(threading.Thread):
 
         self.vid = vid if vid is not None else profile.vid
         self.pid = pid if pid is not None else profile.pid
-        self.poll_interval = poll_interval
+        if not isinstance(poll_interval, (int, float)) or isinstance(poll_interval, bool) or not math.isfinite(poll_interval) or poll_interval <= 0:
+            raise ValueError("poll_interval must be a finite positive number of seconds")
+        self.poll_interval = float(poll_interval)
 
         self._stop_event = threading.Event()
         self._device_lock = threading.Lock()
@@ -170,17 +173,17 @@ class UPSPoller(threading.Thread):
                 self.store.set_error("Module core_hid_ups not found.")
                 if self.detector:
                     self.detector.process(None, connected=False)
-                time.sleep(5)
+                self._stop_event.wait(5)
                 continue
 
             if self.device_handle is None:
                 self._connect()
                 if self.device_handle is None:
-                    time.sleep(5)
+                    self._stop_event.wait(5)
                     continue
 
             self._poll_once()
-            time.sleep(self.poll_interval)
+            self._stop_event.wait(self.poll_interval)
 
         self._close_device()
         logger.info("UPSPoller stopped.")
@@ -223,13 +226,19 @@ class UPSPoller(threading.Thread):
             return
 
         try:
-            raw, _ = read_all_feature_reports(
+            raw, report_meta = read_all_feature_reports(
                 h,
                 report_ids=self._report_ids,
                 sizes=(8, 16, 32),
                 retries=1,
                 include_zero=False,
             )
+            if 0x01 not in raw:
+                errors = report_meta.get(0x01, {}).get("errors", 0)
+                raise RuntimeError(
+                    "Unable to read authoritative UPS status report 0x01"
+                    + (f" ({errors} HID read error(s))" if errors else "")
+                )
             ups = decode_feature_reports(raw)
             ups.update(infer_tentative_live_values(raw, ups))
             
@@ -260,6 +269,11 @@ class UPSPoller(threading.Thread):
             import os
 
             system = platform.system().lower()
+            # Never detach the kernel HID driver from a live UPS. The normal
+            # hidapi report path is authoritative; absent input voltage stays
+            # unavailable instead of risking the device interface.
+            if system == "linux":
+                return
             backend = None
 
             if system == "windows":
@@ -279,25 +293,12 @@ class UPSPoller(threading.Thread):
             if not dev:
                 return
 
-            if system == "linux":
-                try:
-                    if dev.is_kernel_driver_active(0):
-                        dev.detach_kernel_driver(0)
-                except Exception as e:
-                    logger.debug("detach_kernel_driver failed: %s", e)
-
             # GET_REPORT: bmRequestType=0xA1, bRequest=0x01, wValue=0x0331, wIndex=0, length=5
             payload = dev.ctrl_transfer(0xA1, 0x01, 0x0331, 0, 5, timeout=1000)
             if payload and len(payload) >= 5:
                 volt_raw = payload[3] | (payload[4] << 8)
                 ups["input.voltage"] = volt_raw / 10.0
 
-            if system == "linux":
-                try:
-                    dev.attach_kernel_driver(0)
-                except Exception as e:
-                    logger.debug("attach_kernel_driver failed: %s", e)
-                    
         except usb.core.USBError as e:
             logger.debug("pyusb fallback access denied: %s", e)
         except ImportError:

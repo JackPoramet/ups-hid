@@ -22,6 +22,8 @@ class EventBus:
         self._handlers: Dict[str, List[EventHandler]] = {}
         self._global_handlers: List[EventHandler] = []
         self._queue: queue.Queue[Optional[UPSEvent]] = queue.Queue(maxsize=maxsize)
+        self._lock = threading.Lock()
+        self._closed = False
         self._thread = threading.Thread(target=self._dispatch_loop, daemon=True, name="UPSEventBus")
         self._thread.start()
 
@@ -32,32 +34,48 @@ class EventBus:
         return decorator
 
     def subscribe(self, handler: EventHandler, notify_type: Optional[str] = None) -> None:
-        if notify_type is None:
-            self._global_handlers.append(handler)
-        else:
-            self._handlers.setdefault(notify_type, []).append(handler)
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("EventBus is stopped")
+            if notify_type is None:
+                self._global_handlers.append(handler)
+            else:
+                self._handlers.setdefault(notify_type, []).append(handler)
 
     def unsubscribe(self, handler: EventHandler, notify_type: Optional[str] = None) -> None:
-        if notify_type is None:
+        with self._lock:
             try:
-                self._global_handlers.remove(handler)
-            except ValueError:
-                pass
-        else:
-            lst = self._handlers.get(notify_type, [])
-            try:
-                lst.remove(handler)
+                if notify_type is None:
+                    self._global_handlers.remove(handler)
+                else:
+                    self._handlers.get(notify_type, []).remove(handler)
             except ValueError:
                 pass
 
     def publish(self, event: UPSEvent) -> None:
-        try:
-            self._queue.put_nowait(event)
-        except queue.Full:
-            logger.warning("EventBus queue full: %s", event.notify_type)
+        with self._lock:
+            if self._closed:
+                return
+            try:
+                self._queue.put_nowait(event)
+            except queue.Full:
+                logger.warning("EventBus queue full: %s", event.notify_type)
 
     def stop(self) -> None:
-        self._queue.put(None)
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            # Discard queued, stale events rather than block shutdown behind a
+            # slow handler or a full bounded queue.
+            while True:
+                try:
+                    self._queue.get_nowait()
+                except queue.Empty:
+                    break
+            self._queue.put_nowait(None)
+        if threading.current_thread() is not self._thread:
+            self._thread.join(timeout=5)
 
     def _dispatch_loop(self) -> None:
         while True:
@@ -67,7 +85,8 @@ class EventBus:
             self._invoke(event)
 
     def _invoke(self, event: UPSEvent) -> None:
-        handlers = self._global_handlers + self._handlers.get(event.notify_type, [])
+        with self._lock:
+            handlers = list(self._global_handlers) + list(self._handlers.get(event.notify_type, []))
         for handler in handlers:
             try:
                 handler(event)

@@ -8,6 +8,9 @@
 #   2. Remove the udev rule (/etc/udev/rules.d/99-ups-hid.rules)
 #   3. Reload udev rules
 #
+# The ups-hid group is retained because it may be shared by other
+# installations or service accounts.
+#
 # Note:
 #   System libraries (libhidapi-hidraw0, libusb, build-essential, etc.)
 #   are NOT removed, as they may be shared with other applications.
@@ -136,6 +139,8 @@ echo "  Uninstallation complete."
 echo ""
 echo "  Note: System libraries (libhidapi-hidraw0, libusb-1.0-0, etc.)"
 echo "  were intentionally kept, as they may be used by other applications."
+echo "  The ups-hid group was also retained. Remove it manually only after"
+echo "  confirming that no other UPS HID service account uses it."
 echo "  To remove them manually:"
 echo "    sudo apt remove -y libhidapi-hidraw0 libhidapi-dev libusb-1.0-0-dev"
 echo ""

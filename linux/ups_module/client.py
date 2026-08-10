@@ -37,6 +37,7 @@ Event monitoring (optional)::
 from __future__ import annotations
 
 import logging
+import math
 import os
 import threading
 import time
@@ -145,7 +146,9 @@ class UPSClient:
 
         self._handle = None                        # hid.device handle
         self._device_info: Dict[str, Any] = {}    # raw device metadata
-        self._handle_lock = threading.Lock()
+        # One re-entrant lock serializes every hidapi operation and close. HID
+        # handles are not safe to read/write concurrently with a close.
+        self._handle_lock = threading.RLock()
 
         # Optional monitor components (created lazily)
         self._bus: Optional[EventBus] = None
@@ -178,6 +181,10 @@ class UPSClient:
         verbose = os.environ.get("UPS_HID_VERBOSE", "").lower() in {
             "1", "true", "yes", "on",
         }
+        with self._handle_lock:
+            if self._handle is not None:
+                raise RuntimeError("Already connected. Call disconnect() before connect().")
+
         h, info = open_ups_device(self._vid, self._pid, verbose=verbose)
         if h is None:
             raise RuntimeError(
@@ -185,6 +192,12 @@ class UPSClient:
             )
 
         with self._handle_lock:
+            if self._handle is not None:
+                try:
+                    h.close()
+                except Exception:
+                    pass
+                raise RuntimeError("Already connected. Call disconnect() before connect().")
             self._handle = h
         self._device_info = info or {}
 
@@ -245,17 +258,25 @@ class UPSClient:
         """
         with self._handle_lock:
             h = self._handle
-        if h is None:
-            raise RuntimeError("Not connected. Call connect() first.")
+            if h is None:
+                raise RuntimeError("Not connected. Call connect() first.")
 
-        from .core import DEFAULT_REPORT_SIZES as _SIZES  # noqa: PLC0415
-        raw_reports, _ = read_all_feature_reports(
-            h,
-            report_ids=self._report_ids,
-            sizes=_SIZES,
-            retries=1,
-            include_zero=False,
-        )
+            from .core import DEFAULT_REPORT_SIZES as _SIZES  # noqa: PLC0415
+            raw_reports, report_meta = read_all_feature_reports(
+                h,
+                report_ids=self._report_ids,
+                sizes=_SIZES,
+                retries=1,
+                include_zero=True,
+            )
+
+        if 0x01 not in raw_reports:
+            status_meta = report_meta.get(0x01, {})
+            errors = status_meta.get("errors", 0)
+            raise RuntimeError(
+                "Unable to read authoritative UPS status report 0x01"
+                + (f" ({errors} HID read error(s))" if errors else "")
+            )
         decoded = decode_feature_reports(raw_reports)
         decoded.update(infer_tentative_live_values(raw_reports, decoded))
         return decoded
@@ -327,7 +348,11 @@ class UPSClient:
         """
         if not self.is_connected:
             return NotifyType.NOCOMM
-        data = ups_data_from_raw(self._read_raw())
+        try:
+            data = ups_data_from_raw(self._read_raw())
+        except RuntimeError as exc:
+            logger.warning("UPS status unavailable: %s", exc)
+            return NotifyType.NOCOMM
         return data.ups_status or NotifyType.NOCOMM
 
     def get_device_info(self) -> Dict[str, Any]:
@@ -350,19 +375,33 @@ class UPSClient:
         """Send a raw HID feature report. Returns (success, message)."""
         with self._handle_lock:
             h = self._handle
-        if not h:
-            return False, "Not connected to UPS"
-        try:
-            h.send_feature_report([rid] + list(payload))
-            hex_str = " ".join(f"{b:02X}" for b in payload)
-            return True, f"RID=0x{rid:02X} sent: {hex_str}"
-        except Exception as exc:
-            return False, f"RID=0x{rid:02X} error: {exc}"
+            if not h:
+                return False, "Not connected to UPS"
+            if not isinstance(rid, int) or isinstance(rid, bool) or not 0 <= rid <= 0xFF:
+                return False, "Report ID must be an unsigned byte"
+            if any(not isinstance(byte, int) or isinstance(byte, bool) or not 0 <= byte <= 0xFF for byte in payload):
+                return False, "Feature report payload must contain unsigned bytes"
+            report = [rid] + list(payload)
+            try:
+                written = h.send_feature_report(report)
+                if written != len(report):
+                    return False, (
+                        f"RID=0x{rid:02X} incomplete write: expected {len(report)} byte(s), "
+                        f"got {written!r}"
+                    )
+                hex_str = " ".join(f"{byte:02X}" for byte in payload)
+                return True, f"RID=0x{rid:02X} sent: {hex_str}"
+            except Exception as exc:
+                return False, f"RID=0x{rid:02X} error: {exc}"
 
     def _send_u32(self, rid: int, value: int) -> tuple[bool, str]:
+        if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 0xFFFFFFFF:
+            return False, "Value must be an unsigned 32-bit integer"
         return self._send_feature(rid, [(value >> (i * 8)) & 0xFF for i in range(4)])
 
     def _send_u16(self, rid: int, value: int) -> tuple[bool, str]:
+        if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 0xFFFF:
+            return False, "Value must be an unsigned 16-bit integer"
         return self._send_feature(rid, [(value >> (i * 8)) & 0xFF for i in range(2)])
 
     def run_self_test(self) -> tuple[bool, str]:
@@ -375,6 +414,8 @@ class UPSClient:
 
     def schedule_shutdown(self, delay_seconds: int) -> tuple[bool, str]:
         """Schedule UPS output shutdown after *delay_seconds*."""
+        if delay_seconds == 0xFFFFFFFF:
+            return False, "0xFFFFFFFF is reserved for cancel_shutdown()"
         return self._send_u32(0x09, delay_seconds)
 
     def cancel_shutdown(self) -> tuple[bool, str]:
@@ -395,7 +436,9 @@ class UPSClient:
 
     def set_frequency(self, freq_hz: int) -> tuple[bool, str]:
         """Set output frequency (50 or 60 Hz)."""
-        return self._send_feature(0x0D, [int(freq_hz)])
+        if not isinstance(freq_hz, int) or isinstance(freq_hz, bool) or freq_hz not in (50, 60):
+            return False, "Frequency must be exactly 50 or 60 Hz"
+        return self._send_feature(0x0D, [freq_hz])
 
     def set_runtime_limit(self, minutes: int) -> tuple[bool, str]:
         """Set minimum runtime threshold (minutes)."""
@@ -473,6 +516,9 @@ class UPSClient:
 
             client.start_monitor(interval=2.0)
         """
+        if not isinstance(interval, (int, float)) or isinstance(interval, bool) or not math.isfinite(interval) or interval <= 0:
+            raise ValueError("Monitor interval must be a finite positive number of seconds.")
+
         if self._monitor_thread and self._monitor_thread.is_alive():
             logger.warning("Monitor already running.")
             return self
