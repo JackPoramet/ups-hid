@@ -35,6 +35,20 @@ fi
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
+# -- Source compatibility guard -----------------------------------------------
+# install.sh installs dependencies and udev rules; it does not copy Python
+# source files between machines.  Fail early when an older source tree is
+# being installed, otherwise the old one-interface opener can still produce
+# the unhelpful "OSError: open failed" traceback.
+if ! grep -Fq '_ordered_device_candidates' core.py || \
+   ! grep -Fq 'TAG+="uaccess"' linux_setup.py; then
+    echo "Error: ups_module source tree is outdated."
+    echo "Please copy the current linux/ups_module directory, including:"
+    echo "  core.py, client.py, linux_setup.py, install.sh"
+    echo "Then run this installer again."
+    exit 1
+fi
+
 # -- Step 1: System libraries -------------------------------------------------
 echo "Installing system dependencies..."
 if command -v apt-get &> /dev/null; then

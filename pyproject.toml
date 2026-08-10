@@ -48,6 +48,7 @@ include = ["ups_module*"]
 [tool.setuptools.package-data]
 ups_module = [
     "core.py",
+    "diagnose_linux.py",
     "install.sh",
     "requirements.txt",
     "drivers/**/*",

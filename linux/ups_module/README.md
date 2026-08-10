@@ -315,6 +315,30 @@ sudo python3 linux_setup.py
 sudo python3 linux_setup.py --vid 0x06DA --pid 0xFFFF
 ```
 
+### 9.3 `diagnose_linux.py` — สคริปต์วิเคราะห์ปัญหาแบบ Read-only
+
+ใช้สำหรับวิเคราะห์ปัญหาบน Orange Pi หรือ Linux เครื่องอื่น โดยไม่แก้ไข udev,
+ไม่ติดตั้ง package และไม่ส่งคำสั่งควบคุมไปยัง UPS:
+
+```bash
+# แสดงผลการตรวจสอบแบบอ่านง่าย
+python3 diagnose_linux.py
+
+# รันด้วย root เพื่อแยกปัญหา permission ออกจากปัญหา driver/interface
+sudo python3 diagnose_linux.py
+
+# บันทึกผลแบบ JSON สำหรับส่งกลับมาวิเคราะห์
+python3 diagnose_linux.py --json /tmp/ups-diagnostic.json
+
+# ข้ามการอ่าน kernel log
+python3 diagnose_linux.py --skip-kernel-log
+```
+
+สคริปต์จะตรวจสอบ OS/architecture, Python import path, source code version,
+dependencies, udev rule, HID enumeration, `/dev/hidraw*` mode/owner/group,
+process ที่จับ device, การเปิด HID interface และการอ่าน Feature Report `0x01`
+กับ `0x06` รวมถึงข้อความผิดปกติจาก kernel log
+
 ---
 
 ## 10. โครงสร้างไฟล์ทั้งหมดในแพ็กเกจ `ups_module`
@@ -332,6 +356,7 @@ ups_module/
 ├── serializer.py       # Functions สำหรับแปลงชนิดข้อมูล Python เป็น JSON-compatible formats
 ├── poller.py           # Background Thread UPSPoller สำหรับอ่านข้อมูลต่อเนื่องและ Reconnect อัตโนมัติ
 ├── linux_setup.py      # สคริปต์ตรวจเช็ค Dependencies ของ Linux และสร้าง udev rule
+├── diagnose_linux.py    # Read-only diagnostic สำหรับวิเคราะห์ Linux/Orange Pi
 ├── install.sh          # Bash Script สำหรับติดตั้ง Dependencies ทั้งหมด และตั้งค่าระบบในคำสั่งเดียว
 ├── uninstall.sh        # Bash Script สำหรับถอนการติดตั้ง Python Packages และลบ udev rule
 ├── demo.py             # CLI Tool สำหรับทดสอบระบบทุกโหมดการทำงาน

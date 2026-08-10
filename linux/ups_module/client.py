@@ -37,6 +37,7 @@ Event monitoring (optional)::
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from typing import Any, Callable, Dict, List, Optional
@@ -174,7 +175,10 @@ class UPSClient:
         if not HID_AVAILABLE:
             raise RuntimeError("core / hidapi not installed.")
 
-        h, info = open_ups_device(self._vid, self._pid)
+        verbose = os.environ.get("UPS_HID_VERBOSE", "").lower() in {
+            "1", "true", "yes", "on",
+        }
+        h, info = open_ups_device(self._vid, self._pid, verbose=verbose)
         if h is None:
             raise RuntimeError(
                 f"UPS device not found (VID=0x{self._vid:04X} PID=0x{self._pid:04X})"
