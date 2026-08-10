@@ -10,6 +10,7 @@ HID UPS Deep Scanner — Multi-model support via device registry
 import argparse
 import datetime
 import json
+import os
 import re
 import sys
 import time
@@ -31,6 +32,22 @@ PID = _default_profile.pid
 
 
 DEFAULT_REPORT_SIZES = (64,)
+
+
+def _hid_path_arg(path: object) -> bytes:
+    """Normalize a hidapi path for bindings that require ``bytes``.
+
+    hidapi builds differ in what ``enumerate()`` returns: some return a
+    ``bytes`` path while others (notably some ARM/Linux builds) return ``str``.
+    ``hid.device.open_path()`` on the latter binding still requires bytes.
+    """
+    if isinstance(path, bytes):
+        return path
+    if isinstance(path, bytearray):
+        return bytes(path)
+    if path is None:
+        raise TypeError("HID device path is missing")
+    return os.fsencode(str(path))
 
 
 def auto_int(value: str) -> int:
@@ -102,7 +119,7 @@ def _probe_and_open(path: object) -> "Optional[hid.device]":
     """
     try:
         h = hid.device()
-        h.open_path(path)
+        h.open_path(_hid_path_arg(path))
         # Probe with report 0x01 (status) and 0x06 (battery)
         for probe_rid in (0x01, 0x06):
             try:
@@ -158,7 +175,7 @@ def open_ups_device(vid: int = VID, pid: int = PID, verbose: bool = False):
         path = candidate.get("path")
         try:
             candidate_h = hid.device()
-            candidate_h.open_path(path)
+            candidate_h.open_path(_hid_path_arg(path))
         except Exception as exc:
             open_errors.append(f"{path!r}: {exc}")
             try:

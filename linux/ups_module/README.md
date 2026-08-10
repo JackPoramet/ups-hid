@@ -339,6 +339,27 @@ dependencies, udev rule, HID enumeration, `/dev/hidraw*` mode/owner/group,
 process ที่จับ device, การเปิด HID interface และการอ่าน Feature Report `0x01`
 กับ `0x06` รวมถึงข้อความผิดปกติจาก kernel log
 
+> หมายเหตุสำหรับ Orange Pi/ARM: hidapi บาง build คืนค่า device path เป็น
+> `str` แต่ `open_path()` ต้องการ `bytes`; `core.py`, `linux_setup.py` และ
+> `diagnose_linux.py` จะแปลง path ให้อัตโนมัติแล้ว
+
+### 9.4 `check_hid_users.py` — ตรวจว่า process ใดใช้ USB HID อยู่
+
+ใช้ตรวจสอบว่า process ใดกำลังเปิด `/dev/hidrawN` ของ UPS อยู่ โดยสคริปต์จะ
+ค้นหาจาก `fuser`, `lsof` และ `/proc/*/fd` พร้อมแสดง PID, user, command line,
+permission ของ node และทดสอบ `open_path()` แบบ read-only
+
+```bash
+python3 check_hid_users.py
+sudo python3 check_hid_users.py
+python3 check_hid_users.py --json /tmp/hid-users.json
+python3 check_hid_users.py --no-open
+```
+
+สคริปต์ไม่หยุด process, ไม่แก้ permission, ไม่ reload udev และไม่เขียนข้อมูล
+ไปยัง UPS หากพบ process ในผลลัพธ์ ให้หยุดเฉพาะ process นั้นด้วยคำสั่งที่เหมาะสม
+แล้วลอง `demo.py` ใหม่
+
 ---
 
 ## 10. โครงสร้างไฟล์ทั้งหมดในแพ็กเกจ `ups_module`
@@ -357,6 +378,7 @@ ups_module/
 ├── poller.py           # Background Thread UPSPoller สำหรับอ่านข้อมูลต่อเนื่องและ Reconnect อัตโนมัติ
 ├── linux_setup.py      # สคริปต์ตรวจเช็ค Dependencies ของ Linux และสร้าง udev rule
 ├── diagnose_linux.py    # Read-only diagnostic สำหรับวิเคราะห์ Linux/Orange Pi
+├── check_hid_users.py   # ตรวจ process ที่เปิด /dev/hidrawN ของ UPS
 ├── install.sh          # Bash Script สำหรับติดตั้ง Dependencies ทั้งหมด และตั้งค่าระบบในคำสั่งเดียว
 ├── uninstall.sh        # Bash Script สำหรับถอนการติดตั้ง Python Packages และลบ udev rule
 ├── demo.py             # CLI Tool สำหรับทดสอบระบบทุกโหมดการทำงาน

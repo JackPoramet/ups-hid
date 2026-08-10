@@ -261,6 +261,17 @@ def _device_path_text(path: object) -> str:
     return str(path)
 
 
+def _hid_path_arg(path: object) -> bytes:
+    """Normalize hidapi paths for ARM/Linux bindings requiring bytes."""
+    if isinstance(path, bytes):
+        return path
+    if isinstance(path, bytearray):
+        return bytes(path)
+    if path is None:
+        raise TypeError("HID device path is missing")
+    return os.fsencode(str(path))
+
+
 def _ordered_device_candidates(devices: List[dict]) -> List[dict]:
     """Use the same interface preference as the core HID opener."""
     preferred = [
@@ -317,7 +328,7 @@ def check_device_permission(
 
         try:
             h = hid.device()
-            h.open_path(path)
+            h.open_path(_hid_path_arg(path))
             h.close()
             mfr = target.get("manufacturer_string") or "PHOENIXTEC"
             prod = target.get("product_string") or "Innova Unity"

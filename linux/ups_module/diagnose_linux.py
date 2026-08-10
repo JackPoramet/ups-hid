@@ -56,6 +56,17 @@ def _text(value: Any) -> str:
     return str(value)
 
 
+def _hid_path_arg(path: Any) -> bytes:
+    """Normalize hidapi paths for bindings requiring a bytes argument."""
+    if isinstance(path, bytes):
+        return path
+    if isinstance(path, bytearray):
+        return bytes(path)
+    if path is None:
+        raise TypeError("HID device path is missing")
+    return os.fsencode(str(path))
+
+
 def _json_value(value: Any) -> Any:
     if isinstance(value, (bytes, bytearray)):
         return _text(value)
@@ -213,7 +224,10 @@ class Diagnostic:
         stale_markers = []
         if "_ordered_device_candidates" not in core_text:
             stale_markers.append("core.py lacks _ordered_device_candidates")
-        if "candidate_h.open_path(path)" not in core_text:
+        if (
+            "candidate_h.open_path(path)" not in core_text
+            and "candidate_h.open_path(_hid_path_arg(path))" not in core_text
+        ):
             stale_markers.append("core.py lacks multi-interface open loop")
         if 'h.open_path(target["path"])' in core_text:
             stale_markers.append("core.py still contains old direct target open")
@@ -386,7 +400,7 @@ class Diagnostic:
             handle = None
             try:
                 handle = hid.device()
-                handle.open_path(raw_path)
+                handle.open_path(_hid_path_arg(raw_path))
                 opened += 1
                 node["open"] = True
                 node["open_error"] = None

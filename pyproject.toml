@@ -49,6 +49,7 @@ include = ["ups_module*"]
 ups_module = [
     "core.py",
     "diagnose_linux.py",
+    "check_hid_users.py",
     "install.sh",
     "requirements.txt",
     "drivers/**/*",
