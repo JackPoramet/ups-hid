@@ -77,23 +77,64 @@ def _setup_logging(level: str = "INFO") -> None:
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
 
+import argparse
+
+
 def main() -> None:
     """
     Entry point หลักของ UPS Monitor Windows Tray Service
 
     ลำดับการเริ่มต้น:
         1. โหลด config & Database
-        2. สร้าง components
-        3. เชื่อม callbacks ระหว่าง components
-        4. เริ่ม WebServer (background thread)
-        5. เริ่ม UPSPoller (background thread)
-        6. เริ่ม TrayApp (main thread — blocking)
+        2. รองรับ CLI arguments สำหรับเลือก UPS หรือดูรายการอุปกรณ์
+        3. สร้าง components
+        4. เชื่อม callbacks ระหว่าง components
+        5. เริ่ม WebServer (background thread)
+        6. เริ่ม UPSPoller (background thread)
+        7. เริ่ม TrayApp (main thread — blocking)
     """
+    parser = argparse.ArgumentParser(description="ENEREX UPS Monitor Service")
+    parser.add_argument("--vid", type=lambda x: int(x, 0), default=None, help="Target USB Vendor ID in hex (e.g. 0x06DA or 0x0001)")
+    parser.add_argument("--pid", type=lambda x: int(x, 0), default=None, help="Target USB Product ID in hex (e.g. 0xFFFF or 0x0000)")
+    parser.add_argument("--serial", type=str, default=None, help="Target UPS Serial Number")
+    parser.add_argument("--path", type=str, default=None, help="Target USB Device Path")
+    parser.add_argument("--list-devices", action="store_true", help="List connected UPS devices and exit")
+    args, _ = parser.parse_known_args()
+
     # ── 1. Config & Database ──────────────────────────────────────────────────
     cfg = ConfigManager()
     _setup_logging(cfg.get("log_level", "INFO"))
     logger = logging.getLogger(__name__)
     logger.info("UPS Monitor starting...")
+
+    if args.list_devices:
+        try:
+            from core_hid_ups import list_ups_devices
+            devices = list_ups_devices(target_vid=None)
+            print("\n=== Connected UPS Devices ===")
+            if not devices:
+                print("No UPS devices found.")
+            else:
+                for idx, d in enumerate(devices, 1):
+                    print(f"[{idx}] {d.get('manufacturer_string')} {d.get('product_string')}")
+                    print(f"    VID=0x{d.get('vendor_id'):04X} PID=0x{d.get('product_id'):04X} Serial={d.get('serial_number') or 'N/A'}")
+                    print(f"    Path={d.get('path_str')}")
+        except Exception as exc:
+            print(f"Error listing devices: {exc}")
+        return
+
+    # หากมีการระบุตัวเลือกจาก CLI ให้อัปเดตและบันทึกลง Config
+    if args.vid is not None:
+        cfg.set("vid", args.vid)
+    if args.pid is not None:
+        cfg.set("pid", args.pid)
+    if args.serial is not None:
+        cfg.set("selected_device_serial", args.serial)
+    if args.path is not None:
+        cfg.set("selected_device_path", args.path)
+    if any(k is not None for k in (args.vid, args.pid, args.serial, args.path)):
+        cfg.save()
+        logger.info(f"Updated UPS selection from CLI: VID={args.vid} PID={args.pid} serial={args.serial} path={args.path}")
 
     db = None
     if cfg.get("db_enabled", True):
@@ -127,11 +168,16 @@ def main() -> None:
     )
 
     # ── 4. UPS Poller ─────────────────────────────────────────────────────────
+    target_vid = args.vid if args.vid is not None else cfg.get("vid", None)
+    target_pid = args.pid if args.pid is not None else cfg.get("pid", None)
+    target_path = args.path if args.path is not None else cfg.get("selected_device_path")
+    target_serial = args.serial if args.serial is not None else cfg.get("selected_device_serial")
+
     poller = UPSPoller(
-        vid=cfg.get("vid", 0x06DA),
-        pid=cfg.get("pid", 0xFFFF),
-        target_path=cfg.get("selected_device_path"),
-        target_serial=cfg.get("selected_device_serial"),
+        vid=target_vid,
+        pid=target_pid,
+        target_path=target_path,
+        target_serial=target_serial,
         poll_interval_s=cfg.get("poll_interval_s", 1.0),
         battery_low_threshold=cfg.get("shutdown_battery_threshold", 20),
         battery_critical_threshold=max(cfg.get("shutdown_battery_threshold", 20) - 10, 5),
@@ -144,6 +190,7 @@ def main() -> None:
         on_low_battery=lambda state: _on_low_battery(state, notif, shutdown_mgr),
         on_critical_battery=lambda state: _on_critical_battery(state, notif),
     )
+
 
     # ── 5. Web Server ─────────────────────────────────────────────────────────
     port = cfg.get("port", 48655)

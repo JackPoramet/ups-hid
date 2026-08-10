@@ -94,6 +94,31 @@ class DatabaseManager:
                 "CREATE INDEX IF NOT EXISTS idx_telemetry_ts ON ups_telemetry(timestamp);"
             )
 
+            # 3. ตารางเก็บประวัติ Battery Discharge & Test (เทียบเท่า WinPower G2 API /history/discharge/list)
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ups_discharge_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    device_id TEXT,
+                    discharge_reason INTEGER NOT NULL,
+                    start_time TEXT NOT NULL,
+                    end_time TEXT,
+                    duration INTEGER,
+                    test_result INTEGER,
+                    start_volt REAL,
+                    end_volt REAL,
+                    start_level INTEGER,
+                    end_level INTEGER,
+                    start_load INTEGER,
+                    end_load INTEGER,
+                    create_time TEXT NOT NULL
+                );
+                """
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_discharge_ts ON ups_discharge_history(start_time);"
+            )
+
             conn.commit()
         logger.info(f"Database initialized at: {self.db_path}")
 
@@ -280,7 +305,126 @@ class DatabaseManager:
             with self._lock, self._get_connection() as conn:
                 conn.execute("DELETE FROM ups_telemetry;")
                 conn.execute("DELETE FROM ups_events;")
+                conn.execute("DELETE FROM ups_discharge_history;")
                 conn.commit()
             logger.info("Cleared all records in SQLite database")
         except Exception as e:
             logger.error(f"Failed to clear DB: {e}")
+
+    def log_discharge_record(self, record: Dict[str, Any]) -> Optional[int]:
+        """
+        บันทึกประวัติการ Discharge / Battery Test (ตรงตามรูปแบบ Winpower G2 /history/discharge/list API)
+        """
+        try:
+            with self._lock, self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO ups_discharge_history (
+                        device_id, discharge_reason, start_time, end_time, duration,
+                        test_result, start_volt, end_volt, start_level, end_level,
+                        start_load, end_load, create_time
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record.get("deviceId"),
+                        record.get("dischargeReason", 1),
+                        record.get("startTime"),
+                        record.get("endTime"),
+                        record.get("duration", 0),
+                        record.get("testResult", 1),
+                        record.get("startVolt"),
+                        record.get("endVolt"),
+                        record.get("startLevel"),
+                        record.get("endLevel"),
+                        record.get("startLoad"),
+                        record.get("endLoad"),
+                        record.get("createTime") or record.get("startTime"),
+                    ),
+                )
+                conn.commit()
+                return cursor.lastrowid
+        except Exception as e:
+            logger.error(f"Failed to log discharge record: {e}")
+            return None
+
+    def get_discharge_history(
+        self,
+        device_id: Optional[str] = None,
+        limit: int = 100,
+        page: int = 1,
+    ) -> Dict[str, Any]:
+        """
+        ดึงประวัติ Battery Test / Discharge (รูปแบบตรงกับ Winpower G2 JSON response)
+        """
+        offset = max(0, (page - 1) * limit)
+        results: List[Dict[str, Any]] = []
+        total = 0
+
+        try:
+            with self._lock, self._get_connection() as conn:
+                cursor = conn.cursor()
+                if device_id:
+                    cursor.execute("SELECT COUNT(*) FROM ups_discharge_history WHERE device_id = ?", (device_id,))
+                else:
+                    cursor.execute("SELECT COUNT(*) FROM ups_discharge_history")
+                total = cursor.fetchone()[0]
+
+                if device_id:
+                    cursor.execute(
+                        """
+                        SELECT id, device_id, discharge_reason, start_time, end_time, duration,
+                               test_result, start_volt, end_volt, start_level, end_level,
+                               start_load, end_load, create_time
+                        FROM ups_discharge_history
+                        WHERE device_id = ?
+                        ORDER BY id DESC
+                        LIMIT ? OFFSET ?
+                        """,
+                        (device_id, limit, offset),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        SELECT id, device_id, discharge_reason, start_time, end_time, duration,
+                               test_result, start_volt, end_volt, start_level, end_level,
+                               start_load, end_load, create_time
+                        FROM ups_discharge_history
+                        ORDER BY id DESC
+                        LIMIT ? OFFSET ?
+                        """,
+                        (limit, offset),
+                    )
+
+                rows = cursor.fetchall()
+                for r in rows:
+                    results.append(
+                        {
+                            "id": r["id"],
+                            "deviceId": r["device_id"],
+                            "dischargeReason": r["discharge_reason"],
+                            "startTime": r["start_time"],
+                            "endTime": r["end_time"],
+                            "duration": r["duration"],
+                            "testResult": r["test_result"],
+                            "startVolt": r["start_volt"],
+                            "endVolt": r["end_volt"],
+                            "startLevel": r["start_level"],
+                            "endLevel": r["end_level"],
+                            "startLoad": r["start_load"],
+                            "endLoad": r["end_load"],
+                            "createTime": r["create_time"],
+                        }
+                    )
+        except Exception as e:
+            logger.error(f"Failed to fetch discharge history: {e}")
+
+        return {
+            "total": total,
+            "pageSize": limit,
+            "currentPage": page,
+            "data": results,
+            "code": "000000",
+            "msg": "OK",
+        }
+

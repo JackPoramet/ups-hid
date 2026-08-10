@@ -1371,3 +1371,97 @@ input:checked + .toggle__slider::before {
     font-weight: 600;
 }
 
+/* ── Power Flow Topology Diagram ───────────────────────────── */
+.topology-container {
+    width: 100%;
+    position: relative;
+    background: var(--bg-tertiary, #0F172A);
+    border: 1px solid var(--border, #334155);
+    border-radius: var(--radius-lg, 12px);
+    padding: 24px 20px;
+    overflow-x: auto;
+    transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+[data-theme="light"] .topology-container {
+    background: #F8FAFC;
+    border-color: #E2E8F0;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+.schematic-metric-box {
+    background: var(--bg-card, #1E293B);
+    border: 1px solid var(--border, #334155);
+    border-radius: var(--radius-md, 8px);
+    padding: 10px 14px;
+    text-align: center;
+    box-shadow: var(--shadow-card);
+    transition: all 0.2s ease;
+}
+
+[data-theme="light"] .schematic-metric-box {
+    background: #FFFFFF;
+    border-color: #E2E8F0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.schematic-metric-box:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent-blue, #3B82F6);
+}
+
+.schematic-label {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text-secondary, #94A3B8);
+    margin-bottom: 3px;
+}
+
+.schematic-val {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: var(--text-mono, #3B82F6);
+}
+
+/* SVG Text & Element Theme Adaptation */
+.svg-node-bg {
+    fill: var(--bg-card, #1E293B);
+    stroke: var(--border, #334155);
+    transition: fill 0.3s ease, stroke 0.3s ease;
+}
+
+[data-theme="light"] .svg-node-bg {
+    fill: #FFFFFF;
+    stroke: #CBD5E1;
+}
+
+.svg-text-primary {
+    fill: var(--text-primary, #F8FAFC);
+    transition: fill 0.3s ease;
+}
+
+[data-theme="light"] .svg-text-primary {
+    fill: #0F172A;
+}
+
+.svg-text-secondary {
+    fill: var(--text-secondary, #94A3B8);
+    transition: fill 0.3s ease;
+}
+
+[data-theme="light"] .svg-text-secondary {
+    fill: #475569;
+}
+
+.svg-line-inactive {
+    stroke: var(--border, #334155);
+}
+
+[data-theme="light"] .svg-line-inactive {
+    stroke: #CBD5E1;
+}
+
+@keyframes dash { to { stroke-dashoffset: -24; } }
+@keyframes dashRev { to { stroke-dashoffset: 24; } }
+

@@ -1,0 +1,273 @@
+productName: Offline UPS
+vendorId:    0x06DA (1754) Phoenixtec Power Co., Ltd.
+productId:   0xFFFF (65535)
+opened:      true
+collections[0]
+  Usage: 0084:0004 (Power Device > UPS)
+  Input reports: 0x01, 0x06, 0x2D
+  Feature reports: 0x01, 0x06, 0x07, 0x09, 0x0A, 0x0B, 0x10, 0x13, 0x24, 0x2D, 0x31, 0x36, 0x42, 0x4A, 0x72, 0x74, 0xE2
+Input report 0x01
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:00D0 (Battery System > ACPresent)
+    Logical bounds: 0 to 255
+  8 bits (bits 8 to 15)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:0042 (Battery System > BelowRemainingCapacityLimit)
+    Logical bounds: 0 to 255
+  8 bits (bits 16 to 23)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:0044 (Battery System > Charging)
+    Logical bounds: 0 to 255
+  8 bits (bits 24 to 31)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:0045 (Battery System > Discharging)
+    Logical bounds: 0 to 255
+  8 bits (bits 32 to 39)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0061 (Power Device > Good)
+    Logical bounds: 0 to 255
+  8 bits (bits 40 to 47)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0062 (Power Device > InternalFailure)
+    Logical bounds: 0 to 255
+  8 bits (bits 48 to 55)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0065 (Power Device > Overload)
+    Logical bounds: 0 to 255
+Input report 0x06
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:0066 (Battery System > RemainingCapacity)
+    Logical bounds: 0 to 100
+  16 bits (bits 8 to 23)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:0068 (Battery System > RunTimeToEmpty)
+    Logical bounds: 0 to 32767
+    Units: s
+  32 bits (bits 24 to 55)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Input report 0x2D
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:006E (Power Device > Boost)
+    Logical bounds: 0 to 255
+  8 bits (bits 8 to 15)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:006F (Power Device > Buck)
+    Logical bounds: 0 to 255
+  40 bits (bits 16 to 55)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x01
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:00D0 (Battery System > ACPresent)
+    Logical bounds: 0 to 255
+  8 bits (bits 8 to 15)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:0042 (Battery System > BelowRemainingCapacityLimit)
+    Logical bounds: 0 to 255
+  8 bits (bits 16 to 23)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:0044 (Battery System > Charging)
+    Logical bounds: 0 to 255
+  8 bits (bits 24 to 31)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:0045 (Battery System > Discharging)
+    Logical bounds: 0 to 255
+  8 bits (bits 32 to 39)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0061 (Power Device > Good)
+    Logical bounds: 0 to 255
+  8 bits (bits 40 to 47)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0062 (Power Device > InternalFailure)
+    Logical bounds: 0 to 255
+  8 bits (bits 48 to 55)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0065 (Power Device > Overload)
+    Logical bounds: 0 to 255
+Feature report 0x06
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:0066 (Battery System > RemainingCapacity)
+    Logical bounds: 0 to 100
+  16 bits (bits 8 to 23)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:0068 (Battery System > RunTimeToEmpty)
+    Logical bounds: 0 to 32767
+    Units: s
+  32 bits (bits 24 to 55)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x07
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0035 (Power Device > PercentLoad)
+    Logical bounds: 0 to 255
+  16 bits (bits 8 to 23)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0030 (Power Device > Voltage)
+    Logical bounds: 0 to 32767
+    Units: 10^6*cm^2*g/s^3*A
+  32 bits (bits 24 to 55)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x09
+  32 bits (bits 0 to 31)
+    Data,Var,Abs,Vol
+    Usage: 0084:0057 (Power Device > DelayBeforeShutdown)
+    Logical bounds: -1 to 2147483647
+    Units: s
+  24 bits (bits 32 to 55)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x0A
+  32 bits (bits 0 to 31)
+    Data,Var,Abs,Vol
+    Usage: 0084:0056 (Power Device > DelayBeforeStartup)
+    Logical bounds: -1 to 2147483647
+    Units: s
+  24 bits (bits 32 to 55)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x0B
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs
+    Usage: 0085:0083 (Battery System > DesignCapacity)
+    Logical bounds: 0 to 100
+  8 bits (bits 8 to 15)
+    Cnst,Var,Abs
+    Usage: 0085:008D (Battery System > CapacityGranularity1)
+    Logical bounds: 0 to 100
+  8 bits (bits 16 to 23)
+    Cnst,Var,Abs
+    Usage: 0085:0067 (Battery System > FullChargeCapacity)
+    Logical bounds: 0 to 100
+  8 bits (bits 24 to 31)
+    Cnst,Var,Abs
+    Usage: 0085:002C (Battery System > CapacityMode)
+    Logical bounds: 0 to 100
+  24 bits (bits 32 to 55)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x10
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs
+    Usage: 0085:0089 (Battery System > iDeviceChemistry)
+    Logical bounds: 0 to 255
+  8 bits (bits 8 to 15)
+    Cnst,Var,Abs
+    Usage: 0084:00FD (Power Device > iManufacturer)
+    Logical bounds: 0 to 255
+  8 bits (bits 16 to 23)
+    Cnst,Var,Abs
+    Usage: FFFF:00F0 (Vendor-defined page 0xFFFF usage 0x00F0)
+    Logical bounds: 0 to 255
+  8 bits (bits 24 to 31)
+    Cnst,Var,Abs
+    Usage: 0084:00FE (Power Device > iProduct)
+    Logical bounds: 0 to 255
+  8 bits (bits 32 to 39)
+    Cnst,Var,Abs
+    Usage: 0084:00FF (Power Device > iSerialNumber)
+    Logical bounds: 0 to 255
+  16 bits (bits 40 to 55)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x13
+  8 bits (bits 0 to 7)
+    Data,Var,Abs,Vol
+    Usage: 0084:005A (Power Device > AudibleAlarmControl)
+    Logical bounds: 0 to 255
+  48 bits (bits 8 to 55)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x24
+  8 bits (bits 0 to 7)
+    Data,Var,Abs,Vol
+    Usage: 0084:0058 (Power Device > Test)
+    Logical bounds: 0 to 255
+  48 bits (bits 8 to 55)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x2D
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:006E (Power Device > Boost)
+    Logical bounds: 0 to 255
+  8 bits (bits 8 to 15)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:006F (Power Device > Buck)
+    Logical bounds: 0 to 255
+  40 bits (bits 16 to 55)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x31
+  16 bits (bits 0 to 15)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0030 (Power Device > Voltage)
+    Logical bounds: 0 to 65535
+    Units: 10^7*cm^2*g/s^3*A
+  40 bits (bits 16 to 55)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x36
+  8 bits (bits 0 to 7)
+    Data,Var,Abs,Vol
+    Usage: 0084:0042 (Power Device > ConfigFrequency)
+    Logical bounds: 0 to 255
+    Units: 1/s
+  48 bits (bits 8 to 55)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x42
+  16 bits (bits 0 to 15)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0032 (Power Device > Frequency)
+    Logical bounds: 0 to 65535
+    Units: 10^-1*1/s
+  16 bits (bits 16 to 31)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0030 (Power Device > Voltage)
+    Logical bounds: 0 to 65535
+    Units: 10^7*cm^2*g/s^3*A
+  24 bits (bits 32 to 55)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x4A
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs
+    Usage: FFFF:0041 (Vendor-defined page 0xFFFF usage 0x0041)
+    Logical bounds: 0 to 255
+  48 bits (bits 8 to 55)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x72
+  8 bits (bits 0 to 7)
+    Data,Var,Abs,Vol
+    Usage: 0084:0040 (Power Device > ConfigVoltage)
+    Logical bounds: 0 to 255
+    Units: 10^7*cm^2*g/s^3*A
+  48 bits (bits 8 to 55)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x74
+  16 bits (bits 0 to 15)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0043 (Power Device > ConfigApparentPower)
+    Logical bounds: 0 to 65535
+    Units: 10^7*cm^2*g/s^3
+  40 bits (bits 16 to 55)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0xE2
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs,Vol
+    Usage: FFFF:00E2 (Vendor-defined page 0xFFFF usage 0x00E2)
+    Logical bounds: 0 to 255
+  48 bits (bits 8 to 55)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0

@@ -166,6 +166,7 @@ function updateDashboard(data, power) {
 
     // ── Status Section ────────────────────────────────────────────────────────
     if (!connected) {
+        setText('val-ups-topology', 'ไม่ได้เชื่อมต่อ');
         setValWithColor('val-ups-status', 'ไม่ได้เชื่อมต่ออุปกรณ์', 'err');
         setText('val-charging',     'ไม่ได้เชื่อมต่อ');
         setText('val-discharging',  'ไม่ได้เชื่อมต่อ');
@@ -215,6 +216,11 @@ function updateDashboard(data, power) {
 
     setValWithColor('val-ups-status', formattedStatus, statusColor);
 
+    const pName = (device['product_string'] || device['product'] || '').toLowerCase();
+    const isTrueOnline = pName.includes('unity') || pName.includes('basic') || pName.includes('innova') || pName.includes('online');
+    const topology = ups['ups_topology'] || ups['ups.topology'] || (isTrueOnline ? 'True Online (Double Conversion)' : 'Line-Interactive');
+    setValWithColor('val-ups-topology', topology, 'ok');
+
     setBool('val-charging',     ups['charging'],     true,  'ok',   'dim');
     setBool('val-discharging',  ups['discharging'],  false, 'warn', 'ok');
     setBool('val-status-good',  ups['status_good'],  true,  'ok',   'err');
@@ -235,13 +241,22 @@ function updateDashboard(data, power) {
     setFaultBool('val-over-temp',        ups['over_temperature']);
 
     // ── Power Section ─────────────────────────────────────────────────────────
+    const features = device.features || {};
+
     setVal('val-input-voltage',   power['input_voltage_v'],        ' V', 1);
     setVal('val-input-freq',      power['input_frequency_hz'],     ' Hz', 1);
     setVal('val-output-voltage',  power['output_voltage_v'],       ' V', 1);
     setVal('val-output-freq',     power['output_frequency_hz'],    ' Hz', 1);
-    setVal('val-active-power',    power['output_active_power_w'],  ' W', 1);
-    setVal('val-apparent-power',  power['output_apparent_power_va'],' VA', 0);
-    setVal('val-temperature',     power['temperature_c'],          ' °C', 1);
+
+    setFeatureVal('val-active-power',   power['output_active_power_w'],   ' W',  1, features.has_active_power !== false);
+    setFeatureVal('val-apparent-power', power['output_apparent_power_va'],' VA', 0, features.has_apparent_power !== false);
+    setFeatureVal('val-temperature',    power['temperature_c'],           ' °C', 1, features.has_temperature !== false);
+
+    // Update Control Tab UI based on features
+    updateControlTabFeatures(features);
+
+    // Render Power Flow Topology Diagram
+    renderTopologyDiagram(ups, device, power, connected);
 
     // Status Dot
     if (!connected) setStatusDot('disconnected');
@@ -440,6 +455,41 @@ function formatCountdownTime(seconds) {
     return `${mm}:${ss}`;
 }
 
+/** อัปเดตรายละเอียดอุปกรณ์และตารางความสามารถ (Capabilities Matrix) */
+function updateDeviceInfo(device = {}, ups = {}) {
+    setText('dev-manufacturer', device.manufacturer_string || device.manufacturer || '—');
+    setText('dev-product', device.product_string || device.product || '—');
+    setText('dev-serial', device.serial_number || device.serial || '—');
+    setText('dev-firmware', ups['ups.firmware'] || '—');
+    setText('dev-release', device.release_number ?? '—');
+    setText('dev-usage-page', device.usage_page ? `0x${Number(device.usage_page).toString(16).padStart(4, '0').toUpperCase()}` : (device.usage_page_hex || '—'));
+    setText('dev-usage', device.usage ? `0x${Number(device.usage).toString(16).padStart(4, '0').toUpperCase()}` : (device.usage_hex || '—'));
+
+    const features = device.features || {};
+    const capContainer = document.getElementById('dev-capabilities-matrix');
+    if (capContainer) {
+        const matrix = [
+            { name: 'Active Power Meter (W)', ok: features.has_active_power !== false },
+            { name: 'Apparent Power Meter (VA)', ok: features.has_apparent_power !== false },
+            { name: 'Output Current Meter (A)', ok: features.has_output_current !== false },
+            { name: 'Internal Temperature Sensor (°C)', ok: features.has_temperature !== false },
+            { name: 'RTC Real-Time Clock Sync', ok: features.has_rtc_time_sync !== false },
+            { name: 'Battery Self-Test Control', ok: features.has_battery_test !== false },
+            { name: 'Output Power Shutdown Control', ok: features.has_output_control !== false },
+            { name: 'Nominal Ratings Telemetry', ok: features.has_nominal_ratings !== false },
+        ];
+
+        capContainer.innerHTML = matrix.map(m => `
+            <div style="display:flex; align-items:center; justify-content:space-between; padding: 10px 14px; background: var(--bg-card-alt); border-radius: 6px; margin-bottom: 8px;">
+                <span style="font-size:0.9rem; font-weight:500;">${m.name}</span>
+                <span style="font-size:0.8rem; font-weight:600; padding:3px 10px; border-radius:4px; ${m.ok ? 'color:#10B981; background:rgba(16,185,129,0.15);' : 'color:#9CA3AF; background:rgba(156,163,175,0.15);'}">
+                    ${m.ok ? '✔ Supported' : '✖ Not Supported'}
+                </span>
+            </div>
+        `).join('');
+    }
+}
+
 /** UPS Self Test */
 async function upsSelfTest(action) {
     const res = await apiPost('/api/ups/control/test', { action });
@@ -561,6 +611,7 @@ async function loadHistoryData() {
         if (eventRes.status === 'ok') {
             renderEventsTable('events-table-body', eventRes.events || []);
         }
+        loadDischargeHistoryData();
     } catch (e) {
         console.error('Failed to load history data:', e);
     }
@@ -605,6 +656,55 @@ function renderEventsTable(tbodyId, events) {
         `;
     });
     tbody.innerHTML = html;
+}
+
+/** ดึงข้อมูลตารางประวัติ Discharge / Battery Test (Winpower G2 Compatible API) */
+async function loadDischargeHistoryData() {
+    const tbody = document.getElementById('discharge-table-body');
+    if (!tbody) return;
+
+    try {
+        const res = await fetch('/api/v1/history/discharge/list?pageSize=50').then(r => r.json());
+        const records = res.data || [];
+
+        if (records.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="9" style="padding:20px; text-align:center; color:var(--text-secondary);">ไม่พบประวัติการทดสอบหรือใช้งานแบตเตอรี่</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = records.map(r => {
+            const reasonBadge = r.dischargeReason === 2
+                ? `<span style="padding:2px 8px; border-radius:4px; font-size:0.78rem; font-weight:600; color:#3B82F6; background:rgba(59,130,246,0.15);">Battery Test</span>`
+                : `<span style="padding:2px 8px; border-radius:4px; font-size:0.78rem; font-weight:600; color:#EF4444; background:rgba(239,68,68,0.15);">Power Outage</span>`;
+
+            const resultBadge = r.testResult === 1
+                ? `<span style="padding:2px 8px; border-radius:4px; font-size:0.78rem; font-weight:600; color:#10B981; background:rgba(16,185,129,0.15);">✔ Passed</span>`
+                : `<span style="padding:2px 8px; border-radius:4px; font-size:0.78rem; font-weight:600; color:#EF4444; background:rgba(239,68,68,0.15);">✖ Error/Failed</span>`;
+
+            const startStr = formatIsoTime(r.startTime);
+            const endStr = formatIsoTime(r.endTime);
+            const durationStr = r.duration != null ? `${r.duration} วินาที` : '—';
+            const voltStr = (r.startVolt != null && r.endVolt != null) ? `${r.startVolt}V ➔ ${r.endVolt}V` : '—';
+            const levelStr = (r.startLevel != null && r.endLevel != null) ? `${r.startLevel}% ➔ ${r.endLevel}%` : '—';
+            const loadStr = (r.startLoad != null && r.endLoad != null) ? `${r.startLoad}% ➔ ${r.endLoad}%` : '—';
+
+            return `
+                <tr style="border-bottom: 1px solid var(--border, #1E293B);">
+                    <td style="padding:10px 14px; font-family:var(--font-mono);">#${r.id}</td>
+                    <td style="padding:10px 14px;">${reasonBadge}</td>
+                    <td style="padding:10px 14px;">${resultBadge}</td>
+                    <td style="padding:10px 14px; font-size:0.85rem;">${startStr}</td>
+                    <td style="padding:10px 14px; font-size:0.85rem;">${endStr}</td>
+                    <td style="padding:10px 14px; font-weight:500;">${durationStr}</td>
+                    <td style="padding:10px 14px; font-family:var(--font-mono);">${voltStr}</td>
+                    <td style="padding:10px 14px; font-family:var(--font-mono);">${levelStr}</td>
+                    <td style="padding:10px 14px; font-family:var(--font-mono);">${loadStr}</td>
+                </tr>
+            `;
+        }).join('');
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="9" style="padding:20px; text-align:center; color:#EF4444;">เกิดข้อผิดพลาดในการดึงข้อมูล: ${e.message}</td></tr>`;
+    }
 }
 
 function getEventBadgeHtml(eventType) {
@@ -920,6 +1020,74 @@ function setVal(id, value, unit = '', decimals = 0) {
 }
 
 /**
+ * ตั้ง value พร้อม unit โดยตรวจสอบว่าฟีเจอร์รองรับหรือไม่
+ */
+function setFeatureVal(id, value, unit = '', decimals = 0, isSupported = true) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (isSupported === false) {
+        el.textContent = 'ไม่รองรับ (N/A)';
+        el.className = 'data-row__value val-dim';
+        return;
+    }
+    el.className = 'data-row__value';
+    setVal(id, value, unit, decimals);
+}
+
+/**
+ * อัปเดตการเปิด/ปิดปุ่มใน Control Tab ตามความสามารถของอุปกรณ์
+ */
+function updateControlTabFeatures(features) {
+    const testStartBtn = document.getElementById('btn-battery-test-start');
+    const testCancelBtn = document.getElementById('btn-battery-test-cancel');
+    const testDesc = document.getElementById('desc-battery-test');
+
+    if (testStartBtn && testCancelBtn) {
+        if (features.has_battery_test === false) {
+            testStartBtn.disabled = true;
+            testCancelBtn.disabled = true;
+            if (testDesc) testDesc.textContent = '⚠️ อุปกรณ์รุ่นนี้ไม่รองรับการสั่งทดสอบแบตเตอรี่ (Battery Self-Test) ผ่านคำสั่งซอฟต์แวร์';
+        } else {
+            testStartBtn.disabled = false;
+            testCancelBtn.disabled = false;
+            if (testDesc) testDesc.textContent = 'ส่งคำสั่งให้ UPS ดำเนินการทดสอบการจ่ายไฟจากแบตเตอรี่ (Battery Self-Test) ชั่วคราว ~10 วินาที';
+        }
+    }
+
+    const rtcReadBtn = document.getElementById('btn-rtc-read');
+    const rtcSyncBtn = document.getElementById('btn-rtc-sync');
+    const rtcDesc = document.getElementById('desc-rtc-sync');
+
+    if (rtcReadBtn && rtcSyncBtn) {
+        if (features.has_rtc_time_sync === false) {
+            rtcReadBtn.disabled = true;
+            rtcSyncBtn.disabled = true;
+            if (rtcDesc) rtcDesc.textContent = '⚠️ อุปกรณ์รุ่นนี้ (เช่น MEC MEC0003) ไม่รองรับระบบนาฬิกา RTC';
+        } else {
+            rtcReadBtn.disabled = false;
+            rtcSyncBtn.disabled = false;
+            if (rtcDesc) rtcDesc.textContent = 'ตรวจสอบและปรับตั้งเวลานาฬิกาภายในของ UPS ให้ตรงกับเวลาของเครื่องคอมพิวเตอร์ (PC Host Clock)';
+        }
+    }
+
+    const shutBtn = document.getElementById('btn-ups-shutdown');
+    const shutCancelBtn = document.getElementById('btn-ups-shutdown-cancel');
+    const shutDesc = document.getElementById('desc-output-shutdown');
+
+    if (shutBtn && shutCancelBtn) {
+        if (features.has_output_control === false) {
+            shutBtn.disabled = true;
+            shutCancelBtn.disabled = true;
+            if (shutDesc) shutDesc.textContent = '⚠️ อุปกรณ์รุ่นนี้ไม่รองรับการสั่งตัดการจ่ายไฟขาออกผ่านคำสั่งซอฟต์แวร์';
+        } else {
+            shutBtn.disabled = false;
+            shutCancelBtn.disabled = false;
+            if (shutDesc) shutDesc.textContent = 'ส่งคำสั่งควบคุมให้ UPS ตัดการจ่ายกระแสไฟฟ้าเอาต์พุต (Output Shutdown)';
+        }
+    }
+}
+
+/**
  * ตั้ง value พร้อม CSS color class
  */
 function setValWithColor(id, value, colorClass) {
@@ -1049,7 +1217,7 @@ async function fetchDevices() {
     const spinner = document.getElementById('modal-spinner');
     const listContainer = document.getElementById('modal-device-list');
 
-    if (statusText) statusText.textContent = 'กำลังสแกนหาอุปกรณ์ UPS (VID 0x06DA)...';
+    if (statusText) statusText.textContent = 'กำลังสแกนหาอุปกรณ์ UPS...';
     if (spinner) spinner.style.display = 'inline-block';
     if (listContainer) {
         listContainer.innerHTML = '<div class="modal-loading-box"><span class="material-symbols-outlined spin">sync</span><p>กำลังค้นหาอุปกรณ์ UPS ในระบบ...</p></div>';
@@ -1060,13 +1228,13 @@ async function fetchDevices() {
         if (spinner) spinner.style.display = 'none';
 
         if (!res.success || !res.devices || res.devices.length === 0) {
-            if (statusText) statusText.textContent = 'ไม่พบอุปกรณ์ UPS (VID 0x06DA) ที่เชื่อมต่ออยู่';
+            if (statusText) statusText.textContent = 'ไม่พบอุปกรณ์ UPS ที่เชื่อมต่ออยู่';
             renderEmptyDeviceList(listContainer);
             return;
         }
 
         if (statusText) {
-            statusText.textContent = `พบอุปกรณ์ UPS (VID 0x06DA) ทั้งหมด ${res.devices.length} รายการ`;
+            statusText.textContent = `พบอุปกรณ์ UPS ทั้งหมด ${res.devices.length} รายการ`;
         }
 
         renderDeviceList(listContainer, res.devices);
@@ -1085,7 +1253,7 @@ function renderEmptyDeviceList(container) {
     container.innerHTML = `
         <div class="modal-empty-box">
             <span class="material-symbols-outlined modal-empty-icon">usb_off</span>
-            <h4>ไม่พบอุปกรณ์ UPS (VID 0x06DA) ที่เชื่อมต่ออยู่</h4>
+            <h4>ไม่พบอุปกรณ์ UPS ที่เชื่อมต่ออยู่</h4>
             <p>กรุณาตรวจสอบว่าได้เสียบสาย USB จากอุปกรณ์ UPS เข้ากับเครื่องคอมพิวเตอร์แล้ว และลองกดปุ่ม "สแกนค้นหาใหม่"</p>
             <button class="btn btn--primary btn--sm" onclick="fetchDevices()" style="margin-top: 12px;">
                 <span class="material-symbols-outlined">refresh</span>
@@ -1214,4 +1382,281 @@ async function selectDevice(escapedPath, escapedVid, escapedPid, escapedSerial) 
 function retryConnect() {
     pollOnce();
     fetchDevices();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Power Flow Topology Diagram Renderer
+// ══════════════════════════════════════════════════════════════════════════════
+
+function renderTopologyDiagram(ups, device, power, connected) {
+    const container = document.getElementById('topology-diagram-box');
+    const badge = document.getElementById('topology-badge');
+    if (!container) return;
+
+    if (!connected) {
+        if (badge) badge.textContent = 'ไม่ได้เชื่อมต่อ';
+        container.innerHTML = `
+            <div style="text-align: center; color: var(--text-secondary); padding: 40px;">
+                <span class="material-symbols-outlined" style="font-size: 42px; display: block; margin: 0 auto 8px; opacity: 0.4;">schema</span>
+                ไม่ได้เชื่อมต่ออุปกรณ์ UPS — ไม่สามารถแสดงภาพจำลองเส้นทางการจ่ายไฟได้
+            </div>`;
+        return;
+    }
+
+    const pName = (device['product_string'] || device['product'] || '').toLowerCase();
+    const isTrueOnline = pName.includes('unity') || pName.includes('basic') || pName.includes('innova') || pName.includes('online');
+    const topologyText = isTrueOnline ? 'True Online (Double Conversion)' : 'Line-Interactive';
+    if (badge) badge.textContent = topologyText;
+
+    const vinVal = power['input_voltage_v'];
+    const voutVal = power['output_voltage_v'];
+    const acPresent = (ups['ac_present'] !== false) && (vinVal == null || vinVal > 50);
+    const upsStatus = ups['ups.status'] || '';
+    const isBypass = upsStatus.includes('BYPASS') || upsStatus.includes('BYP');
+    const isOutputOn = voutVal != null ? (voutVal > 50) : (!upsStatus.includes('OFF'));
+    const discharging = !acPresent && isOutputOn;
+    const charging = acPresent;
+
+    const vin = power['input_voltage_v'] != null ? `${power['input_voltage_v'].toFixed(1)} V` : '—';
+    const fin = power['input_frequency_hz'] != null ? `${power['input_frequency_hz'].toFixed(1)} Hz` : '—';
+    const vout = power['output_voltage_v'] != null ? `${power['output_voltage_v'].toFixed(1)} V` : '—';
+    const fout = power['output_frequency_hz'] != null ? `${power['output_frequency_hz'].toFixed(1)} Hz` : '—';
+    const loadPct = ups['percent_load'] != null ? `${Math.round(ups['percent_load'])}%` : '—';
+    const battPct = ups['battery.charge'] != null ? `${Math.round(ups['battery.charge'])}%` : '—';
+    const vbat = ups['battery_voltage_v'] != null ? `${ups['battery_voltage_v'].toFixed(1)} V` : '—';
+    const temp = power['temperature_c'] != null ? `${power['temperature_c'].toFixed(1)} °C` : '0.0 °C';
+
+    // Colors & Active Status
+    const lineInactiveColor = '#334155';
+
+    const bypassPathColor = isBypass ? '#F59E0B' : lineInactiveColor;
+    const mainPathColor = acPresent ? '#10B981' : lineInactiveColor;
+    const batteryPathColor = discharging ? '#F59E0B' : (charging ? '#10B981' : lineInactiveColor);
+    const invPathColor = isOutputOn ? (discharging ? '#F59E0B' : '#10B981') : lineInactiveColor;
+
+    const isBypassActive = isBypass;
+    const isRectActive = acPresent;
+    const isInvActive = isOutputOn;
+
+    const acDashAnim = acPresent ? 'animation: flowSmooth 0.8s linear infinite;' : 'stroke-dasharray: 8 16;';
+    const bypassDashAnim = isBypass ? 'animation: flowSmooth 0.8s linear infinite;' : 'stroke-dasharray: 8 16;';
+    const invDashAnim = isOutputOn ? 'animation: flowSmooth 0.8s linear infinite;' : 'stroke-dasharray: 8 16;';
+    const batDashAnim = discharging ? 'animation: flowSmoothRev 0.8s linear infinite;' : (charging ? 'animation: flowSmooth 1.2s linear infinite;' : 'stroke-dasharray: 8 16;');
+
+    let svgContent = '';
+
+    if (isTrueOnline) {
+        // ── True Online Double Conversion Topology Diagram ──
+        svgContent = `
+            <svg viewBox="0 0 840 280" style="width: 100%; max-width: 840px; height: auto; overflow: visible;">
+                <!-- AC Input Main Line -->
+                <path d="M 120 120 L 220 120" stroke="${mainPathColor}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                <path d="M 120 120 L 220 120" stroke="#FFFFFF" stroke-width="2.5" stroke-dasharray="8 16" stroke-linecap="round" stroke-linejoin="round" fill="none" style="${acDashAnim}" />
+
+                <!-- Bypass Top Branch (Bypass Path) -->
+                <path d="M 220 120 L 220 50 L 620 50 L 620 120" stroke="${bypassPathColor}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                <path d="M 220 120 L 220 50 L 620 50 L 620 120" stroke="#FFFFFF" stroke-width="2.5" stroke-dasharray="8 16" stroke-linecap="round" stroke-linejoin="round" fill="none" style="${bypassDashAnim}" />
+
+                <!-- Center Rectifier -> DC Bus Line -->
+                <path d="M 220 120 L 420 120" stroke="${mainPathColor}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                <path d="M 220 120 L 420 120" stroke="#FFFFFF" stroke-width="2.5" stroke-dasharray="8 16" stroke-linecap="round" stroke-linejoin="round" fill="none" style="${acDashAnim}" />
+
+                <!-- Center DC Bus -> Inverter -> Output Junction Line -->
+                <path d="M 420 120 L 620 120" stroke="${invPathColor}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                <path d="M 420 120 L 620 120" stroke="#FFFFFF" stroke-width="2.5" stroke-dasharray="8 16" stroke-linecap="round" stroke-linejoin="round" fill="none" style="${invDashAnim}" />
+
+                <!-- Bottom Battery Branch Line -->
+                <path d="M 420 120 L 420 220" stroke="${batteryPathColor}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                <path d="M 420 120 L 420 220" stroke="#FFFFFF" stroke-width="2.5" stroke-dasharray="8 16" stroke-linecap="round" stroke-linejoin="round" fill="none" style="${batDashAnim}" />
+
+                <!-- Output Junction -> Load Line -->
+                <path d="M 620 120 L 720 120" stroke="${invPathColor}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                <path d="M 620 120 L 720 120" stroke="#FFFFFF" stroke-width="2.5" stroke-dasharray="8 16" stroke-linecap="round" stroke-linejoin="round" fill="none" style="${invDashAnim}" />
+
+                <!-- Left Node: Utility AC Input -->
+                <g transform="translate(45, 80)">
+                    <rect class="svg-node-bg" x="0" y="0" width="75" height="80" rx="10" stroke="${acPresent ? '#10B981' : '#EF4444'}" stroke-width="2" />
+                    <path fill="${acPresent ? '#10B981' : '#EF4444'}" d="M 39 16 L 29 34 H 38 L 35 48 L 49 30 H 40 Z" />
+                    <text class="svg-text-primary" x="37" y="58" font-size="11" font-weight="600" text-anchor="middle">Input</text>
+                    <text x="37" y="71" font-size="10" font-weight="bold" text-anchor="middle" fill="#3B82F6">${acPresent ? vin : 'OFF'}</text>
+                </g>
+
+                <!-- Top Node: Bypass (Circle with AC-AC symbol ~ / ~) -->
+                <g transform="translate(420, 50)">
+                    <circle cx="0" cy="0" r="26" fill="${isBypassActive ? '#0284C7' : '#475569'}" stroke="${isBypassActive ? '#38BDF8' : '#475569'}" stroke-width="2" />
+                    <text x="0" y="-2" font-size="13" font-weight="bold" text-anchor="middle" fill="#FFFFFF">∿/∿</text>
+                    <rect class="svg-node-bg" x="-28" y="28" width="56" height="20" rx="4" stroke="var(--border, #334155)" stroke-width="1" />
+                    <text class="svg-text-primary" x="0" y="42" font-size="11" font-weight="600" text-anchor="middle">Bypass</text>
+                </g>
+
+                <!-- Center Left Node: Rectifier (Circle with AC-DC symbol ~ / =) -->
+                <g transform="translate(280, 120)">
+                    <circle cx="0" cy="0" r="26" fill="${isRectActive ? '#0284C7' : '#475569'}" stroke="${isRectActive ? '#38BDF8' : '#475569'}" stroke-width="2" />
+                    <text x="0" y="-2" font-size="13" font-weight="bold" text-anchor="middle" fill="#FFFFFF">∿/=</text>
+                    <rect class="svg-node-bg" x="-32" y="28" width="64" height="20" rx="4" stroke="var(--border, #334155)" stroke-width="1" />
+                    <text class="svg-text-primary" x="0" y="42" font-size="11" font-weight="600" text-anchor="middle">Rectifier</text>
+                </g>
+
+                <!-- Center Right Node: Inverter (Circle with DC-AC symbol = / ~) -->
+                <g transform="translate(560, 120)">
+                    <circle cx="0" cy="0" r="26" fill="${isInvActive ? '#0284C7' : '#475569'}" stroke="${isInvActive ? '#38BDF8' : '#475569'}" stroke-width="2" />
+                    <text x="0" y="-2" font-size="13" font-weight="bold" text-anchor="middle" fill="#FFFFFF">=/∿</text>
+                    <rect class="svg-node-bg" x="-32" y="28" width="64" height="20" rx="4" stroke="var(--border, #334155)" stroke-width="1" />
+                    <text class="svg-text-primary" x="0" y="42" font-size="11" font-weight="600" text-anchor="middle">Inverter</text>
+                </g>
+
+                <!-- Bottom Node: Battery Bank Graphic -->
+                <g transform="translate(420, 220)">
+                    <rect class="svg-node-bg" x="-35" y="-18" width="70" height="36" rx="6" stroke="${discharging ? '#F59E0B' : '#10B981'}" stroke-width="2" />
+                    <rect x="-30" y="-13" width="${Math.max(4, Math.min(60, parseFloat(battPct) * 0.6))}" height="26" rx="4" fill="${discharging ? '#F59E0B' : '#10B981'}" />
+                    <text x="0" y="3" font-size="12" font-weight="bold" text-anchor="middle" fill="#FFFFFF">${battPct}</text>
+                    <text class="svg-text-primary" x="0" y="34" font-size="12" font-weight="600" text-anchor="middle">Battery (${vbat})</text>
+                </g>
+
+                <!-- Right Node: Output Load (Vector Plug Icon) -->
+                <g transform="translate(720, 80)">
+                    <rect class="svg-node-bg" x="0" y="0" width="75" height="80" rx="10" stroke="${connected ? '#3B82F6' : '#475569'}" stroke-width="2" />
+                    <path fill="none" stroke="#3B82F6" stroke-width="2.5" stroke-linecap="round" d="M 28 20 H 47 V 34 H 28 Z M 32 34 V 42 M 43 34 V 42 M 37.5 42 V 46 M 25 46 H 50" />
+                    <text class="svg-text-primary" x="37" y="58" font-size="11" font-weight="600" text-anchor="middle">Output Load</text>
+                    <text x="37" y="71" font-size="10" font-weight="bold" text-anchor="middle" fill="#3B82F6">${loadPct}</text>
+                </g>
+            </svg>
+        `;
+    } else {
+        // ── Line-Interactive Topology Diagram (WinPower G2 Circuit Schematic) ──
+        const voutVal = power['output_voltage_v'];
+        const isOutputOn = voutVal != null && voutVal > 50;
+
+        const mainBypassColor = (acPresent && isOutputOn) ? '#10B981' : lineInactiveColor;
+        const mainBypassAnim = (acPresent && isOutputOn) ? 'animation: flowSmooth 0.8s linear infinite;' : 'stroke-dasharray: 8 16;';
+
+        const chargerColor = acPresent ? '#10B981' : lineInactiveColor;
+        const chargerAnim = acPresent ? 'animation: flowSmooth 1.2s linear infinite;' : 'stroke-dasharray: 8 16;';
+
+        const invLineColor = discharging ? '#F59E0B' : lineInactiveColor;
+        const invLineAnim = discharging ? 'animation: flowSmoothRev 0.8s linear infinite;' : 'stroke-dasharray: 8 16;';
+
+        const outputLineColor = (acPresent && isOutputOn) ? '#10B981' : (discharging ? '#F59E0B' : lineInactiveColor);
+        const outputLineAnim = (acPresent && isOutputOn || discharging) ? 'animation: flowSmooth 0.8s linear infinite;' : 'stroke-dasharray: 8 16;';
+
+        const isInvActive = discharging;
+
+        svgContent = `
+            <svg viewBox="0 0 840 280" style="width: 100%; max-width: 840px; height: auto; overflow: visible;">
+                <!-- Top Bypass / Main Line: AC Input -> Top Branch -> Junction (620, 120) -->
+                <path d="M 120 120 L 220 120 L 220 50 L 620 50 L 620 120" stroke="${mainBypassColor}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                <path d="M 120 120 L 220 120 L 220 50 L 620 50 L 620 120" stroke="#FFFFFF" stroke-width="2.5" stroke-dasharray="8 16" stroke-linecap="round" stroke-linejoin="round" fill="none" style="${mainBypassAnim}" />
+
+                <!-- Center Line: AC Input -> Battery Charger Path -->
+                <path d="M 120 120 L 420 120 L 420 200" stroke="${chargerColor}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                <path d="M 120 120 L 420 120 L 420 200" stroke="#FFFFFF" stroke-width="2.5" stroke-dasharray="8 16" stroke-linecap="round" stroke-linejoin="round" fill="none" style="${chargerAnim}" />
+
+                <!-- Inverter Backup Path: Battery -> Inverter -> Junction (620, 120) -->
+                <path d="M 455 220 L 560 220 L 560 120 L 620 120" stroke="${invLineColor}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                <path d="M 455 220 L 560 220 L 560 120 L 620 120" stroke="#FFFFFF" stroke-width="2.5" stroke-dasharray="8 16" stroke-linecap="round" stroke-linejoin="round" fill="none" style="${invLineAnim}" />
+
+                <!-- Common Output Line: Junction (620, 120) -> Output Load (720, 120) -->
+                <path d="M 620 120 L 720 120" stroke="${outputLineColor}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                <path d="M 620 120 L 720 120" stroke="#FFFFFF" stroke-width="2.5" stroke-dasharray="8 16" stroke-linecap="round" stroke-linejoin="round" fill="none" style="${outputLineAnim}" />
+
+                <!-- Left Node: Utility AC Input -->
+                <g transform="translate(45, 80)">
+                    <rect class="svg-node-bg" x="0" y="0" width="75" height="80" rx="10" stroke="${acPresent ? '#10B981' : '#EF4444'}" stroke-width="2" />
+                    <path fill="${acPresent ? '#10B981' : '#EF4444'}" d="M 39 16 L 29 34 H 38 L 35 48 L 49 30 H 40 Z" />
+                    <text class="svg-text-primary" x="37" y="58" font-size="11" font-weight="600" text-anchor="middle">Input</text>
+                    <text x="37" y="71" font-size="10" font-weight="bold" text-anchor="middle" fill="#3B82F6">${acPresent ? vin : 'OFF'}</text>
+                </g>
+
+                <!-- Center Node: Inverter (=/~) -->
+                <g transform="translate(560, 120)">
+                    <circle cx="0" cy="0" r="26" fill="${isInvActive ? '#D97706' : '#0284C7'}" stroke="${isInvActive ? '#FBBF24' : '#38BDF8'}" stroke-width="2" />
+                    <text x="0" y="-2" font-size="13" font-weight="bold" text-anchor="middle" fill="#FFFFFF">=/∿</text>
+                    <rect class="svg-node-bg" x="-32" y="28" width="64" height="20" rx="4" stroke="var(--border, #334155)" stroke-width="1" />
+                    <text class="svg-text-primary" x="0" y="42" font-size="11" font-weight="600" text-anchor="middle">Inverter</text>
+                </g>
+
+                <!-- Bottom Node: Battery Graphic -->
+                <g transform="translate(420, 220)">
+                    <rect class="svg-node-bg" x="-35" y="-18" width="70" height="36" rx="6" stroke="${discharging ? '#F59E0B' : '#10B981'}" stroke-width="2" />
+                    <rect x="-30" y="-13" width="${Math.max(4, Math.min(60, parseFloat(battPct) * 0.6))}" height="26" rx="4" fill="${discharging ? '#F59E0B' : '#10B981'}" />
+                    <text x="0" y="3" font-size="12" font-weight="bold" text-anchor="middle" fill="#FFFFFF">${battPct}</text>
+                    <text class="svg-text-primary" x="0" y="34" font-size="12" font-weight="600" text-anchor="middle">Battery (${vbat})</text>
+                </g>
+
+                <!-- Right Node: Output Load (Vector Plug Icon) -->
+                <g transform="translate(720, 80)">
+                    <rect class="svg-node-bg" x="0" y="0" width="75" height="80" rx="10" stroke="${connected && isOutputOn ? '#3B82F6' : '#475569'}" stroke-width="2" />
+                    <path fill="none" stroke="${isOutputOn ? '#3B82F6' : '#475569'}" stroke-width="2.5" stroke-linecap="round" d="M 28 20 H 47 V 34 H 28 Z M 32 34 V 42 M 43 34 V 42 M 37.5 42 V 46 M 25 46 H 50" />
+                    <text class="svg-text-primary" x="37" y="58" font-size="11" font-weight="600" text-anchor="middle">Output Load</text>
+                    <text x="37" y="71" font-size="10" font-weight="bold" text-anchor="middle" fill="${isOutputOn ? '#3B82F6' : '#64748B'}">${isOutputOn ? loadPct : '0%'}</text>
+                </g>
+            </svg>
+        `;
+    }
+
+    const html = `
+    <style>
+        @keyframes flowSmooth {
+            0% { stroke-dashoffset: 0; }
+            100% { stroke-dashoffset: -24; }
+        }
+        @keyframes flowSmoothRev {
+            0% { stroke-dashoffset: 0; }
+            100% { stroke-dashoffset: 24; }
+        }
+        .schematic-metric-box {
+            background: rgba(30, 41, 59, 0.9);
+            border: 1px solid var(--border, #334155);
+            border-radius: 8px;
+            padding: 8px 12px;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+        }
+        .schematic-label { font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 2px; }
+        .schematic-val { font-family: var(--font-mono); font-weight: 600; font-size: 0.95rem; color: #3B82F6; }
+    </style>
+
+    <div style="display: flex; flex-direction: column; gap: 20px;">
+
+        <!-- SVG Schematic Canvas -->
+        <div style="width: 100%; position: relative; display: flex; justify-content: center; align-items: center;">
+            ${svgContent}
+        </div>
+
+        <!-- Metric Cards Row (WinPower G2 Bottom Metrics) -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; width: 100%;">
+            <div class="schematic-metric-box">
+                <div class="schematic-label">Input Voltage</div>
+                <div class="schematic-val">${vin}</div>
+            </div>
+            <div class="schematic-metric-box">
+                <div class="schematic-label">Input Frequency</div>
+                <div class="schematic-val">${fin}</div>
+            </div>
+            <div class="schematic-metric-box">
+                <div class="schematic-label">Output Voltage</div>
+                <div class="schematic-val">${vout}</div>
+            </div>
+            <div class="schematic-metric-box">
+                <div class="schematic-label">Load Level</div>
+                <div class="schematic-val">${loadPct}</div>
+            </div>
+            <div class="schematic-metric-box">
+                <div class="schematic-label">Battery Voltage</div>
+                <div class="schematic-val">${vbat}</div>
+            </div>
+            <div class="schematic-metric-box">
+                <div class="schematic-label">Battery Capacity</div>
+                <div class="schematic-val">${battPct}</div>
+            </div>
+            <div class="schematic-metric-box">
+                <div class="schematic-label">Temperature</div>
+                <div class="schematic-val">${temp}</div>
+            </div>
+        </div>
+
+    </div>
+    `;
+
+    container.innerHTML = html;
 }

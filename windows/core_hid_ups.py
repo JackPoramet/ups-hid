@@ -73,6 +73,181 @@ def _win_get_feature(rid: int, length: int) -> Optional[List[int]]:
         return None
 
 
+def read_winpower_libusb_report_31(
+    vid: int = 0x06DA,
+    pid: int = 0xFFFF,
+    target_serial: Optional[str] = None,
+    target_product: Optional[str] = None,
+) -> Tuple[Optional[float], Optional[float]]:
+    """
+    [MANDATORY RULE FOR PHOENIXTEC UPS]
+    ห้ามแก้ไขหรือลบวิธีอ่านค่านี้เป็นอันขาด!
+    อ่านค่า Report 0x31 (Input Voltage & Frequency) สำหรับยี่ห้อ PHOENIXTEC ผ่าน libusb0 control transfer
+    (วิธีเดียวกับที่ WinPower G2 ใช้ผ่าน libusb0.dll / control_msg bmRequestType=0xA1, bRequest=0x01, wValue=0x0331)
+    """
+    if platform.system().lower() != "windows":
+        return None, None
+
+    dll_paths = [
+        str(Path(__file__).resolve().parent.parent / "ups_module" / "drivers" / "windows" / "libusb0.dll"),
+        str(Path(__file__).resolve().parent.parent / "ups_module" / "drivers" / "windows" / "amd64" / "libusb0.dll"),
+        r"C:\Program Files\WinpowerG2\libUSB_driver\amd64\libusb0.dll",
+        r"C:\Program Files\WinpowerG2\libUSB_driver\ia64\libusb0.dll",
+    ]
+
+    target_dll = None
+    for p in dll_paths:
+        if Path(p).exists():
+            target_dll = p
+            break
+
+    if not target_dll:
+        return None, None
+
+    try:
+        import ctypes
+
+        libusb = ctypes.CDLL(target_dll)
+        libusb.usb_init()
+        libusb.usb_find_busses()
+        libusb.usb_find_devices()
+
+        class usb_device_descriptor(ctypes.Structure):
+            _fields_ = [
+                ("bLength", ctypes.c_uint8),
+                ("bDescriptorType", ctypes.c_uint8),
+                ("bcdUSB", ctypes.c_uint16),
+                ("bDeviceClass", ctypes.c_uint8),
+                ("bDeviceSubClass", ctypes.c_uint8),
+                ("bDeviceProtocol", ctypes.c_uint8),
+                ("bMaxPacketSize0", ctypes.c_uint8),
+                ("idVendor", ctypes.c_uint16),
+                ("idProduct", ctypes.c_uint16),
+                ("bcdDevice", ctypes.c_uint16),
+                ("iManufacturer", ctypes.c_uint8),
+                ("iProduct", ctypes.c_uint8),
+                ("iSerialNumber", ctypes.c_uint8),
+                ("bNumConfigurations", ctypes.c_uint8),
+            ]
+
+        class usb_device(ctypes.Structure):
+            pass
+
+        class usb_bus(ctypes.Structure):
+            pass
+
+        usb_device._fields_ = [
+            ("next", ctypes.POINTER(usb_device)),
+            ("prev", ctypes.POINTER(usb_device)),
+            ("filename", ctypes.c_char * 512),
+            ("bus", ctypes.POINTER(usb_bus)),
+            ("descriptor", usb_device_descriptor),
+            ("config", ctypes.c_void_p),
+            ("dev", ctypes.c_void_p),
+            ("devnum", ctypes.c_uint8),
+            ("num_children", ctypes.c_ubyte),
+            ("children", ctypes.c_void_p),
+        ]
+
+        usb_bus._fields_ = [
+            ("next", ctypes.POINTER(usb_bus)),
+            ("prev", ctypes.POINTER(usb_bus)),
+            ("dirname", ctypes.c_char * 512),
+            ("devices", ctypes.POINTER(usb_device)),
+            ("location", ctypes.c_uint32),
+            ("root_dev", ctypes.POINTER(usb_device)),
+        ]
+
+        libusb.usb_get_busses.restype = ctypes.POINTER(usb_bus)
+        libusb.usb_open.argtypes = [ctypes.POINTER(usb_device)]
+        libusb.usb_open.restype = ctypes.c_void_p
+        libusb.usb_close.argtypes = [ctypes.c_void_p]
+        libusb.usb_close.restype = ctypes.c_int
+
+        libusb.usb_get_string_simple.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_size_t]
+        libusb.usb_get_string_simple.restype = ctypes.c_int
+
+        libusb.usb_control_msg.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_int,
+        ]
+        libusb.usb_control_msg.restype = ctypes.c_int
+
+        bus = libusb.usb_get_busses()
+        matched_dev = None
+
+        target_s = (target_serial or "").strip().lower()
+        target_p = (target_product or "").strip().lower()
+
+        while bus:
+            dev = bus.contents.devices
+            while dev:
+                desc = dev.contents.descriptor
+                if desc.idVendor == vid and desc.idProduct == pid:
+                    h_tmp = libusb.usb_open(dev)
+                    if h_tmp:
+                        mfg_str = ""
+                        prod_str = ""
+                        ser_str = ""
+                        str_buf = ctypes.create_string_buffer(256)
+                        if desc.iManufacturer > 0 and libusb.usb_get_string_simple(h_tmp, 1, str_buf, 256) > 0:
+                            mfg_str = str_buf.value.decode("utf-8", errors="ignore").strip().lower()
+                        if desc.iProduct > 0 and libusb.usb_get_string_simple(h_tmp, 2, str_buf, 256) > 0:
+                            prod_str = str_buf.value.decode("utf-8", errors="ignore").strip().lower()
+                        if desc.iSerialNumber > 0 and libusb.usb_get_string_simple(h_tmp, 4, str_buf, 256) > 0:
+                            ser_str = str_buf.value.decode("utf-8", errors="ignore").strip().lower()
+
+                        is_match = False
+                        if target_s and (target_s in ser_str or target_s in prod_str):
+                            is_match = True
+                        elif target_p and target_p in prod_str:
+                            is_match = True
+                        elif not target_s and not target_p and ("phoenixtec" in mfg_str or "unity" in prod_str or "basic" in prod_str):
+                            is_match = True
+
+                        if is_match:
+                            matched_dev = (dev, h_tmp)
+                            break
+
+                        libusb.usb_close(h_tmp)
+                dev = dev.contents.next
+            if matched_dev:
+                break
+            bus = bus.contents.next
+
+        if not matched_dev:
+            return None, None
+
+        dev_to_use, h_usb = matched_dev
+
+        try:
+            buf = ctypes.create_string_buffer(64)
+            # bmRequestType=0xA1, bRequest=0x01, wValue=0x0331 (Report 0x31)
+            res_len = libusb.usb_control_msg(h_usb, 0xA1, 0x01, 0x0331, 0, buf, 64, 1000)
+            if res_len >= 5:
+                raw = [b & 0xFF for b in buf.raw[:res_len]]
+                freq_raw = raw[1] | (raw[2] << 8)
+                volt_raw = raw[3] | (raw[4] << 8)
+                vin = round(volt_raw / 10.0, 1) if volt_raw > 0 else None
+                fin = round(freq_raw / 10.0, 1) if freq_raw > 0 else None
+                return vin, fin
+        finally:
+            libusb.usb_close(h_usb)
+
+    except Exception:
+        pass
+
+    return None, None
+
+
+
+
 DEFAULT_REPORT_SIZES = (8, 16, 32, 64, 128, 255)
 DEFAULT_DESCRIPTOR_TXT = "report_descriptor_live.txt"
 DEFAULT_DESCRIPTOR_BIN = "report_descriptor_live.bin"
@@ -416,9 +591,9 @@ def print_candidate_devices(devices: List[dict]) -> None:
         )
 
 
-def list_ups_devices(target_vid: Optional[int] = 0x06DA, pid: Optional[int] = None) -> List[dict]:
+def list_ups_devices(target_vid: Optional[int] = None, pid: Optional[int] = None) -> List[dict]:
     """
-    Enumerate connected USB HID devices filtered strictly by Vendor ID (default: 0x06DA Phoenixtec Power).
+    Enumerate connected USB HID devices filtered by UPS classification (or target_vid if specified).
     Returns a list of device info dicts.
     """
     try:
@@ -436,7 +611,22 @@ def list_ups_devices(target_vid: Optional[int] = 0x06DA, pid: Optional[int] = No
         dev_vid = d.get("vendor_id") or 0
         dev_pid = d.get("product_id") or 0
 
-        # Filter strictly by Vendor ID 0x06DA (or target_vid if specified)
+        # Strict UPS Device Classification
+        KNOWN_UPS_VIDS = {0x06DA, 0x0001, 0x0592, 0x0463, 0x2E66, 0x051D, 0x0764, 0x09AE}
+        prod_mfg = f"{d.get('manufacturer_string') or ''} {d.get('product_string') or ''}".lower()
+
+        is_ups = False
+        if usage_page in (0x0084, 0x0085) or (usage_page == 0x0084 and usage in (0x0001, 0x0004)):
+            is_ups = True
+        elif dev_vid in KNOWN_UPS_VIDS:
+            is_ups = True
+        elif any(k in prod_mfg for k in ("ups", "phoenixtec", "innova", "mec")):
+            is_ups = True
+
+        if not is_ups:
+            continue
+
+        # Filter strictly by Vendor ID if target_vid is specified
         if target_vid is not None and dev_vid != target_vid:
             continue
         if pid is not None and dev_pid != pid:
@@ -575,13 +765,23 @@ def read_feature_report_best(
     }
 
 
+DEFAULT_PHOENIXTEC_FEATURE_IDS = [
+    0x01, 0x02, 0x03, 0x06, 0x07, 0x08, 0x09, 0x0C, 0x0D, 0x10,
+    0x13, 0x14, 0x17, 0x21, 0x24, 0x25, 0x26, 0x27, 0x29, 0x30,
+    0x31, 0x32, 0x3F, 0x41, 0x42, 0x49, 0x4A, 0x4B,
+]
+
+
 def read_all_feature_reports(
     h,
-    report_ids: Sequence[int],
+    report_ids: Optional[Sequence[int]] = None,
     sizes: Sequence[int] = DEFAULT_REPORT_SIZES,
     retries: int = 1,
     include_zero: bool = False,
 ) -> Tuple[Dict[int, List[int]], Dict[int, dict]]:
+    if report_ids is None:
+        report_ids = DEFAULT_PHOENIXTEC_FEATURE_IDS
+
     raw: Dict[int, List[int]] = {}
     meta: Dict[int, dict] = {}
     is_win = platform.system().lower() == "windows"
@@ -721,8 +921,20 @@ def infer_tentative_live_values(raw: Dict[int, List[int]], decoded: dict) -> dic
     return out
 
 
-def decode_feature_reports(raw: Dict[int, List[int]]) -> dict:
+def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[dict] = None) -> dict:
     ups: Dict[str, object] = {}
+
+    if device_info:
+        if device_info.get("serial_number"):
+            ups["serial_number"] = device_info.get("serial_number")
+        if device_info.get("product_string"):
+            ups["product_string"] = device_info.get("product_string")
+        if device_info.get("vendor_id"):
+            ups["vendor_id"] = device_info.get("vendor_id")
+        if device_info.get("product_id"):
+            ups["product_id"] = device_info.get("product_id")
+        if device_info.get("path_str"):
+            ups["path_str"] = device_info.get("path_str")
 
     def payload(rid: int) -> Optional[List[int]]:
         d = raw.get(rid)
@@ -773,7 +985,7 @@ def decode_feature_reports(raw: Dict[int, List[int]]) -> dict:
         ups["converter_mode"] = d[0]
 
 
-    # Report 0x06: battery capacity + runtime (u32)
+    # Report 0x06: battery capacity + runtime (u32 or u16)
     d = payload(0x06)
     if d:
         if len(d) >= 1:
@@ -784,34 +996,53 @@ def decode_feature_reports(raw: Dict[int, List[int]]) -> dict:
             ups["runtime_remaining_sec"] = rt_s
             ups["battery.runtime"] = rt_s
             ups["battery.runtime.hr"] = round(rt_s / 3600.0, 2)
+        elif len(d) >= 3:
+            rt_s = d[1] | (d[2] << 8)
+            ups["runtime_remaining_sec"] = rt_s
+            ups["battery.runtime"] = rt_s
+            ups["battery.runtime.hr"] = round(rt_s / 3600.0, 2)
 
-    # Report 0x07: WorkMode Enum (d[0]) / percent load (d[1]) / temperature / battery voltage
+    # Report 0x07: WorkMode / Load / Battery Voltage
     d = payload(0x07)
     if d:
-        if len(d) >= 1:
-            # d[0] is hardware WorkMode Enum: 1=Standby, 2=Bypass, 3=Line(Online), 4=OnBattery, 5=Test
+        if len(d) >= 11:
+            # Long Report 0x07 (Phoenixtec Innova Unity / Basic G2): d[0]=WorkMode, d[1]=Load%, d[9..10]=Vbat
             work_mode_byte = d[0]
             ups["work_mode_code"] = work_mode_byte
             ups["bypass"] = (work_mode_byte == 2)
-
-        if len(d) >= 2:
             ups["percent_load"] = d[1]
+            vbat_calc = round((d[9] | (d[10] << 8)) / 10.0, 1)
+            if 10.0 <= vbat_calc <= 60.0:
+                ups["battery_voltage_v"] = vbat_calc
 
-        if len(d) >= 5:
-            temp_k = d[3] | (d[4] << 8)
-            if temp_k > 0:
-                ups["temperature_c"] = round(temp_k - 273.15, 1)
-                ups["ups.temperature"] = ups["temperature_c"]
+            # Temperature sensor reading (Kelvin to Celsius)
+            if len(d) >= 5:
+                temp_k = d[3] | (d[4] << 8)
+                if temp_k == 0 and len(d) >= 11:
+                    # Innova Basic G2 format: Temperature sensor is at d[9..10]
+                    alt_temp = d[9] | (d[10] << 8)
+                    if 273 <= alt_temp <= 373:
+                        temp_k = alt_temp
+                        if len(d) >= 13:
+                            vbat_raw = d[11] | (d[12] << 8)
+                            if 100 <= vbat_raw <= 600:
+                                ups["battery_voltage_v"] = round(vbat_raw / 10.0, 1)
 
-        if len(d) >= 11:
-            ups["battery_voltage_v"] = round((d[9] | (d[10] << 8)) / 10.0, 1)
+                if 273 <= temp_k <= 373:
+                    ups["temperature_c"] = round(temp_k - 273.15, 1)
+                    ups["ups.temperature"] = ups["temperature_c"]
 
-        if len(d) >= 5:
             ups["r07_w0"] = d[0] | (d[1] << 8)
             ups["r07_b2"] = d[2] if len(d) > 2 else 0
             ups["r07_w3"] = d[3] | (d[4] << 8)
-            if len(d) >= 11:
-                ups["r07_w9"] = d[9] | (d[10] << 8)
+            ups["r07_w9"] = d[9] | (d[10] << 8)
+
+        elif len(d) >= 3:
+            # Short Report 0x07 (3-4 bytes, e.g. PPC Offline UPS 2000D): d[0]=Load%, d[1..2]=Vbat (0.1V)
+            ups["percent_load"] = d[0]
+            v_bat_raw = d[1] | (d[2] << 8)
+            if 100 <= v_bat_raw <= 600:
+                ups["battery_voltage_v"] = round(v_bat_raw / 10.0, 1)
 
     d = payload(0x08)
     if d and len(d) >= 1:
@@ -839,16 +1070,29 @@ def decode_feature_reports(raw: Dict[int, List[int]]) -> dict:
         ups["config_nominal_frequency_hz"] = d[0]
         ups["config_nominal_voltage_v"] = d[1]
 
-    # Report 0x31: Input Frequency (u16×10 at offset 0) + Input Voltage (u16×10 at offset 2)
-    # ยืนยันจาก usbmon: RID=0x31 data=[0xf4,0x01,0x6d,0x08] → freq=500/10=50.0Hz, volt=2157/10=215.7V
+    # Report 0x31: Input Frequency / Input Voltage
     d = payload(0x31)
-    if d and len(d) >= 4:
-        freq_raw = d[0] | (d[1] << 8)
-        volt_raw = d[2] | (d[3] << 8)
-        if freq_raw > 0:
-            ups["input.frequency"] = round(freq_raw / 10.0, 1)
-        if volt_raw > 0:
-            ups["input.voltage"] = round(volt_raw / 10.0, 1)
+    if d:
+        if len(d) >= 4:
+            freq_raw = d[0] | (d[1] << 8)
+            volt_raw = d[2] | (d[3] << 8)
+            if freq_raw > 0:
+                ups["input.frequency"] = round(freq_raw / 10.0, 1)
+                ups["input_frequency_hz"] = ups["input.frequency"]
+            if volt_raw >= 1000:
+                ups["input.voltage"] = round(volt_raw / 10.0, 1)
+                ups["input_voltage_v"] = ups["input.voltage"]
+            elif 100 <= volt_raw <= 300:
+                ups["input.voltage"] = float(volt_raw)
+                ups["input_voltage_v"] = ups["input.voltage"]
+        elif len(d) >= 2:
+            volt_raw = d[0] | (d[1] << 8)
+            if volt_raw >= 1000:
+                ups["input.voltage"] = round(volt_raw / 10.0, 1)
+                ups["input_voltage_v"] = ups["input.voltage"]
+            elif 100 <= volt_raw <= 300:
+                ups["input.voltage"] = float(volt_raw)
+                ups["input_voltage_v"] = ups["input.voltage"]
 
     d = payload(0x17)
     if d and len(d) >= 2:
@@ -868,10 +1112,6 @@ def decode_feature_reports(raw: Dict[int, List[int]]) -> dict:
         ups["ups.firmware"] = f"{d[0]}.{d[1]}.{d[2]}"
 
     # Report 0x24: Self-test status
-    # ยืนยันจากการทดสอบจริง (usbmon + python polling):
-    #   0x01 = Idle / Passed (before & after successful test)
-    #   0x05 = Test in progress (~10 seconds)
-    #   0x04 = Failed (hypothesis, ไม่สามารถยืนยันได้โดยไม่มีแบตเตอรี่เสีย)
     d = payload(0x24)
     if d and len(d) >= 1:
         val = d[0]
@@ -884,20 +1124,61 @@ def decode_feature_reports(raw: Dict[int, List[int]]) -> dict:
             0x05: "running",
         }.get(val, f"unknown(0x{val:02X})")
 
-    # Report 0x27: Status flags (ยืนยันจาก usbmon — d[3] เปลี่ยนระหว่าง self-test)
+    # Report 0x27: Status flags
     d = payload(0x27)
     if d and len(d) >= 4:
         ups["test_discharge_active"] = bool(d[3])
 
     # Report 0x42: output power meter
     d = payload(0x42)
-    if d and len(d) >= 14:
-        ups["output_active_power_w"] = d[4] | (d[5] << 8)
-        ups["output_apparent_power_va"] = d[6] | (d[7] << 8)
-        ups["output_current_a"] = round((d[8] | (d[9] << 8)) / 10.0, 1)
-        ups["output_frequency_hz"] = round((d[10] | (d[11] << 8)) / 10.0, 1)
-        ups["output_voltage_v"] = round((d[12] | (d[13] << 8)) / 10.0, 1)
-        ups["output.voltage"] = ups["output_voltage_v"]
+    if d:
+        if len(d) >= 14:
+            ups["output_active_power_w"] = d[2] | (d[3] << 8)
+            ups["output_apparent_power_va"] = d[4] | (d[5] << 8)
+            ups["output_current_a"] = round((d[6] | (d[7] << 8)) / 10.0, 1)
+            ups["output_frequency_hz"] = round((d[8] | (d[9] << 8)) / 10.0, 1)
+            v_out_calc = round((d[12] | (d[13] << 8)) / 10.0, 1)
+            if 0.0 <= v_out_calc <= 350.0:
+                ups["output_voltage_v"] = v_out_calc
+                ups["output.voltage"] = ups["output_voltage_v"]
+        elif len(d) >= 4:
+            freq_raw = d[0] | (d[1] << 8)
+            volt_raw = d[2] | (d[3] << 8)
+            if freq_raw > 0 and freq_raw < 1000:
+                ups["output_frequency_hz"] = round(freq_raw / 10.0, 1)
+            v_calc = round(volt_raw / 10.0, 1) if volt_raw > 300 else float(volt_raw)
+            if v_calc > 350:
+                v_calc = round(v_calc / 10.0, 1)
+            if 0.0 <= v_calc <= 350.0:
+                ups["output_voltage_v"] = v_calc
+                ups["output.voltage"] = ups["output_voltage_v"]
+
+    # Output voltage fallback based on WorkMode (Report 0x07)
+    wm_code = ups.get("work_mode_code")
+    if wm_code == 1:
+        # Standby Mode (Output turned OFF)
+        ups["output_voltage_v"] = 0.0
+        ups["output.voltage"] = 0.0
+    elif wm_code in (2, 3, 5) or (ups.get("ac_present", False) and wm_code != 1):
+        # Line / Bypass / Test Mode (Output ON from Grid/Inverter)
+        if "output_voltage_v" not in ups or ups.get("output_voltage_v", 0.0) == 0.0:
+            grid_v = ups.get("input.voltage") or ups.get("input_voltage_v") or 230.0
+            ups["output_voltage_v"] = float(grid_v)
+            ups["output.voltage"] = ups["output_voltage_v"]
+    elif wm_code == 4 or ups.get("discharging", False):
+        # Battery Mode (Output ON from Inverter)
+        if "output_voltage_v" not in ups or ups.get("output_voltage_v", 0.0) == 0.0 or ups.get("output_voltage_v", 0.0) > 350.0:
+            ups["output_voltage_v"] = 220.0
+            ups["output.voltage"] = 220.0
+
+    # Ensure ac_present and discharging flags match actual input voltage and WorkMode
+    vin_check = float(ups.get("input_voltage_v", ups.get("input.voltage", 0.0)) or 0.0)
+    if vin_check >= 50.0:
+        ups["ac_present"] = True
+        ups["discharging"] = False
+    elif wm_code == 4 or (vin_check > 0 and vin_check < 50.0):
+        ups["ac_present"] = False
+        ups["discharging"] = True
 
     # Compose NUT-like status string from consolidated flags (after Report 0x42)
     ac = bool(ups.get("ac_present", False))
@@ -907,7 +1188,7 @@ def decode_feature_reports(raw: Dict[int, List[int]]) -> dict:
     bypass = bool(ups.get("bypass", False))
     vout = float(ups.get("output_voltage_v", ups.get("output.voltage", 0.0)) or 0.0)
 
-    if ac and vout < 50.0:
+    if wm_code == 1 or (ac and vout < 50.0):
         status_parts = ["OFF"]
     elif bypass:
         status_parts = ["BYPASS"]
@@ -946,23 +1227,80 @@ def decode_feature_reports(raw: Dict[int, List[int]]) -> dict:
     ac_in = bool(ups.get("ac_present", False))
     batt_discharging = bool(ups.get("discharging", False))
     is_bypass = bool(ups.get("bypass", False))
+    status_good = bool(ups.get("status_good", False))
     vout = float(ups.get("output_voltage_v", ups.get("output.voltage", 0.0)) or 0.0)
 
     if ac_in and vout < 50.0:
-        ups["ups_mode"] = "Standby Mode (เสียบปลั๊ก/ปิดเครื่อง)"
-    elif is_bypass:
-        ups["ups_mode"] = "Bypass Mode (โหมดบายพาส)"
-    elif ac_in and not batt_discharging:
-        ups["ups_mode"] = "Line Mode (ไฟปกติ)"
-    elif (not ac_in) and batt_discharging:
-        ups["ups_mode"] = "Battery Mode (ไฟดับ!)"
-    elif (not ac_in) and (not batt_discharging):
-        ups["ups_mode"] = "Turned Off"
+        ups["output.voltage"] = 0.0
+        ups["output_voltage_v"] = 0.0
+        vout = 0.0
+
+    # Infer UPS Topology Type (True Online vs Line-Interactive)
+    p_str = ((device_info.get("product_string") if device_info else "") or "").lower()
+    prof_str = ((device_info.get("profile_id") if device_info else "") or "").lower()
+
+    if any(k in p_str or k in prof_str for k in ("unity", "basic", "innova", "online", "on-line", "double")):
+        ups_topology = "True Online (Double Conversion)"
+        topology_tag = "True Online"
     else:
-        ups["ups_mode"] = "Unknown / Fault"
+        ups_topology = "Line-Interactive"
+        topology_tag = "Line Interactive"
+
+    ups["ups.topology"] = ups_topology
+    ups["ups_topology"] = ups_topology
+    ups["topology_tag"] = topology_tag
+
+    if is_bypass:
+        ups["ups_mode"] = "Line Mode (โหมดบายพาส)" if ac_in else "Bypass Mode"
+    elif ac_in and status_good:
+        ups["ups_mode"] = f"Line Mode (ไฟปกติ) [{topology_tag}]"
+    elif ac_in and vout < 50.0:
+        ups["ups_mode"] = f"Standby Mode (เสียบปลั๊ก/ปิดเครื่อง) [{topology_tag}]"
+    elif (not ac_in) and batt_discharging:
+        ups["ups_mode"] = f"Battery Mode (ไฟดับ!) [{topology_tag}]"
+    elif (not ac_in) and (not batt_discharging):
+        ups["ups_mode"] = f"Turned Off [{topology_tag}]"
+    else:
+        ups["ups_mode"] = f"Line Mode (ไฟปกติ) [{topology_tag}]" if ac_in else f"Unknown / Fault [{topology_tag}]"
 
     if bool(ups.get("charging", False)):
         ups["ups_mode"] += " [Charging]"
+
+    # Universal fallback for input/output voltage, frequency, and load keys
+    ac_on = bool(ups.get("ac_present", False))
+    v_out = ups.get("output_voltage_v") or ups.get("output.voltage")
+    if ("input.voltage" not in ups or ups["input.voltage"] is None):
+        real_vin, real_fin = read_winpower_libusb_report_31(
+            vid=ups.get("vendor_id", 0x06DA),
+            pid=ups.get("product_id", 0xFFFF),
+            target_serial=ups.get("serial_number"),
+            target_product=ups.get("product_string"),
+        )
+        if real_vin is not None and real_vin > 0:
+            ups["input.voltage"] = real_vin
+            if real_fin and ("input.frequency" not in ups or ups["input.frequency"] is None):
+                ups["input.frequency"] = real_fin
+
+
+    if "output.voltage" not in ups and v_out:
+        ups["output.voltage"] = v_out
+    if "output_voltage_v" not in ups and v_out:
+        ups["output_voltage_v"] = v_out
+
+    f_val = ups.get("input.frequency") or ups.get("output_frequency_hz") or ups.get("output.frequency") or 50.0
+    if "input.frequency" not in ups:
+        ups["input.frequency"] = f_val
+    if "output.frequency" not in ups:
+        ups["output.frequency"] = f_val
+    if "output_frequency_hz" not in ups:
+        ups["output_frequency_hz"] = f_val
+    if "input_frequency_hz" not in ups:
+        ups["input_frequency_hz"] = f_val
+
+    if "percent_load" not in ups and "ups.load" in ups:
+        ups["percent_load"] = ups["ups.load"]
+    elif "ups.load" not in ups and "percent_load" in ups:
+        ups["ups.load"] = ups["percent_load"]
 
     return ups
 
@@ -1234,6 +1572,148 @@ def monitor_ups(h, report_ids: Sequence[int], interval: float = 1.0, count: int 
             time.sleep(interval)
     except KeyboardInterrupt:
         print("\n  หยุด monitor")
+
+
+def monitor_ppc2000d_battery_test(
+    h,
+    initial_test_val: int,
+    max_wait_s: int = 35,
+    on_started=None,
+    on_done=None,
+    on_tick=None,
+) -> dict:
+    """
+    Monitor Battery Test completion ของ PPC 2000D โดยใช้ Feature Report 0x24
+
+    Pattern จากข้อมูลจริงของ PPC 2000D (VID 0x06DA PID 0xFFFF):
+      - ก่อน Test: 0x24[1] = N  (เช่น 6 = Quick Test PASSED จากครั้งก่อน)
+      - ระหว่าง Test: 0x24[1] เปลี่ยนเป็น mid_val (เช่น 5)
+      - Test เสร็จ: 0x24[1] เปลี่ยนออกจาก mid_val (กลับเป็น 6)
+
+    USB HID Power Device Spec (Usage 0084:0058):
+      1=No Test Initiated, 2=In Progress, 3=Not Available,
+      4=Deep Test PASSED, 5=Deep Test FAILED, 6=Quick Test PASSED
+
+    Args:
+        h: hidapi device handle (เปิดไว้แล้ว)
+        initial_test_val: ค่า 0x24[1] ที่อ่านก่อนส่งคำสั่ง Test (สำคัญ!)
+        max_wait_s: รอสูงสุดกี่วินาที (default 35)
+        on_started: callback(mid_val: int) เมื่อ Test เริ่มต้น
+        on_done: callback(result: dict) เมื่อ Test เสร็จหรือ Timeout
+        on_tick: callback(tick: dict) ทุก 1 วินาที
+
+    Returns:
+        dict: {
+            "completed": bool, "elapsed_s": int,
+            "initial_val": int, "mid_val": int|None, "final_val": int|None,
+            "result_name": str, "battery_pct": int|None, "runtime_s": int|None,
+        }
+    """
+    import struct as _struct
+
+    TEST_RESULT_NAMES = {
+        1: "No Test Initiated",
+        2: "Test In Progress",
+        3: "No Test Available",
+        4: "Deep Test PASSED ✅",
+        5: "Deep Test FAILED ❌",
+        6: "Quick Test PASSED ✅",
+    }
+
+    mid_val: Optional[int] = None
+    start = time.time()
+    result: dict = {
+        "completed": False,
+        "elapsed_s": 0,
+        "initial_val": initial_test_val,
+        "mid_val": None,
+        "final_val": None,
+        "result_name": "Timeout",
+        "battery_pct": None,
+        "runtime_s": None,
+    }
+
+    for _ in range(max_wait_s):
+        time.sleep(1.0)
+        elapsed = int(time.time() - start)
+
+        try:
+            r24 = h.get_feature_report(0x24, 8)
+            tv: Optional[int] = r24[1] if r24 and len(r24) >= 2 else None
+        except Exception:
+            tv = None
+
+        try:
+            r06 = h.get_feature_report(0x06, 8)
+            batt_pct: Optional[int] = r06[1] if r06 and len(r06) >= 2 else None
+            runtime_s: Optional[int] = _struct.unpack_from("<H", bytes(r06), 2)[0] if r06 and len(r06) >= 4 else None
+        except Exception:
+            batt_pct = None
+            runtime_s = None
+
+        tick_info = {
+            "elapsed_s": elapsed,
+            "test_val": tv,
+            "mid_val": mid_val,
+            "battery_pct": batt_pct,
+            "runtime_s": runtime_s,
+            "status": "waiting",
+        }
+
+        if tv is None:
+            tick_info["status"] = "read_error"
+        elif mid_val is None:
+            if tv != initial_test_val:
+                mid_val = tv
+                result["mid_val"] = mid_val
+                tick_info["status"] = "started"
+                if on_started:
+                    try:
+                        on_started(mid_val)
+                    except Exception:
+                        pass
+            else:
+                tick_info["status"] = "waiting"
+        elif tv == mid_val:
+            tick_info["status"] = "running"
+        else:
+            # 0x24 เปลี่ยนออกจาก mid_val → Test เสร็จ!
+            tick_info["status"] = "done"
+            result.update({
+                "completed": True,
+                "elapsed_s": elapsed,
+                "final_val": tv,
+                "result_name": TEST_RESULT_NAMES.get(tv, f"Unknown({tv})"),
+                "battery_pct": batt_pct,
+                "runtime_s": runtime_s,
+            })
+            if on_tick:
+                try:
+                    on_tick(tick_info)
+                except Exception:
+                    pass
+            if on_done:
+                try:
+                    on_done(result)
+                except Exception:
+                    pass
+            return result
+
+        if on_tick:
+            try:
+                on_tick(tick_info)
+            except Exception:
+                pass
+
+    # Timeout
+    result["elapsed_s"] = int(time.time() - start)
+    result["result_name"] = f"Timeout ({max_wait_s}s)"
+    if on_done:
+        try:
+            on_done(result)
+        except Exception:
+            pass
+    return result
 
 
 def resolve_json_path(user_value: str) -> Path:

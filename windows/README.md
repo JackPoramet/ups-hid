@@ -9,10 +9,16 @@
 
 | ฟีเจอร์ | รายละเอียด |
 |---------|-----------|
+| **Dual-Protocol HID Engine** | รองรับทั้ง **Standard HID Feature Reports** (Phoenixtec / Voltronic `VID=0x06DA`) และ **Megatec Q1 Indexed String Descriptors** (MEC MEC0003 `VID=0x0001`, `PID=0x0000`) |
+| **WinPower G2 Topology Schematics** | ภาพจำลองวงจรไฟฟ้าพลังงานแบบ Real-time ถอดแบบวงจร **WinPower G2** (Line-Interactive และ True Online) ปรับสถานะสีและทิศทางการไหลตามโหมดฮาร์ดแวร์จริง 100% |
+| **Direct USB Control Transfer (`libusb0.dll`)** | ดึงค่าแรงดันไฟเข้า $V_{in}$ (215V–231V) จากฮาร์ดแวร์จริง Phoenixtec (`Innova Unity` / `Innova Basic G2`) ผ่าน Direct USB Control Transfer (`bmRequestType=0xA1, bRequest=0x01, wValue=0x0331`) บน Windows |
+| **Real Hardware Telemetry (No Fallbacks)** | แยกค่าแรงดันไฟเข้า $V_{in}$ และไฟออก $V_{out}$ ตามค่าที่วัดได้จากฮาร์ดแวร์จริง เมื่อปิดการจ่ายไฟ Output ค่า $V_{out}$ แสดงผล `0.0 V` จริงโดยไม่ทำ Fallback |
+| **PPC Offline 2000D Support** | แกะโครงสร้าง Report `0x07` แบบสั้น ($\le 4$ bytes) และ Report `0x31` แบบ 2 bytes แสดงระดับโหลด (%) และ $V_{in}$ ตรงตามฮาร์ดแวร์จริง |
 | **System Tray** | ทำงานเบื้องหลัง ไอคอนเปลี่ยนสีตามสถานะ UPS |
 | **Web Dashboard** | แสดงสถานะ UPS real-time ผ่าน `localhost:48655` |
-| **UPS Device Selection** | เมนูสแกนและเลือกอุปกรณ์ UPS USB HID (คัดกรอง VID `0x06DA` Phoenixtec / ENEREX) ผ่านปุ่มมุมขวาบน |
+| **UPS Device Selection** | เมนูสแกนและเลือกอุปกรณ์ UPS USB HID (รองรับ VID `0x06DA` และ `0x0001` MEC0003) |
 | **Persistent Device Memory** | ระบบจดจำอุปกรณ์ล่าสุด (`selected_device_serial` / `selected_device_path`) และสลับการเชื่อมต่อให้อัตโนมัติเมื่ออุปกรณ์นั้นกลับมาออนไลน์ (Auto-Preemption) |
+| **Estimated Battery Runtime** | คำนวณเวลาสำรองไฟคงเหลืออัตโนมัติตามระดับแบตเตอรี่และโหลด (%) |
 | **Disconnected State Handling** | แสดงผลแจ้งเตือนและสถานะ "ไม่ได้เชื่อมต่ออุปกรณ์ UPS" ชัดเจนบน Dashboard เมื่อไม่ได้เสียบสาย USB หรืออุปกรณ์ไม่ออนไลน์ |
 | **SQLite Persistent Log** | บันทึกประวัติสถานะ (Telemetry) และเหตุการณ์ (Event Logs) ในฐานข้อมูล SQLite พร้อมกราฟย้อนหลัง |
 | **Notification** | Windows Toast เมื่อไฟดับ / ไฟกลับมา / แบตเตอรี่ต่ำ |

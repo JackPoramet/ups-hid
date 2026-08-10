@@ -1,0 +1,581 @@
+roductName: InnovaBasicG2
+vendorId:    0x06DA (1754) Phoenixtec Power Co., Ltd.
+productId:   0xFFFF (65535)
+opened:      true
+collections[0]
+  Usage: 0084:0004 (Power Device > UPS)
+  Input reports: 0x01, 0x02, 0x03, 0x05, 0x06, 0x27
+  Feature reports: 0x01, 0x02, 0x03, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x10, 0x11, 0x12, 0x14, 0x17, 0x1A, 0x21, 0x23, 0x24, 0x26, 0x27, 0x29, 0x42, 0x4A, 0x72, 0x74, 0xFE, 0xFF
+Input report 0x01
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:00D0 (Battery System > ACPresent)
+    Logical bounds: 0 to 255
+  8 bits (bits 8 to 15)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:0042 (Battery System > BelowRemainingCapacityLimit)
+    Logical bounds: 0 to 255
+  8 bits (bits 16 to 23)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:0044 (Battery System > Charging)
+    Logical bounds: 0 to 255
+  8 bits (bits 24 to 31)
+    Cnst,Var,Abs,Vol
+    Usage: FFFF:002D (Vendor-defined page 0xFFFF usage 0x002D)
+    Logical bounds: 0 to 255
+  8 bits (bits 32 to 39)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:0045 (Battery System > Discharging)
+    Logical bounds: 0 to 255
+  8 bits (bits 40 to 47)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0061 (Power Device > Good)
+    Logical bounds: 0 to 255
+Input report 0x02
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0062 (Power Device > InternalFailure)
+    Logical bounds: 0 to 255
+  8 bits (bits 8 to 15)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:004B (Battery System > NeedReplacement)
+    Logical bounds: 0 to 255
+  8 bits (bits 16 to 23)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0065 (Power Device > Overload)
+    Logical bounds: 0 to 255
+  8 bits (bits 24 to 31)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0069 (Power Device > ShutdownImminent)
+    Logical bounds: 0 to 255
+  16 bits (bits 32 to 47)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Input report 0x03
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs,Vol
+    Usage: FFFF:0077 (Vendor-defined page 0xFFFF usage 0x0077)
+    Logical bounds: 0 to 255
+  8 bits (bits 8 to 15)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0067 (Power Device > OverTemperature)
+    Logical bounds: 0 to 255
+  32 bits (bits 16 to 47)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Input report 0x05
+  8 bits (bits 0 to 7)
+    Data,Var,Abs,Vol
+    Usage: 0084:006C (Power Device > Switchable)
+    Logical bounds: 0 to 255
+  40 bits (bits 8 to 47)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Input report 0x06
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:0066 (Battery System > RemainingCapacity)
+    Logical bounds: 0 to 255
+  32 bits (bits 8 to 39)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:0068 (Battery System > RunTimeToEmpty)
+    Logical bounds: 0 to 2147483647
+    Units: s
+  8 bits (bits 40 to 47)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Input report 0x27
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0060 (Power Device > Present)
+    Logical bounds: 0 to 255
+  8 bits (bits 8 to 15)
+    Cnst,Var,Abs,Vol
+    Usage: FFFF:0079 (Vendor-defined page 0xFFFF usage 0x0079)
+    Logical bounds: 0 to 255
+  8 bits (bits 16 to 23)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0062 (Power Device > InternalFailure)
+    Logical bounds: 0 to 255
+  8 bits (bits 24 to 31)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:006D (Power Device > Used)
+    Logical bounds: 0 to 255
+  8 bits (bits 32 to 39)
+    Cnst,Var,Abs,Vol
+    Usage: FFFF:0074 (Vendor-defined page 0xFFFF usage 0x0074)
+    Logical bounds: 0 to 255
+  8 bits (bits 40 to 47)
+    Cnst,Var,Abs,Vol
+    Usage: FFFF:0075 (Vendor-defined page 0xFFFF usage 0x0075)
+    Logical bounds: 0 to 255
+Feature report 0x01
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:00D0 (Battery System > ACPresent)
+    Logical bounds: 0 to 255
+  8 bits (bits 8 to 15)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:0042 (Battery System > BelowRemainingCapacityLimit)
+    Logical bounds: 0 to 255
+  8 bits (bits 16 to 23)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:0044 (Battery System > Charging)
+    Logical bounds: 0 to 255
+  8 bits (bits 24 to 31)
+    Cnst,Var,Abs,Vol
+    Usage: FFFF:002D (Vendor-defined page 0xFFFF usage 0x002D)
+    Logical bounds: 0 to 255
+  8 bits (bits 32 to 39)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:0045 (Battery System > Discharging)
+    Logical bounds: 0 to 255
+  8 bits (bits 40 to 47)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0061 (Power Device > Good)
+    Logical bounds: 0 to 255
+  1992 bits (bits 48 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x02
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0062 (Power Device > InternalFailure)
+    Logical bounds: 0 to 255
+  8 bits (bits 8 to 15)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:004B (Battery System > NeedReplacement)
+    Logical bounds: 0 to 255
+  8 bits (bits 16 to 23)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0065 (Power Device > Overload)
+    Logical bounds: 0 to 255
+  8 bits (bits 24 to 31)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0069 (Power Device > ShutdownImminent)
+    Logical bounds: 0 to 255
+  2008 bits (bits 32 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x03
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs,Vol
+    Usage: FFFF:0077 (Vendor-defined page 0xFFFF usage 0x0077)
+    Logical bounds: 0 to 255
+  8 bits (bits 8 to 15)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0067 (Power Device > OverTemperature)
+    Logical bounds: 0 to 255
+  2024 bits (bits 16 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x05
+  8 bits (bits 0 to 7)
+    Data,Var,Abs,Vol
+    Usage: 0084:006C (Power Device > Switchable)
+    Logical bounds: 0 to 255
+  2032 bits (bits 8 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x06
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:0066 (Battery System > RemainingCapacity)
+    Logical bounds: 0 to 255
+  32 bits (bits 8 to 39)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:0068 (Battery System > RunTimeToEmpty)
+    Logical bounds: 0 to 2147483647
+    Units: s
+  2000 bits (bits 40 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x07
+  16 bits (bits 0 to 15)
+    Cnst,Var,Abs,Vol
+    Usage: FFFF:0098 (Vendor-defined page 0xFFFF usage 0x0098)
+    Logical bounds: 0 to 65535
+  32 bits (bits 16 to 47)
+    Cnst,Var,Abs,Vol
+    Usage: FFFF:0097 (Vendor-defined page 0xFFFF usage 0x0097)
+    Logical bounds: 0 to 2147483647
+    Units: s
+  8 bits (bits 48 to 55)
+    Cnst,Var,Abs,Vol
+    Usage: FFFF:0094 (Vendor-defined page 0xFFFF usage 0x0094)
+    Logical bounds: 0 to 255
+  8 bits (bits 56 to 63)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0035 (Power Device > PercentLoad)
+    Logical bounds: 0 to 255
+  8 bits (bits 64 to 71)
+    Cnst,Var,Abs,Vol
+    Usage: FFFF:00E9 (Vendor-defined page 0xFFFF usage 0x00E9)
+    Logical bounds: 0 to 255
+  16 bits (bits 72 to 87)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0036 (Power Device > Temperature)
+    Logical bounds: 0 to 65535
+    Units: K
+  32 bits (bits 88 to 119)
+    Cnst,Var,Abs,Vol
+    Usage: FFFF:0091 (Vendor-defined page 0xFFFF usage 0x0091)
+    Logical bounds: 0 to 2147483647
+    Units: s
+  16 bits (bits 120 to 135)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0030 (Power Device > Voltage)
+    Logical bounds: 0 to 65535
+    Units: 10^6*cm^2*g/s^3*A
+  1904 bits (bits 136 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x08
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs,Vol
+    Usage: 0085:0029 (Battery System > RemainingCapacityLimit)
+    Logical bounds: 0 to 255
+  2032 bits (bits 8 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x09
+  32 bits (bits 0 to 31)
+    Data,Var,Abs,Vol
+    Usage: 0084:0057 (Power Device > DelayBeforeShutdown)
+    Logical bounds: -1 to 2147483647
+    Units: s
+  2008 bits (bits 32 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x0A
+  32 bits (bits 0 to 31)
+    Data,Var,Abs,Vol
+    Usage: 0084:0056 (Power Device > DelayBeforeStartup)
+    Logical bounds: -1 to 2147483647
+    Units: s
+  2008 bits (bits 32 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x0B
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs
+    Usage: 0084:001F (Power Device > FlowID)
+    Logical bounds: 0 to 255
+  8 bits (bits 8 to 15)
+    Cnst,Var,Abs
+    Usage: 0084:001F (Power Device > FlowID)
+    Logical bounds: 0 to 255
+  8 bits (bits 16 to 23)
+    Cnst,Var,Abs,Vol
+    Usage: FFFF:0098 (Vendor-defined page 0xFFFF usage 0x0098)
+    Logical bounds: 0 to 255
+  8 bits (bits 24 to 31)
+    Cnst,Var,Abs
+    Usage: FFFF:0095 (Vendor-defined page 0xFFFF usage 0x0095)
+    Logical bounds: 0 to 255
+  8 bits (bits 32 to 39)
+    Cnst,Var,Abs
+    Usage: 0084:001F (Power Device > FlowID)
+    Logical bounds: 0 to 255
+  8 bits (bits 40 to 47)
+    Cnst,Var,Abs
+    Usage: 0084:0025 (Power Device > PowerSummaryID)
+    Logical bounds: 0 to 255
+  1992 bits (bits 48 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x0C
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs
+    Usage: 0085:008D (Battery System > CapacityGranularity1)
+    Logical bounds: 0 to 255
+  8 bits (bits 8 to 15)
+    Cnst,Var,Abs
+    Usage: 0085:002C (Battery System > CapacityMode)
+    Logical bounds: 0 to 255
+  8 bits (bits 16 to 23)
+    Cnst,Var,Abs
+    Usage: 0085:0083 (Battery System > DesignCapacity)
+    Logical bounds: 0 to 255
+  8 bits (bits 24 to 31)
+    Cnst,Var,Abs
+    Usage: 0085:0067 (Battery System > FullChargeCapacity)
+    Logical bounds: 0 to 255
+  2008 bits (bits 32 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x0D
+  8 bits (bits 0 to 7)
+    Data,Var,Abs,Vol
+    Usage: 0084:0042 (Power Device > ConfigFrequency)
+    Logical bounds: 0 to 255
+    Units: 1/s
+  16 bits (bits 8 to 23)
+    Cnst,Var,Abs
+    Usage: 0084:0040 (Power Device > ConfigVoltage)
+    Logical bounds: 0 to 65535
+    Units: 10^7*cm^2*g/s^3*A
+  2016 bits (bits 24 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x0E
+  8 bits (bits 0 to 7)
+    Data,Var,Abs,Vol
+    Usage: FFFF:005F (Vendor-defined page 0xFFFF usage 0x005F)
+    Logical bounds: 0 to 255
+  2032 bits (bits 8 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x10
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs
+    Usage: 0085:0089 (Battery System > iDeviceChemistry)
+    Logical bounds: 0 to 255
+  8 bits (bits 8 to 15)
+    Cnst,Var,Abs
+    Usage: 0084:00FD (Power Device > iManufacturer)
+    Logical bounds: 0 to 255
+  8 bits (bits 16 to 23)
+    Cnst,Var,Abs
+    Usage: FFFF:00F0 (Vendor-defined page 0xFFFF usage 0x00F0)
+    Logical bounds: 0 to 255
+  8 bits (bits 24 to 31)
+    Cnst,Var,Abs
+    Usage: 0085:008F (Battery System > iOEMInformation)
+    Logical bounds: 0 to 255
+  8 bits (bits 32 to 39)
+    Cnst,Var,Abs
+    Usage: FFFF:00F3 (Vendor-defined page 0xFFFF usage 0x00F3)
+    Logical bounds: 0 to 255
+  8 bits (bits 40 to 47)
+    Cnst,Var,Abs
+    Usage: 0084:00FE (Power Device > iProduct)
+    Logical bounds: 0 to 255
+  8 bits (bits 48 to 55)
+    Cnst,Var,Abs
+    Usage: FFFF:00F4 (Vendor-defined page 0xFFFF usage 0x00F4)
+    Logical bounds: 0 to 255
+  8 bits (bits 56 to 63)
+    Cnst,Var,Abs
+    Usage: 0084:00FF (Power Device > iSerialNumber)
+    Logical bounds: 0 to 255
+  8 bits (bits 64 to 71)
+    Cnst,Var,Abs
+    Usage: FFFF:00F1 (Vendor-defined page 0xFFFF usage 0x00F1)
+    Logical bounds: 0 to 255
+  1968 bits (bits 72 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x11
+  8 bits (bits 0 to 7)
+    Data,Var,Abs,Vol
+    Usage: FFFF:0048 (Vendor-defined page 0xFFFF usage 0x0048)
+    Logical bounds: 0 to 255
+  2032 bits (bits 8 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x12
+  8 bits (bits 0 to 7)
+    Data,Var,Abs,Vol
+    Usage: FFFF:004D (Vendor-defined page 0xFFFF usage 0x004D)
+    Logical bounds: 0 to 255
+  2032 bits (bits 8 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x14
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0042 (Power Device > ConfigFrequency)
+    Logical bounds: 0 to 255
+    Units: 1/s
+  8 bits (bits 8 to 15)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0040 (Power Device > ConfigVoltage)
+    Logical bounds: 0 to 255
+    Units: 10^7*cm^2*g/s^3*A
+  2024 bits (bits 16 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x17
+  16 bits (bits 0 to 15)
+    Data,Var,Abs,Vol
+    Usage: 0085:002A (Battery System > RemainingTimeLimit)
+    Logical bounds: 0 to 65535
+    Units: s
+  2024 bits (bits 16 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x1A
+  8 bits (bits 0 to 7)
+    Data,Var,Abs,Vol
+    Usage: 0084:0041 (Power Device > ConfigCurrent)
+    Logical bounds: 0 to 255
+    Units: 10^-1*A
+  2032 bits (bits 8 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x21
+  8 bits (bits 0 to 7)
+    Data,Var,Abs,Vol
+    Usage: FFFF:0090 (Vendor-defined page 0xFFFF usage 0x0090)
+    Logical bounds: 0 to 255
+  2032 bits (bits 8 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x23
+  32 bits (bits 0 to 31)
+    Data,Var,Abs,Vol
+    Usage: 0085:0083 (Battery System > DesignCapacity)
+    Logical bounds: 0 to 2147483647
+    Units: s*A
+  2008 bits (bits 32 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x24
+  8 bits (bits 0 to 7)
+    Data,Var,Abs,Vol
+    Usage: 0084:0058 (Power Device > Test)
+    Logical bounds: 0 to 255
+  2032 bits (bits 8 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x26
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs,Vol
+    Usage: FFFF:006B (Vendor-defined page 0xFFFF usage 0x006B)
+    Logical bounds: 0 to 255
+  8 bits (bits 8 to 15)
+    Cnst,Var,Abs,Vol
+    Usage: FFFF:00E9 (Vendor-defined page 0xFFFF usage 0x00E9)
+    Logical bounds: 0 to 255
+  2024 bits (bits 16 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x27
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0060 (Power Device > Present)
+    Logical bounds: 0 to 255
+  8 bits (bits 8 to 15)
+    Cnst,Var,Abs,Vol
+    Usage: FFFF:0079 (Vendor-defined page 0xFFFF usage 0x0079)
+    Logical bounds: 0 to 255
+  8 bits (bits 16 to 23)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0062 (Power Device > InternalFailure)
+    Logical bounds: 0 to 255
+  8 bits (bits 24 to 31)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:006D (Power Device > Used)
+    Logical bounds: 0 to 255
+  8 bits (bits 32 to 39)
+    Cnst,Var,Abs,Vol
+    Usage: FFFF:0074 (Vendor-defined page 0xFFFF usage 0x0074)
+    Logical bounds: 0 to 255
+  8 bits (bits 40 to 47)
+    Cnst,Var,Abs,Vol
+    Usage: FFFF:0075 (Vendor-defined page 0xFFFF usage 0x0075)
+    Logical bounds: 0 to 255
+  1992 bits (bits 48 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x29
+  32 bits (bits 0 to 31)
+    Data,Var,Abs,Vol
+    Usage: FFFF:0097 (Vendor-defined page 0xFFFF usage 0x0097)
+    Logical bounds: 0 to 2147483647
+    Units: s
+  2008 bits (bits 32 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x42
+  16 bits (bits 0 to 15)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0036 (Power Device > Temperature)
+    Logical bounds: 0 to 65535
+    Units: K
+  16 bits (bits 16 to 31)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0034 (Power Device > ActivePower)
+    Logical bounds: 0 to 65535
+    Units: 10^7*cm^2*g/s^3
+  16 bits (bits 32 to 47)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0033 (Power Device > ApparentPower)
+    Logical bounds: 0 to 65535
+    Units: 10^7*cm^2*g/s^3
+  16 bits (bits 48 to 63)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0031 (Power Device > Current)
+    Logical bounds: 0 to 65535
+    Units: 10^-1*A
+  16 bits (bits 64 to 79)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0032 (Power Device > Frequency)
+    Logical bounds: 0 to 65535
+    Units: 10^-1*1/s
+  8 bits (bits 80 to 87)
+    Cnst,Var,Abs,Vol
+    Usage: FFFF:0069 (Vendor-defined page 0xFFFF usage 0x0069)
+    Logical bounds: 0 to 255
+  16 bits (bits 88 to 103)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0030 (Power Device > Voltage)
+    Logical bounds: 0 to 65535
+    Units: 10^6*cm^2*g/s^3*A
+  16 bits (bits 104 to 119)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0036 (Power Device > Temperature)
+    Logical bounds: 0 to 65535
+    Units: K
+  1920 bits (bits 120 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x4A
+  8 bits (bits 0 to 7)
+    Cnst,Var,Abs
+    Usage: FFFF:0041 (Vendor-defined page 0xFFFF usage 0x0041)
+    Logical bounds: 0 to 255
+  8 bits (bits 8 to 15)
+    Cnst,Var,Abs
+    Usage: FFFF:0040 (Vendor-defined page 0xFFFF usage 0x0040)
+    Logical bounds: 0 to 255
+  2024 bits (bits 16 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x72
+  16 bits (bits 0 to 15)
+    Data,Var,Abs,Vol
+    Usage: 0084:0040 (Power Device > ConfigVoltage)
+    Logical bounds: 0 to 65535
+    Units: 10^7*cm^2*g/s^3*A
+  2024 bits (bits 16 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x74
+  16 bits (bits 0 to 15)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0044 (Power Device > ConfigActivePower)
+    Logical bounds: 0 to 65535
+    Units: 10^7*cm^2*g/s^3
+  16 bits (bits 16 to 31)
+    Cnst,Var,Abs,Vol
+    Usage: 0084:0043 (Power Device > ConfigApparentPower)
+    Logical bounds: 0 to 65535
+    Units: 10^7*cm^2*g/s^3
+  2008 bits (bits 32 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0xFE
+  10 values * 8 bits (bits 0 to 79)
+    Data,Var,Abs,Vol
+    Usage: FFFF:00E0 (Vendor-defined page 0xFFFF usage 0x00E0)
+    Logical bounds: 0 to 2147483647
+  1960 bits (bits 80 to 2039)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0xFF
+  255 values * 8 bits (bits 0 to 2039)
+    Data,Var,Abs,Vol
+    Usage: FFFF:00E0 (Vendor-defined page 0xFFFF usage 0x00E0)
+    Logical bounds: 0 to 2147483647

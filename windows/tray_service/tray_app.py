@@ -26,7 +26,7 @@ import sys
 import threading
 import webbrowser
 from io import BytesIO
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -158,12 +158,141 @@ class TrayApp:
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
+    def _build_device_menu(self) -> List["item"]:
+        items = []
+        try:
+            from core_hid_ups import list_ups_devices
+            devices = list_ups_devices(target_vid=None)
+
+            sel_path = None
+            sel_serial = None
+            if self._poller:
+                info = self._poller.get_device_info()
+                sel_path = info.get("path")
+                sel_serial = info.get("serial_number")
+
+            for dev in devices:
+                if not dev.get("is_ups", False):
+                    continue
+                mfr = dev.get("manufacturer_string") or "UPS"
+                prod = dev.get("product_string") or "Device"
+                vid = dev.get("vendor_id", 0)
+                pid = dev.get("product_id", 0)
+                path = dev.get("path_str")
+                serial = dev.get("serial_number")
+
+                is_active = False
+                if sel_serial and serial and str(serial).strip() == str(sel_serial).strip():
+                    is_active = True
+                elif sel_path and (path == sel_path or str(dev.get("path")) == str(sel_path)):
+                    is_active = True
+
+                prefix = "✔ " if is_active else "  "
+                label = f"{prefix}{mfr} {prod} (VID=0x{vid:04X} PID=0x{pid:04X})"
+
+                def _make_handler(v, p, dev_p, s):
+                    def _on_click(icon, item_obj):
+                        if self._poller:
+                            logger.info(f"Tray menu selected UPS: VID=0x{v:04X} PID=0x{p:04X} path={dev_p} serial={s}")
+                            self._poller.select_device(vid=v, pid=p, path=dev_p, serial=s)
+                    return _on_click
+
+                items.append(item(label, _make_handler(vid, pid, path, serial)))
+        except Exception as exc:
+            logger.debug(f"Error building device menu: {exc}")
+
+        if not items:
+            items.append(item("ไม่พบบริการ UPS อุปกรณ์", lambda icon, item_obj: None, enabled=False))
+        return items
+
+    def _trigger_battery_test(self, test_type: str) -> None:
+        """สั่งรัน Battery Test จาก Tray Icon Menu + Monitor ผลใน background thread"""
+        if not self._poller or not self._poller.is_connected():
+            logger.warning("Cannot trigger battery test: UPS not connected")
+            return
+
+        try:
+            from tools.unit.live_battery_test_runner import send_universal_battery_test_command
+            from core_hid_ups import monitor_ppc2000d_battery_test
+
+            info = self._poller.get_device_info()
+            h = getattr(self._poller, "_handle", None)
+            if not h:
+                logger.warning("Battery test: no HID handle available")
+                return
+
+            # อ่าน initial_val ของ 0x24 ก่อนส่งคำสั่ง (สำคัญ!)
+            initial_val = 6  # default fallback
+            try:
+                r24 = h.get_feature_report(0x24, 8)
+                if r24 and len(r24) >= 2:
+                    initial_val = r24[1]
+            except Exception:
+                pass
+
+            # ส่งคำสั่ง Test
+            ok, msg = send_universal_battery_test_command(h, info, test_type)
+            logger.info(f"Tray battery test command '{test_type}': {msg}")
+
+            if not ok:
+                logger.warning(f"Battery test command failed: {msg}")
+                return
+
+            # Monitor ผลใน background thread (ไม่บล็อก Tray UI)
+            import threading
+
+            def _monitor():
+                max_s = 35 if test_type == "quick" else 3600
+
+                def _on_started(mid_val):
+                    logger.info(f"Battery test started (0x24: {initial_val}→{mid_val})")
+
+                def _on_tick(tick):
+                    logger.debug(
+                        f"Battery test tick: {tick['elapsed_s']}s | "
+                        f"0x24={tick['test_val']} status={tick['status']} "
+                        f"batt={tick['battery_pct']}%"
+                    )
+
+                def _on_done(result):
+                    if result["completed"]:
+                        logger.info(
+                            f"✅ Battery test completed in {result['elapsed_s']}s: "
+                            f"{result['result_name']} | batt={result['battery_pct']}%"
+                        )
+                    else:
+                        logger.warning(
+                            f"⏰ Battery test monitor timeout: {result['result_name']}"
+                        )
+
+                monitor_ppc2000d_battery_test(
+                    h,
+                    initial_test_val=initial_val,
+                    max_wait_s=max_s,
+                    on_started=_on_started,
+                    on_tick=_on_tick,
+                    on_done=_on_done,
+                )
+
+            t = threading.Thread(target=_monitor, daemon=True, name="ups-test-monitor")
+            t.start()
+
+        except Exception as exc:
+            logger.error(f"Tray battery test command error: {exc}")
+
     def _build_menu(self) -> "Menu":
         """สร้าง context menu"""
         return Menu(
             item("Open Web UI",      self._open_web_ui, default=True),
+            item("Select UPS Device", Menu(lambda: self._build_device_menu())),
+            item("Battery Self-Test", Menu(
+                item("⚡ Quick Test (10s)", lambda icon, item_obj: self._trigger_battery_test("quick")),
+                item("🔋 Deep Discharge Test", lambda icon, item_obj: self._trigger_battery_test("deep")),
+                item("🚫 Cancel Test", lambda icon, item_obj: self._trigger_battery_test("cancel")),
+            )),
             item("Exit",              self._exit),
         )
+
 
     def _open_web_ui(self) -> None:
         """เปิด Web UI ใน browser"""
@@ -210,7 +339,8 @@ class TrayApp:
                     self.set_status("disconnected", "UPS Monitor — หยุด Monitoring")
                 else:
                     state = self._poller.get_state()
-                    status, tooltip = _interpret_state(state)
+                    dev_info = self._poller.get_device_info()
+                    status, tooltip = _interpret_state(state, dev_info)
                     self.set_status(status, tooltip)
             except Exception as exc:
                 logger.debug(f"Status updater error: {exc}")
@@ -276,31 +406,45 @@ def _make_icon(color: tuple[int, int, int], size: int = 64) -> "Image.Image":
     return img
 
 
-def _interpret_state(state: dict) -> tuple[str, str]:
+def _interpret_state(state: dict, device_info: Optional[dict] = None) -> tuple[str, str]:
     """
-    แปลง UPS state dict เป็น (status_key, tooltip_text)
+    แปลง UPS state dict และ device_info เป็น (status_key, tooltip_text)
 
     Args:
         state: UPS state dict จาก poller.get_state()
+        device_info: device info dict จาก poller.get_device_info()
 
     Returns:
-        (status, tooltip) เช่น ("ok", "UPS Monitor — AC OK | 85% | 2h")
+        (status, tooltip) เช่น ("ok", "ENEREX UPS (Innova Unity) | Batt: 100% | Load: 11% | 70W | ~152m — Online")
     """
+    mfr = state.get("ups.mfr") or (device_info.get("manufacturer_string") if device_info else None) or "UPS"
+    model = state.get("ups.model") or (device_info.get("product_string") if device_info else None) or ""
+    dev_name = f"{mfr} {model}".strip()
+
     ac_present   = state.get("ac_present")
     charging     = state.get("charging")
     charge       = state.get("battery.charge")
     runtime      = state.get("battery.runtime")
+    load         = state.get("percent_load")
+    vout         = state.get("output_voltage_v") or state.get("output.voltage")
+    power_w      = state.get("output_active_power_w")
     overload     = state.get("overload")
     shutdown_imm = state.get("shutdown_imminent")
     ups_status   = str(state.get("ups.status") or "")
 
-    # Build tooltip
-    parts = ["UPS Monitor"]
+    # Build rich tooltip
+    parts = [f"UPS Monitor ({dev_name})"]
     if charge is not None:
         parts.append(f"Batt: {charge:.0f}%")
+    if load is not None and load > 0:
+        parts.append(f"Load: {load:.0f}%")
+    if power_w is not None and power_w > 0:
+        parts.append(f"{power_w:.0f}W")
+    elif vout is not None and vout > 0:
+        parts.append(f"{vout:.0f}V")
     if runtime is not None and runtime > 0:
         mins = int(runtime) // 60
-        parts.append(f"Runtime: ~{mins}m")
+        parts.append(f"~{mins}m")
 
     # Determine status
     if shutdown_imm or overload:
@@ -316,4 +460,4 @@ def _interpret_state(state: dict) -> tuple[str, str]:
     if ac_present is True:
         return "ok", " | ".join(parts) + " — Online"
 
-    return "disconnected", "UPS Monitor — Connecting..."
+    return "disconnected", f"UPS Monitor ({dev_name}) — Connecting..."

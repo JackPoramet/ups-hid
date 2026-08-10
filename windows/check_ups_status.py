@@ -15,6 +15,12 @@ import sys
 import time
 from pathlib import Path
 
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # Add project root to sys.path
 PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -40,9 +46,11 @@ def monitor_ups_status(interval_sec: float = 1.0, duration_sec: float = 300.0) -
     print(" 🔌 UPS POWER MODE MONITORING TOOL (Phoenixtec / Innova Unity)")
     print("=" * 72)
     
-    h, info = open_ups_device(0x06DA, 0xFFFF)
+    h, info = open_ups_device(0x0001, 0x0000)
     if not h:
-        print("❌ ไม่พบอุปกรณ์ UPS (VID=0x06DA)")
+        h, info = open_ups_device(0x06DA, 0xFFFF)
+    if not h:
+        print("❌ ไม่พบอุปกรณ์ UPS (VID=0x0001 / 0x06DA)")
         sys.exit(1)
 
     print(f"✅ เปิดอุปกรณ์สำเร็จ: {info.get('manufacturer', '')} {info.get('product', '')} (SN: {info.get('serial', '')})")
@@ -63,15 +71,23 @@ def monitor_ups_status(interval_sec: float = 1.0, duration_sec: float = 300.0) -
             r7 = reports.get(0x07, b"")
             mode_byte = r7[1] if len(r7) > 1 else None
             
-            ups_data = decode_feature_reports(reports)
+            ups_data = decode_feature_reports(reports, info)
             ups_data.update(infer_tentative_live_values(reports, ups_data))
 
             t_str = time.strftime("%H:%M:%S")
-            key, desc = WORKMODE_MAP.get(mode_byte, ("UNKNOWN", f"❓ Unknown Mode ({mode_byte})"))
-
-            # Highlight when mode changes
-            changed_mark = " *** CHANGED ***" if (last_mode_byte is not None and last_mode_byte != mode_byte) else ""
-            print(f"{t_str:<10} | 0x07[0]={mode_byte:<5} | {key:<10} | {desc}{changed_mark}")
+            if mode_byte is not None:
+                key, desc = WORKMODE_MAP.get(mode_byte, ("UNKNOWN", f"❓ Unknown Mode ({mode_byte})"))
+                changed_mark = " *** CHANGED ***" if (last_mode_byte is not None and last_mode_byte != mode_byte) else ""
+                print(f"{t_str:<10} | 0x07[0]={mode_byte:<5} | {key:<10} | {desc}{changed_mark}")
+            else:
+                vin = ups_data.get('input.voltage', 'N/A')
+                vout = ups_data.get('output.voltage', 'N/A')
+                vbat = ups_data.get('battery.voltage', 'N/A')
+                freq = ups_data.get('input.frequency', 'N/A')
+                load = ups_data.get('ups.load', 'N/A')
+                st = ups_data.get('ups.status', 'OK')
+                mode_desc = ups_data.get('ups_mode', 'MEC HID Mode')
+                print(f"{t_str:<10} | In:{vin}V Out:{vout}V Freq:{freq}Hz Bat:{vbat}V Load:{load}% | Status:{st} ({mode_desc})")
             
             last_mode_byte = mode_byte
             time.sleep(interval_sec)

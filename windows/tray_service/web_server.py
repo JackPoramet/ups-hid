@@ -259,14 +259,11 @@ class WebServer:
                 devices = []
 
             current_info = self._poller.get_device_info() if self._poller else {}
-            current_path = current_info.get("path")
-            if isinstance(current_path, (bytes, bytearray)):
-                current_path = current_path.decode("utf-8", errors="ignore")
-            else:
-                current_path = str(current_path) if current_path else ""
+            current_serial = current_info.get("serial_number")
+            current_path = current_info.get("path_str") or str(current_info.get("path") or "")
 
             sel_serial = self._config.get("selected_device_serial")
-            sel_path = self._config.get("selected_device_path") or current_path
+            sel_path = self._config.get("selected_device_path")
             sel_vid = self._config.get("vid", 0x06DA)
             sel_pid = self._config.get("pid", 0xFFFF)
             is_connected = self._poller.is_connected() if self._poller else False
@@ -275,16 +272,27 @@ class WebServer:
             for dev in devices:
                 dev_path = dev.get("path_str", "")
                 dev_serial = dev.get("serial_number", "")
-                is_sel = (
-                    (sel_serial and dev_serial and str(dev_serial).strip() == str(sel_serial).strip())
-                    or (sel_path and dev_path == sel_path)
-                    or (dev.get("vendor_id") == sel_vid and dev.get("product_id") == sel_pid)
-                )
+
+                is_act = False
+                if is_connected:
+                    if current_serial and dev_serial and str(dev_serial).strip() == str(current_serial).strip():
+                        is_act = True
+                    elif current_path and dev_path and dev_path == current_path:
+                        is_act = True
+
+                is_sel = False
+                if sel_serial and dev_serial and str(dev_serial).strip() == str(sel_serial).strip():
+                    is_sel = True
+                elif sel_path and dev_path and dev_path == sel_path:
+                    is_sel = True
+                elif is_act:
+                    is_sel = True
+
                 d_copy = dict(dev)
                 if "path" in d_copy:
                     d_copy["path"] = dev_path
                 d_copy["is_selected"] = bool(is_sel)
-                d_copy["is_active"] = bool(is_sel and is_connected)
+                d_copy["is_active"] = bool(is_act)
                 formatted.append(d_copy)
 
             return jsonify({
@@ -466,14 +474,30 @@ class WebServer:
         @app.route("/api/ups/control/test", methods=["POST"])
         def api_ups_test():
             """
-            สั่ง UPS Self-Test
-
-            Body (JSON): {"action": "run" | "abort"}
+            สั่ง UPS Self-Test (รองรับ quick, deep, cancel, run, abort ทั้งหมด)
             """
             data = request.get_json(silent=True) or {}
-            action = data.get("action")
-            return _send_ups_feature(self._poller, action, 0x24,
-                                     {"run": [0x01], "abort": [0x00]})
+            action = (data.get("action") or "quick").lower()
+
+            if action in ("run", "quick"):
+                cmd_type = "quick"
+            elif action == "deep":
+                cmd_type = "deep"
+            else:
+                cmd_type = "cancel"
+
+            h = getattr(self._poller, "_handle", None) if self._poller else None
+            info = self._poller.get_device_info() if self._poller else {}
+
+            if not h:
+                return jsonify({"success": False, "message": "Not connected to UPS"})
+
+            try:
+                from tools.unit.live_battery_test_runner import send_universal_battery_test_command
+                ok, msg = send_universal_battery_test_command(h, info, cmd_type)
+                return jsonify({"success": ok, "message": msg})
+            except Exception as exc:
+                return jsonify({"success": False, "message": f"Battery test error: {exc}"})
 
         @app.route("/api/ups/control/shutdown", methods=["POST"])
         def api_ups_shutdown():
@@ -563,6 +587,33 @@ class WebServer:
 
             events = self._db.get_events_history(limit=limit, page=page)
             return jsonify({"status": "ok", "count": len(events), "events": events})
+
+        # ── Winpower G2 Compatible API ───────────────────────────────────────
+        @app.route("/api/v1/history/discharge/list", methods=["GET"])
+        def api_v1_history_discharge_list():
+            """
+            ดึงข้อมูลประวัติ Battery Test / Discharge (โครงสร้างตรงกับ Winpower G2 API)
+            """
+            if not self._db:
+                return jsonify({"total": 0, "pageSize": 100, "currentPage": 1, "data": [], "code": "000000", "msg": "OK"})
+
+            device_id = request.args.get("deviceId")
+            try:
+                limit = int(request.args.get("pageSize", 100))
+                page = int(request.args.get("currentPage", 1))
+            except (ValueError, TypeError):
+                limit = 100
+                page = 1
+
+            res = self._db.get_discharge_history(device_id=device_id, limit=limit, page=page)
+
+            # Add deviceAlias mapping
+            dev_info = self._poller.get_device_info() if self._poller else {}
+            alias_id = device_id or dev_info.get("serial_number") or "80d6c1e4-e44d-4057-acfc-81c16b73ee54"
+            prod_alias = f"HID-UPS-CP10T2354690002"
+            res["deviceAlias"] = {alias_id: prod_alias}
+
+            return jsonify(res)
 
         @app.route("/api/database/clear", methods=["POST"])
         def api_db_clear():

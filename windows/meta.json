@@ -1,0 +1,65 @@
+{
+  "version": "1.0",
+  "platform": "windows",
+  "description": "Windows UPS Device Metadata Registry — supported models, USB identifiers, and HID report IDs",
+  "devices": [
+    {
+      "id": "phoenixtec_innova_unity",
+      "manufacturer": "PHOENIXTEC",
+      "model": "Innova Unity",
+      "vid": "0x06DA",
+      "pid": "0xFFFF",
+      "usage_page": "0x0084",
+      "usage": "0x0004",
+      "protocol": "phoenixtec_hid",
+      "report_ids": [
+        "0x01", "0x02", "0x03", "0x05", "0x06", "0x07", "0x08",
+        "0x0C", "0x0D", "0x10", "0x14", "0x17", "0x24", "0x25",
+        "0x26", "0x27", "0x29", "0x31", "0x42", "0x4A", "0x74"
+      ],
+      "caps": {
+        "InputReportByteLength": 8,
+        "FeatureReportByteLength": 256
+      },
+      "features": {
+        "has_active_power": true,
+        "has_apparent_power": true,
+        "has_output_current": true,
+        "has_temperature": true,
+        "has_rtc_time_sync": true,
+        "has_battery_test": false,
+        "has_output_control": true,
+        "has_nominal_ratings": true
+      },
+      "notes": "ENEREX 1K"
+    },
+    {
+      "id": "mec0003_800e",
+      "manufacturer": "Nokia Mobile Phones / MEC",
+      "model": "MEC0003 (800E)",
+      "vid": "0x0001",
+      "pid": "0x0000",
+      "usage_page": "0x0086",
+      "usage": "0x0004",
+      "protocol": "mec_hid",
+      "report_ids": [
+        "0x01", "0x02", "0x03", "0x04", "0x05"
+      ],
+      "caps": {
+        "InputReports": ["0x03", "0x04", "0x05"],
+        "FeatureReports": ["0x01", "0x02", "0x03"]
+      },
+      "features": {
+        "has_active_power": false,
+        "has_apparent_power": false,
+        "has_output_current": false,
+        "has_temperature": false,
+        "has_rtc_time_sync": false,
+        "has_battery_test": false,
+        "has_output_control": false,
+        "has_nominal_ratings": true
+      },
+      "notes": "ENEREX 800E"
+    }
+  ]
+}

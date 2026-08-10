@@ -33,6 +33,12 @@ from __future__ import annotations
 import logging
 import sys
 import threading
+
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 import time
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -40,7 +46,10 @@ from typing import Any, Callable, Optional
 logger = logging.getLogger(__name__)
 
 # ── ดึง core_hid_ups จาก parent directory ────────────────────────────────────
-_UPS_DIR = Path(__file__).resolve().parent.parent.parent  # UPS/
+_WIN_DIR = Path(__file__).resolve().parent.parent          # windows/
+_UPS_DIR = Path(__file__).resolve().parent.parent.parent   # UPS/
+if str(_WIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_WIN_DIR))
 if str(_UPS_DIR) not in sys.path:
     sys.path.insert(0, str(_UPS_DIR))
 
@@ -157,8 +166,23 @@ class UPSPoller(threading.Thread):
         self._state: StateDict = {}
         self._device_info: dict = {}
         self._handle: Any = None
-        self._report_ids: list[int] = list(range(0x01, 0x80))
         self._descriptor_profile: Optional[dict] = None
+        self._report_ids: list[int] = [
+            0x01, 0x02, 0x03, 0x06, 0x07, 0x08, 0x09, 0x0C, 0x0D, 0x10,
+            0x13, 0x14, 0x17, 0x21, 0x24, 0x25, 0x26, 0x27, 0x29, 0x30,
+            0x31, 0x32, 0x3F, 0x41, 0x42, 0x49, 0x4A, 0x4B,
+        ]
+        meta_file = Path(_UPS_DIR) / "meta.json"
+        if meta_file.exists() and HID_AVAILABLE:
+            try:
+                self._descriptor_profile = load_descriptor_profile(descriptor_meta_path=meta_file)
+                ids = get_descriptor_feature_ids(self._descriptor_profile)
+                if ids:
+                    self._report_ids = ids
+                    logger.info(f"Loaded {len(ids)} report IDs from meta.json")
+            except Exception as _err:
+                logger.debug(f"Failed loading meta.json at init: {_err}")
+
         self._last_telemetry_time = 0.0
         self._last_target_check_time = 0.0
 
@@ -166,6 +190,10 @@ class UPSPoller(threading.Thread):
         self._prev_ac_present: Any = _UNSET
         self._low_battery_notified = False
         self._critical_battery_notified = False
+
+        # Winpower G2 Battery Discharge State Machine
+        self._is_discharging = False
+        self._discharge_record: dict = {}
 
         # สถานะการเชื่อมต่อ
         self._connected = False
@@ -313,6 +341,26 @@ class UPSPoller(threading.Thread):
             self._device_info = info or {}
             self._connected = True
 
+            # เลือก report IDs ตามรุ่นที่เชื่อมต่ออยู่จาก meta.json
+            meta_file = Path(_UPS_DIR) / "meta.json"
+            if meta_file.exists() and HID_AVAILABLE:
+                try:
+                    import json
+                    mdata = json.loads(meta_file.read_text(encoding="utf-8"))
+                    dev_vid = info.get("vendor_id", self.vid)
+                    target_vid_hex = f"0x{dev_vid:04X}".lower()
+                    dev_ids = []
+                    for d in mdata.get("devices", []):
+                        if d.get("vid", "").lower() == target_vid_hex:
+                            rids = d.get("report_ids", [])
+                            dev_ids = [int(r, 0) for r in rids]
+                            break
+                    if dev_ids:
+                        self._report_ids = dev_ids
+                        logger.info(f"Target device VID {target_vid_hex} report IDs: {self._report_ids}")
+                except Exception as _err:
+                    logger.debug(f"Failed setting device report IDs from meta.json: {_err}")
+
             # โหลด descriptor profile สำหรับ Windows
             self._load_descriptor()
 
@@ -324,6 +372,7 @@ class UPSPoller(threading.Thread):
             if self._on_connect:
                 self._safe_call(self._on_connect, self._device_info)
 
+
         except UnicodeDecodeError as exc:
             logger.error(f"UPS encoding error (device string): {exc}")
             logger.info("Hint: ลอง set PYTHONIOENCODING=utf-8 ก่อนรัน")
@@ -334,6 +383,11 @@ class UPSPoller(threading.Thread):
     def _load_descriptor(self) -> None:
         """โหลด HID Report Descriptor ผ่าน WinHidApi (Windows เท่านั้น)"""
         if not WIN_HID_AVAILABLE:
+            return
+
+        vid_val = self._device_info.get("vendor_id")
+        if vid_val in (1, 0x0001, "0x0001"):
+            logger.debug("Skipping descriptor IOCTL read for MEC MEC0003 (VID=0x0001)")
             return
 
         raw_path = self._device_info.get("path")
@@ -378,16 +432,23 @@ class UPSPoller(threading.Thread):
     def _poll_once(self) -> None:
         """อ่านค่า UPS หนึ่งรอบ"""
         try:
-            raw, _ = read_all_feature_reports(
-                self._handle,
-                report_ids=self._report_ids,
-                sizes=(64,),
-                retries=1,
-                include_zero=False,
-            )
-            ups = decode_feature_reports(raw)
-            ups.update(infer_tentative_live_values(raw, ups))
-            self._fallback_read_input_voltage(ups)
+            vid_val = self._device_info.get("vendor_id")
+            prod_str = (self._device_info.get("product_string") or "").lower()
+
+            if vid_val in (1, 0x0001, "0x0001") or "mec" in prod_str:
+                ups = self._poll_mec_device()
+            else:
+                raw, _ = read_all_feature_reports(
+                    self._handle,
+                    report_ids=self._report_ids or None,
+                    sizes=(64,),
+                    retries=1,
+                    include_zero=False,
+                )
+                ups = decode_feature_reports(raw, self._device_info)
+
+                ups.update(infer_tentative_live_values(raw, ups))
+                self._fallback_read_input_voltage(ups)
 
             # อัปเดต state (thread-safe)
             with self._state_lock:
@@ -415,65 +476,133 @@ class UPSPoller(threading.Thread):
             if self._on_disconnect:
                 self._safe_call(self._on_disconnect, str(exc))
 
+    def _poll_mec_device(self) -> dict:
+        """
+        อ่านค่า MEC0003 (VID=0x0001, PID=0x0000) ผ่าน Win32 Indexed String Descriptor (Q1 Protocol)
+        """
+        try:
+            import ctypes
+            from ctypes import wintypes
+            try:
+                from tools.unit.read_mec_ups import get_device_path, parse_q1_string
+            except ImportError:
+                from win32_hid_wrapper import parse_q1_string
+                def get_device_path(): return ""
+
+            GENERIC_READ = 0x80000000
+            GENERIC_WRITE = 0x40000000
+            FILE_SHARE_READ = 0x00000001
+            FILE_SHARE_WRITE = 0x00000002
+            OPEN_EXISTING = 3
+            INVALID_HANDLE_VALUE = -1
+
+            hid_dll = ctypes.windll.hid
+            kernel32_dll = ctypes.windll.kernel32
+
+            CreateFileA = kernel32_dll.CreateFileA
+            CreateFileA.argtypes = [wintypes.LPCSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+            CreateFileA.restype = wintypes.HANDLE
+
+            CloseHandle = kernel32_dll.CloseHandle
+            CloseHandle.argtypes = [wintypes.HANDLE]
+            CloseHandle.restype = wintypes.BOOL
+
+            HidD_GetIndexedString = hid_dll.HidD_GetIndexedString
+            HidD_GetIndexedString.argtypes = [wintypes.HANDLE, wintypes.ULONG, wintypes.LPVOID, wintypes.ULONG]
+            HidD_GetIndexedString.restype = wintypes.BOOL
+
+            dev_path = self._device_info.get("path_str") or str(self._device_info.get("path") or "")
+            if not dev_path:
+                dev_path = get_device_path()
+            if not dev_path:
+                return {}
+
+            path_bytes = dev_path.encode("ascii") if isinstance(dev_path, str) else dev_path
+            h_dev = CreateFileA(path_bytes, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, None, OPEN_EXISTING, 0, None)
+            if h_dev == INVALID_HANDLE_VALUE or h_dev == 0 or h_dev == -1:
+                return {}
+
+            try:
+                buf = ctypes.create_unicode_buffer(256)
+                raw_status = ""
+                if HidD_GetIndexedString(h_dev, 3, buf, ctypes.sizeof(buf)):
+                    raw_status = buf.value.strip()
+
+                data = parse_q1_string(raw_status)
+
+                ac_on = data.get("utility_normal", True)
+                v_bat = float(data["battery_voltage"]) if data.get("battery_voltage") else 12.0
+                v_in = float(data["input_voltage"]) if data.get("input_voltage") else 220.0
+                v_out = float(data["output_voltage"]) if data.get("output_voltage") else 220.0
+                freq = float(data["frequency"]) if data.get("frequency") else 50.0
+                load = float(data["load_percent"]) if data.get("load_percent") else 0.0
+
+                batt_pct = round(max(0.0, min(100.0, (v_bat - 10.5) / (13.5 - 10.5) * 100.0)), 1)
+                if batt_pct >= 95.0:
+                    batt_pct = 100.0
+
+                ups = {
+                    "ac_present": ac_on,
+                    "discharging": not ac_on,
+                    "charging": ac_on and batt_pct < 100.0,
+                    "status_good": not data.get("ups_failed", False),
+                    "input.voltage": v_in,
+                    "input_voltage_v": v_in,
+                    "input.frequency": freq,
+                    "input_frequency_hz": freq,
+                    "output.voltage": v_out,
+                    "output_voltage_v": v_out,
+                    "output_frequency_hz": freq,
+                    "percent_load": load,
+                    "ups.load": load,
+                    "battery.charge": batt_pct,
+                    "battery_capacity_percent": batt_pct,
+                    "battery_voltage_v": v_bat,
+                    "battery.runtime": 3600 if batt_pct >= 90 else int(batt_pct * 30),
+                    "battery.runtime.hr": round((3600 if batt_pct >= 90 else int(batt_pct * 30)) / 3600.0, 2),
+                    "ups.status": "OL" if ac_on else "OB",
+                    "ups_mode": f"{'Line Mode (ไฟปกติ)' if ac_on else 'Battery Mode (ไฟดับ!)'} [Line Interactive]{' [Charging]' if ac_on and batt_pct < 100 else ''}",
+                    "ups.topology": "Line-Interactive",
+                    "ups_topology": "Line-Interactive",
+                    "topology_tag": "Line Interactive",
+                    "battery_test_status": "running" if data.get("test_in_progress") else "idle",
+                    "internal_failure": data.get("ups_failed", False),
+                    "need_replacement": False,
+                    "overload": False,
+                    "shutdown_imminent": data.get("shutdown_active", False),
+                    "over_temperature": False,
+                }
+                return ups
+            finally:
+                CloseHandle(h_dev)
+        except Exception as _e:
+            logger.debug(f"_poll_mec_device error: {_e}")
+            return {}
+
     def _fallback_read_input_voltage(self, ups: dict) -> None:
         """
-        Fallback reading input.voltage via pyusb / libusb0 filter driver on Windows
+        Fallback reading input.voltage via libusb0 filter driver on Windows
         (เมื่อ Windows HID API บล็อก Report 0x31)
         """
         if "input.voltage" in ups and ups["input.voltage"] is not None:
             return
 
         try:
-            import usb.core
-            import platform
-            import os
+            from core_hid_ups import read_winpower_libusb_report_31
 
-            system = platform.system().lower()
-            backend = None
-
-            if system == "windows":
-                import usb.backend.libusb0
-                local_dll = str(_UPS_DIR / "ups_module" / "drivers" / "windows" / "libusb0.dll")
-                fallback_dll = r"C:\Program Files\WinpowerG2\libUSB_driver\amd64\libusb0.dll"
-
-                if os.path.exists(local_dll):
-                    backend = usb.backend.libusb0.get_backend(find_library=lambda x: local_dll)
-                elif os.path.exists(fallback_dll):
-                    backend = usb.backend.libusb0.get_backend(find_library=lambda x: fallback_dll)
-
-            dev = usb.core.find(idVendor=self.vid, idProduct=self.pid, backend=backend)
-
-            # Auto-Install Filter Driver on Windows if pyusb fails to find it or access it
-            if not dev and system == "windows":
-                try:
-                    from ups_module import driver_installer
-                    if driver_installer.install_filter(self.vid, self.pid):
-                        dev = usb.core.find(idVendor=self.vid, idProduct=self.pid, backend=backend)
-                except Exception as _e:
-                    logger.debug(f"driver_installer error: {_e}")
-
-            if not dev:
-                return
-
-            if system == "linux":
-                try:
-                    if dev.is_kernel_driver_active(0):
-                        dev.detach_kernel_driver(0)
-                except Exception:
-                    pass
-
-            # GET_REPORT: bmRequestType=0xA1, bRequest=0x01, wValue=0x0331, wIndex=0, length=5
-            payload = dev.ctrl_transfer(0xA1, 0x01, 0x0331, 0, 5, timeout=1000)
-            if payload and len(payload) >= 5:
-                volt_raw = payload[3] | (payload[4] << 8)
-                ups["input.voltage"] = volt_raw / 10.0
-                logger.debug(f"Input voltage read via pyusb fallback: {ups['input.voltage']} V")
-
-            if system == "linux":
-                try:
-                    dev.attach_kernel_driver(0)
-                except Exception:
-                    pass
+            v_in, f_in = read_winpower_libusb_report_31(
+                vid=self.vid,
+                pid=self.pid,
+                target_serial=self._device_info.get("serial_number"),
+                target_product=self._device_info.get("product_string"),
+            )
+            if v_in is not None and v_in > 0:
+                ups["input.voltage"] = v_in
+                if f_in and ("input.frequency" not in ups or ups["input.frequency"] is None):
+                    ups["input.frequency"] = f_in
+                logger.debug(f"Input voltage read via libusb0 report 0x31: {v_in} V")
+        except Exception as _e:
+            logger.debug(f"_fallback_read_input_voltage error: {_e}")
 
         except Exception as exc:
             logger.debug(f"pyusb fallback read failed: {exc}")
@@ -509,6 +638,73 @@ class UPSPoller(threading.Thread):
         if ac_present is not None:
             self._prev_ac_present = ac_present
 
+        # ── Battery Discharge State Machine (Winpower G2 Logic) ──────────────
+        discharging = (ac_present is False) or (ups.get("battery_test_status") == "running")
+        test_running = (ups.get("battery_test_status") == "running")
+
+        from datetime import datetime, timezone
+
+        if discharging and not self._is_discharging:
+            # เริ่มต้น Discharge หรือ Battery Test
+            self._is_discharging = True
+            now_iso = datetime.now(timezone.utc).isoformat()
+            dev_id = (
+                self.target_serial
+                or self._device_info.get("serial_number")
+                or "80d6c1e4-e44d-4057-acfc-81c16b73ee54"
+            )
+            v_start = ups.get("battery_voltage_v") or ups.get("battery.voltage")
+            l_start = ups.get("battery.charge") or ups.get("battery_capacity_percent")
+            load_start = ups.get("percent_load") or ups.get("output_load") or ups.get("ups.load")
+
+            self._discharge_record = {
+                "deviceId": str(dev_id),
+                "dischargeReason": 2 if test_running else 1,
+                "startTime": now_iso,
+                "createTime": now_iso,
+                "startVolt": float(v_start) if v_start is not None else None,
+                "startLevel": int(l_start) if l_start is not None else None,
+                "startLoad": int(load_start) if load_start is not None else None,
+                "endVolt": float(v_start) if v_start is not None else None,
+                "endLevel": int(l_start) if l_start is not None else None,
+                "endLoad": int(load_start) if load_start is not None else None,
+                "endTime": now_iso,
+                "duration": 0,
+                "testResult": 1,
+            }
+            logger.info(f"Discharge started — reason: {self._discharge_record['dischargeReason']} (1=Outage, 2=Test)")
+
+        elif self._is_discharging:
+            # กำลัง Discharge: อัปเดต snapshot ล่าสุด
+            now_dt = datetime.now(timezone.utc)
+            now_iso = now_dt.isoformat()
+            v_curr = ups.get("battery_voltage_v") or ups.get("battery.voltage")
+            l_curr = ups.get("battery.charge") or ups.get("battery_capacity_percent")
+            load_curr = ups.get("percent_load") or ups.get("output_load") or ups.get("ups.load")
+
+            start_dt = datetime.fromisoformat(self._discharge_record["startTime"])
+            duration_s = max(0, int((now_dt - start_dt).total_seconds()))
+
+            self._discharge_record.update({
+                "endTime": now_iso,
+                "duration": duration_s,
+                "endVolt": float(v_curr) if v_curr is not None else self._discharge_record.get("endVolt"),
+                "endLevel": int(l_curr) if l_curr is not None else self._discharge_record.get("endLevel"),
+                "endLoad": int(load_curr) if load_curr is not None else self._discharge_record.get("endLoad"),
+            })
+
+            # หากมี Error เกิดขึ้นระหว่าง Test ให้มาร์ก testResult = 2 (Error)
+            if ups.get("internal_failure") or ups.get("status_good") is False:
+                self._discharge_record["testResult"] = 2
+
+            if not discharging:
+                # สิ้นสุดการ Discharge / Test
+                self._is_discharging = False
+                if self.db:
+                    rec_id = self.db.log_discharge_record(self._discharge_record)
+                    logger.info(f"Discharge finished — saved record #{rec_id} (duration: {duration_s}s)")
+                self._discharge_record = {}
+
         # ── Battery Level ────────────────────────────────────────────────────
         if battery_charge is not None and ac_present is False:
             charge = float(battery_charge)
@@ -532,13 +728,25 @@ class UPSPoller(threading.Thread):
                     self._safe_call(self._on_low_battery, dict(ups))
 
     def _close_device(self) -> None:
-        """ปิด HID device handle"""
-        if self._handle:
+        """ปิด HID device handle และ WinHidApi direct handle ทั้งหมด"""
+        with self._state_lock:
+            self._state = {}
+        if HID_AVAILABLE:
+            try:
+                from core_hid_ups import close_ups_device
+                close_ups_device(self._handle)
+            except Exception:
+                if self._handle:
+                    try:
+                        self._handle.close()
+                    except Exception:
+                        pass
+        elif self._handle:
             try:
                 self._handle.close()
             except Exception:
                 pass
-            self._handle = None
+        self._handle = None
 
     @staticmethod
     def _safe_call(fn: Callable, *args: Any) -> None:

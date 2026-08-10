@@ -1,0 +1,216 @@
+productName: MEC0003
+vendorId:    0x0001 (1) Nokia Mobile Phones
+productId:   0x0000 (0)
+opened:      true
+collections[0]
+  Usage: 0086:0004 (Unknown usage page 0x0086 usage 0x0004)
+  Input reports: 0x03, 0x04, 0x05
+  Feature reports: 0x01, 0x02, 0x03
+Input report 0x03
+  6 values * 1 bit (bits 0 to 5)
+    Data,Var,Abs
+    Usage: 0084:0058 (Power Device > Test)
+    Logical bounds: 0 to 0
+    Units: 10^5*K
+  58 bits (bits 6 to 63)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Input report 0x04
+  4 bits (bits 0 to 3)
+    Data,Var,Abs
+    Usage: 0084:0017 (Power Device > PowerConverterID)
+    Logical bounds: 0 to 15
+    Units: 10^5*1
+  4 bits (bits 4 to 7)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+  4 bits (bits 8 to 11)
+    Data,Var,Abs
+    Usage: 0084:001B (Power Device > InputID)
+    Logical bounds: 0 to 15
+    Units: 10^5*1
+  4 bits (bits 12 to 15)
+    Data,Var,Abs
+    Usage: 0084:001F (Power Device > FlowID)
+    Logical bounds: 0 to 15
+    Units: 10^5*1
+  1 bit (bit 16)
+    Data,Var,Abs
+    Usage: 0084:0061 (Power Device > Good)
+    Logical bounds: 0 to 0
+    Units: 10^5*1
+  7 bits (bits 17 to 23)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+  16 bits (bits 24 to 39)
+    Data,Var,Abs
+    Usage: 0084:0030 (Power Device > Voltage)
+    Logical bounds: 0 to 65534
+    Units: 10^5*cm^2*g/s^3*A
+  16 bits (bits 40 to 55)
+    Data,Var,Abs
+    Usage: 0084:0032 (Power Device > Frequency)
+    Logical bounds: 0 to 65534
+    Units: 10^5*1/s
+  8 bits (bits 56 to 63)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Input report 0x05
+  4 bits (bits 0 to 3)
+    Data,Var,Abs
+    Usage: 0084:001D (Power Device > OutputID)
+    Logical bounds: 0 to 15
+    Units: 10^5*1
+  4 bits (bits 4 to 7)
+    Data,Var,Abs
+    Usage: 0084:001F (Power Device > FlowID)
+    Logical bounds: 0 to 15
+    Units: 10^5*1
+  16 bits (bits 8 to 23)
+    Data,Var,Abs
+    Usage: 0084:0030 (Power Device > Voltage)
+    Logical bounds: 0 to 65534
+    Units: 10^5*cm^2*g/s^3*A
+  16 bits (bits 24 to 39)
+    Data,Var,Abs
+    Usage: 0084:0032 (Power Device > Frequency)
+    Logical bounds: 0 to 65534
+    Units: 10^5*1/s
+  16 bits (bits 40 to 55)
+    Data,Var,Abs
+    Usage: 0084:0035 (Power Device > PercentLoad)
+    Logical bounds: 0 to 255
+    Units: 10^5*1/s
+  1 bit (bit 56)
+    Data,Var,Abs
+    Usage: 0084:0065 (Power Device > Overload)
+    Logical bounds: 0 to 0
+    Units: 10^5*1
+  1 bit (bit 57)
+    Data,Var,Abs
+    Usage: 0084:006E (Power Device > Boost)
+    Logical bounds: 0 to 0
+    Units: 10^5*1
+  1 bit (bit 58)
+    Data,Var,Abs
+    Usage: 0084:006F (Power Device > Buck)
+    Logical bounds: 0 to 0
+    Units: 10^5*1
+  5 bits (bits 59 to 63)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x01
+  4 bits (bits 0 to 3)
+    Data,Var,Abs
+    Usage: 0084:001F (Power Device > FlowID)
+    Logical bounds: 0 to 15
+  4 bits (bits 4 to 7)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+  16 bits (bits 8 to 23)
+    Data,Var,Abs
+    Usage: 0084:0040 (Power Device > ConfigVoltage)
+    Logical bounds: 0 to 250
+    Units: 10^7*cm^2*g/s^3*A
+  16 bits (bits 24 to 39)
+    Data,Var,Abs
+    Usage: 0084:0042 (Power Device > ConfigFrequency)
+    Logical bounds: 0 to 60
+    Units: 1/s
+  16 bits (bits 40 to 55)
+    Data,Var,Abs
+    Usage: 0084:0053 (Power Device > LowVoltageTransfer)
+    Logical bounds: 0 to 250
+    Units: 10^7*cm^2*g/s^3*A
+  16 bits (bits 56 to 71)
+    Data,Var,Abs
+    Usage: 0084:0054 (Power Device > HighVoltageTransfer)
+    Logical bounds: 0 to 250
+    Units: 10^7*cm^2*g/s^3*A
+  3 values * 8 bits (bits 72 to 95)
+    Data,Ary,Abs
+    Usages:
+      0084:00FF (Power Device > iSerialNumber)
+      0084:00FE (Power Device > iProduct)
+      0084:00FD (Power Device > iManufacturer)
+    Logical bounds: 255 to 0
+    Units: 10^7*1
+  24 bits (bits 96 to 119)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+Feature report 0x02
+  4 bits (bits 0 to 3)
+    Data,Var,Abs
+    Usage: 0084:001F (Power Device > FlowID)
+    Logical bounds: 0 to 15
+    Units: 10^7*1
+  4 bits (bits 4 to 7)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+  16 bits (bits 8 to 23)
+    Data,Var,Abs
+    Usage: 0084:0040 (Power Device > ConfigVoltage)
+    Logical bounds: 0 to 250
+    Units: 10^7*cm^2*g/s^3*A
+  16 bits (bits 24 to 39)
+    Data,Var,Abs
+    Usage: 0084:0042 (Power Device > ConfigFrequency)
+    Logical bounds: 0 to 60
+    Units: 1/s
+  16 bits (bits 40 to 55)
+    Data,Var,Abs
+    Usage: 0084:0043 (Power Device > ConfigApparentPower)
+    Logical bounds: 0 to 65534
+    Units: 10^7*cm^2*g/s^3
+  16 bits (bits 56 to 71)
+    Data,Var,Abs
+    Usage: 0084:0044 (Power Device > ConfigActivePower)
+    Logical bounds: 0 to 65534
+    Units: 10^7*cm^2*g/s^3
+  24 bits (bits 72 to 95)
+    Data,Var,Abs
+    Usage: 0084:0056 (Power Device > DelayBeforeStartup)
+    Logical bounds: 0 to 65534
+    Units: s
+  24 bits (bits 96 to 119)
+    Data,Var,Abs
+    Usage: 0084:0057 (Power Device > DelayBeforeShutdown)
+    Logical bounds: 0 to 65534
+    Units: s
+Feature report 0x03
+  4 bits (bits 0 to 3)
+    Data,Var,Abs
+    Usage: 0084:0011 (Power Device > BatterySystemID)
+    Logical bounds: 0 to 15
+  4 bits (bits 4 to 7)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+  1 bit (bit 8)
+    Data,Var,Abs
+    Usage: 0084:006D (Power Device > Used)
+    Logical bounds: 0 to 0
+  1 bit (bit 9)
+    Data,Var,Abs
+    Usage: 0084:0061 (Power Device > Good)
+    Logical bounds: 0 to 0
+  6 bits (bits 10 to 15)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0
+  24 bits (bits 16 to 39)
+    Data,Var,Abs
+    Usage: 0084:0030 (Power Device > Voltage)
+    Logical bounds: 0 to 65534
+    Units: 10^5*cm^2*g/s^3*A
+  16 bits (bits 40 to 55)
+    Data,Var,Abs
+    Usage: 0084:0036 (Power Device > Temperature)
+    Logical bounds: 0 to 65534
+    Units: 10^5*K
+  4 values * 1 bit (bits 56 to 59)
+    Data,Var,Abs
+    Usage: 0084:0058 (Power Device > Test)
+    Logical bounds: 0 to 0
+    Units: 10^5*K
+  60 bits (bits 60 to 119)
+    Cnst,Ary,Abs
+    Logical bounds: 0 to 0

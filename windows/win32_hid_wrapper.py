@@ -34,6 +34,58 @@ DEFAULT_META = "report_descriptor_meta.json"
 
 
 # -----------------------------
+# Megatec Q1 Protocol Parser
+# -----------------------------
+def parse_q1_string(raw_str: str) -> dict:
+    res = {
+        "raw_string": raw_str,
+        "input_voltage": "0.0",
+        "fault_voltage": "0.0",
+        "output_voltage": "0.0",
+        "load_percent": "0",
+        "frequency": "0.0",
+        "battery_voltage": "0.0",
+        "temperature": "N/A",
+        "utility_normal": False,
+        "battery_low": False,
+        "bypass_active": False,
+        "ups_failed": False,
+        "ups_type_standby": False,
+        "test_in_progress": False,
+        "shutdown_active": False,
+        "beeper_on": False,
+    }
+
+    if not raw_str:
+        return res
+
+    clean_str = raw_str.lstrip("#(").strip()
+    parts = clean_str.split()
+
+    if len(parts) >= 8:
+        res["input_voltage"] = parts[0]
+        res["fault_voltage"] = parts[1]
+        res["output_voltage"] = parts[2]
+        res["load_percent"] = str(int(parts[3]))
+        res["frequency"] = parts[4]
+        res["battery_voltage"] = parts[5]
+        res["temperature"] = parts[6]
+
+        status_bits = parts[7]
+        if len(status_bits) >= 8:
+            res["utility_normal"] = (status_bits[0] == '0')
+            res["battery_low"] = (status_bits[1] == '1')
+            res["bypass_active"] = (status_bits[2] == '1')
+            res["ups_failed"] = (status_bits[3] == '1')
+            res["ups_type_standby"] = (status_bits[4] == '1')
+            res["test_in_progress"] = (status_bits[5] == '1')
+            res["shutdown_active"] = (status_bits[6] == '1')
+            res["beeper_on"] = (status_bits[7] == '1')
+
+    return res
+
+
+# -----------------------------
 # Windows constants
 # -----------------------------
 GENERIC_READ = 0x80000000
@@ -182,21 +234,39 @@ class WinHidApi:
         ]
         self.hid_dll.HidP_GetCaps.restype = wintypes.ULONG
 
-        self.hid_dll.HidD_GetFeature.argtypes = [
+        self.hid_dll.HidD_GetFeature.argtypes = [wintypes.HANDLE, wintypes.LPVOID, wintypes.ULONG]
+        self.hid_dll.HidD_GetFeature.restype = wintypes.BOOL
+
+        self.hid_dll.HidD_SetFeature.argtypes = [wintypes.HANDLE, wintypes.LPVOID, wintypes.ULONG]
+        self.hid_dll.HidD_SetFeature.restype = wintypes.BOOL
+
+    def set_feature_report(self, handle: object, report_bytes: bytes) -> bool:
+        buf = ctypes.create_string_buffer(report_bytes)
+        return bool(self.hid_dll.HidD_SetFeature(handle, buf, len(report_bytes)))
+
+        self.hid_dll.HidD_GetIndexedString.argtypes = [
             wintypes.HANDLE,
-            ctypes.c_void_p,
+            wintypes.ULONG,
+            wintypes.LPVOID,
             wintypes.ULONG,
         ]
-        self.hid_dll.HidD_GetFeature.restype = wintypes.BOOLEAN
+        self.hid_dll.HidD_GetIndexedString.restype = wintypes.BOOLEAN
 
-    def create_file(self, path: str) -> wintypes.HANDLE:
+    def get_indexed_string(self, handle: wintypes.HANDLE, index: int) -> Optional[str]:
+        buf = ctypes.create_unicode_buffer(256)
+        ok = self.hid_dll.HidD_GetIndexedString(handle, index, buf, 512)
+        if ok and buf.value:
+            return buf.value.strip()
+        return None
+
+    def create_file(self, path: str, flags: int = 0) -> wintypes.HANDLE:
         handle = self.kernel32.CreateFileW(
             path,
             GENERIC_READ | GENERIC_WRITE,
             FILE_SHARE_READ | FILE_SHARE_WRITE,
             None,
             OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL,
+            flags,
             None,
         )
         if handle == INVALID_HANDLE_VALUE:
@@ -328,19 +398,35 @@ class WinHidApi:
             self.hid_dll.HidD_FreePreparsedData(preparsed)
 
     def get_feature_report(self, handle: wintypes.HANDLE, rid: int, length: int) -> Optional[List[int]]:
-        """อ่าน HID Feature Report ผ่าน HidD_GetFeature โดยตรง (bypass driver filter)
+        """อ่าน HID Feature Report ผ่าน HidD_GetFeature โดยตรง (bypass driver filter)"""
+        caps, _ = self.get_caps(handle)
+        feat_len = caps.get("FeatureReportByteLength", length + 1) if caps else (length + 1)
 
-        rid    : Report ID (0x01–0xFF)
-        length : ขนาด payload ที่ต้องการ (ไม่รวม RID byte)
-        คืน: list[int] payload (ไม่มี RID byte) หรือ None
-        """
-        buf_size = length + 1  # +1 สำหรับ RID byte ตัวแรก
-        buf = ctypes.create_string_buffer(buf_size)
-        buf[0] = rid & 0xFF
-        ok = self.hid_dll.HidD_GetFeature(handle, buf, buf_size)
-        if not ok:
-            return None
-        return list(buf.raw[1:buf_size])
+        for sz in (feat_len, length + 1, 16, 64, 256):
+            if sz <= 1:
+                continue
+            buf = ctypes.create_string_buffer(sz)
+            buf[0] = rid & 0xFF
+            ok = self.hid_dll.HidD_GetFeature(handle, buf, sz)
+            if ok:
+                return list(buf.raw[1:sz])
+        return None
+
+    def get_input_report(self, handle: wintypes.HANDLE, rid: int, length: int) -> Optional[List[int]]:
+        """อ่าน HID Input Report ผ่าน HidD_GetInputReport โดยตรง (bypass driver filter)"""
+        caps, _ = self.get_caps(handle)
+        in_len = caps.get("InputReportByteLength", length + 1) if caps else (length + 1)
+
+        for sz in (in_len, length + 1, 9, 16, 64):
+            if sz <= 1:
+                continue
+            buf = ctypes.create_string_buffer(sz)
+            buf[0] = rid & 0xFF
+            ok = self.hid_dll.HidD_GetInputReport(handle, buf, sz)
+            if ok:
+                return list(buf.raw[1:sz])
+        return None
+
 
 
 # -----------------------------

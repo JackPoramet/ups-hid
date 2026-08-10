@@ -117,6 +117,25 @@ def _probe_and_open(path: object) -> "Optional[hid.device]":
     return None
 
 
+def _ordered_device_candidates(devices: Sequence[dict]) -> List[dict]:
+    """Return HID interfaces in the safest order for Linux hidraw devices.
+
+    Some UPSes expose more than one HID interface.  ``hid.enumerate`` can
+    return a valid-looking usage page for an interface which cannot actually
+    be opened, so callers must be prepared to try the remaining interfaces.
+    """
+    preferred = [
+        d for d in devices
+        if d.get("usage_page") == 0x84 and d.get("usage") == 0x04
+    ]
+    power_page = [
+        d for d in devices
+        if d.get("usage_page") == 0x84 and d not in preferred
+    ]
+    remaining = [d for d in devices if d not in preferred and d not in power_page]
+    return preferred + power_page + remaining
+
+
 def open_ups_device(vid: int = VID, pid: int = PID, verbose: bool = False):
     devices = hid.enumerate(vid, pid)
     if not devices:
@@ -127,37 +146,80 @@ def open_ups_device(vid: int = VID, pid: int = PID, verbose: bool = False):
     if verbose:
         print_candidate_devices(devices)
 
-    # --- Interface selection ---
-    # Priority 1: usage_page=0x84 usage=0x04  (UPS Power Device — explicit)
-    target = next(
-        (d for d in devices if d.get("usage_page") == 0x84 and d.get("usage") == 0x04),
-        None,
-    )
-    # Priority 2: any usage_page=0x84
-    if target is None:
-        target = next((d for d in devices if d.get("usage_page") == 0x84), None)
-
     h: Optional[hid.device] = None
+    target = None
+    open_errors: List[str] = []
 
-    if target is not None:
-        # Known good interface from usage_page — open directly
-        h = hid.device()
-        h.open_path(target["path"])
-    else:
-        # Priority 3 (Linux hidraw — usage_page always 0):
-        # Probe each interface by reading a feature report and reuse the handle
-        # to avoid close→reopen which resets device state on some kernels.
-        for d in devices:
-            probe_h = _probe_and_open(d["path"])
-            if probe_h is not None:
-                h = probe_h
-                target = d
-                break
-        # Fallback: just use the first device
+    # Try all matching interfaces.  On Linux, one physical UPS can expose
+    # multiple hidraw nodes and the first node returned by hidapi is not
+    # necessarily the node that can be opened by this process.
+    candidates = _ordered_device_candidates(devices)
+    for candidate in candidates:
+        path = candidate.get("path")
+        try:
+            candidate_h = hid.device()
+            candidate_h.open_path(path)
+        except Exception as exc:
+            open_errors.append(f"{path!r}: {exc}")
+            try:
+                candidate_h.close()
+            except Exception:
+                pass
+            continue
+
+        usage_page = candidate.get("usage_page") or 0
+        if usage_page == 0x84:
+            # Explicit UPS Power Device interface: opening it is sufficient.
+            h = candidate_h
+            target = candidate
+            break
+
+        # Linux hidraw commonly reports usage_page=0.  Probe the open handle
+        # and retain it if it returns a real UPS feature report.  This avoids
+        # close -> reopen cycles which can reset some UPS interfaces.
+        probe_ok = False
+        for probe_rid in (0x01, 0x06):
+            try:
+                data = candidate_h.get_feature_report(probe_rid, 8)
+                if data and any(b != 0 for b in data):
+                    probe_ok = True
+                    break
+            except Exception:
+                pass
+
+        if probe_ok:
+            if h is not None and h is not candidate_h:
+                try:
+                    h.close()
+                except Exception:
+                    pass
+            h = candidate_h
+            target = candidate
+            break
+
+        # Keep the first successfully opened node as a last-resort fallback.
+        # It is better than failing when a device does not support the probe
+        # reports, but prefer a positively identified interface above.
         if h is None:
-            target = devices[0]
-            h = hid.device()
-            h.open_path(target["path"])
+            h = candidate_h
+            target = candidate
+        else:
+            try:
+                candidate_h.close()
+            except Exception:
+                pass
+
+    if h is None or target is None:
+        if verbose:
+            print("ไม่สามารถเปิด HID interface ใด ๆ ได้:")
+            for error in open_errors:
+                print(f"  - {error}")
+        return None, None
+
+    if verbose and open_errors:
+        print("เปิด interface สำเร็จหลังจากลองหลาย path:")
+        for error in open_errors:
+            print(f"  - {error}")
 
     # Look up the profile for this device to get model-specific fallback strings
     _profile = _registry.get_by_vid_pid(vid, pid) or _default_profile
@@ -540,6 +602,7 @@ def decode_feature_reports(raw: Dict[int, List[int]]) -> dict:
             0x03: "abort",
             0x04: "failed",
             0x05: "running",
+            0x06: "passed",
         }.get(val, f"unknown(0x{val:02X})")
 
     # Report 0x27: Status flags (ยืนยันจาก usbmon — d[3] เปลี่ยนระหว่าง self-test)

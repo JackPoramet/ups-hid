@@ -8,76 +8,81 @@ Build:
     pyinstaller windows/build_exe.spec --noconfirm
 
 Output:
-    windows/dist/UPS-Monitor.exe
-
-Flags:
-    --noconsole   ไม่แสดง terminal window (tray app)
-    --onefile     รวมทุกอย่างใน .exe เดียว
+    windows/dist/ENEREX-UPS-Monitor.exe
 """
 
 import sys
 from pathlib import Path
 
-# Root ของโปรเจค (UPS/)
-ROOT = Path(SPECPATH).parent  # build_exe.spec อยู่ใน windows/
+# Spec directory is windows/
+SPEC_DIR = Path(SPECPATH).resolve()
+ROOT = SPEC_DIR.parent  # UPS/
 
 block_cipher = None
 
 a = Analysis(
     # Entry point
-    [str(ROOT / 'windows' / 'tray_service' / 'main.py')],
+    [str(SPEC_DIR / 'tray_service' / 'main.py')],
 
     pathex=[
-        str(ROOT),                          # สำหรับ import core_hid_ups, win32_hid_wrapper
-        str(ROOT / 'windows'),              # สำหรับ import tray_service.*
+        str(ROOT),                          # Root (UPS/)
+        str(SPEC_DIR),                      # windows/ (สำหรับ core_hid_ups, win32_hid_wrapper)
+        str(SPEC_DIR / 'tray_service'),     # windows/tray_service/
     ],
 
     binaries=[],
 
     datas=[
         # Web UI templates + static files
-        (str(ROOT / 'windows' / 'tray_service' / 'templates'), 'tray_service/templates'),
-        (str(ROOT / 'windows' / 'tray_service' / 'static'),    'tray_service/static'),
+        (str(SPEC_DIR / 'tray_service' / 'templates'), 'tray_service/templates'),
+        (str(SPEC_DIR / 'tray_service' / 'static'),    'tray_service/static'),
 
-        # Icons
-        (str(ROOT / 'windows' / 'assets'), 'assets'),
+        # Icons & assets
+        (str(SPEC_DIR / 'assets'), 'assets'),
     ] + (
-        [(str(ROOT / 'ups_module' / 'drivers'), 'ups_module/drivers')] if (ROOT / 'ups_module' / 'drivers').exists() else []
+        [(str(SPEC_DIR / 'meta.json'), '.')] if (SPEC_DIR / 'meta.json').exists() else []
     ) + (
-        [(str(ROOT / 'report_descriptor_live.bin'), '.')] if (ROOT / 'report_descriptor_live.bin').exists() else []
+        [(str(ROOT / 'ups_module' / 'drivers'), 'ups_module/drivers')] if (ROOT / 'ups_module' / 'drivers').exists() else []
     ),
 
     hiddenimports=[
-        # HID & USB
+        # Core HID & Win32 APIs
+        'core_hid_ups',
+        'win32_hid_wrapper',
+        'check_ups_status',
         'hid',
         'usb',
         'usb.core',
+        'ctypes',
+        'ctypes.wintypes',
+        'winreg',
 
-        # Flask
+        # Flask & Web Server
         'flask',
         'flask.templating',
         'jinja2',
         'werkzeug',
         'werkzeug.serving',
 
-        # Windows notifications
+        # Windows Notifications & System Tray
         'plyer',
         'plyer.platforms',
         'plyer.platforms.win.notification',
-
-        # System tray
         'pystray',
         'pystray._win32',
         'PIL',
         'PIL.Image',
         'PIL.ImageDraw',
 
-        # Core modules
-        'core_hid_ups',
-        'win32_hid_wrapper',
-
-        # tray_service modules
+        # Standard Modules & Database
         'sqlite3',
+        'json',
+        'logging',
+        'threading',
+        'subprocess',
+        'dataclasses',
+
+        # tray_service package modules
         'tray_service',
         'tray_service.main',
         'tray_service.database',
@@ -88,11 +93,6 @@ a = Analysis(
         'tray_service.auto_shutdown',
         'tray_service.web_server',
         'tray_service.tray_app',
-
-        # Windows APIs
-        'ctypes',
-        'ctypes.wintypes',
-        'winreg',
     ],
 
     hookspath=[],
@@ -100,7 +100,6 @@ a = Analysis(
     runtime_hooks=[],
 
     excludes=[
-        # ไม่รวม module ที่ไม่จำเป็น (ลดขนาด exe)
         'PySide6',
         'PyQt5',
         'tkinter',
@@ -142,7 +141,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=str(ROOT / 'windows' / 'assets' / 'ups_icon.ico') if (ROOT / 'windows' / 'assets' / 'ups_icon.ico').exists() else None,  # App icon
+    icon=str(SPEC_DIR / 'assets' / 'ups_icon.ico') if (SPEC_DIR / 'assets' / 'ups_icon.ico').exists() else None,  # App icon
     version_file=None,
     onefile=True,       # Single .exe
 )

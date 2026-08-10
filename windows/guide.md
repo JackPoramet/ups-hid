@@ -388,3 +388,62 @@ h.close()
 | `0x07` batt V | แรงดันแบตเตอรี่ลดลงชั่วคราว (normal) |
 | `0x42` output | โหลดเปลี่ยนระหว่าง test |
     agent.run_monitor()
+
+---
+
+## ⚡ 8. โปรโตคอลพิเศษ: MEC MEC0003 (`VID=0x0001`, `PID=0x0000`)
+
+อุปกรณ์กลุ่ม **MEC MEC0003 (Megatec USB HID)** ไม่ตอบสนองต่อ `HidD_GetFeature` หรือ `HidD_GetInputReport` ปกติ (จะส่งคืน `ERROR_GEN_FAILURE 31`) และการยิง Request ผ่าน EP0 จะทำให้เฟิร์มแวร์อุปกรณ์ค้าง (EP0 Stall)
+
+### โครงสร้างโปรโตคอล (Indexed String Descriptors)
+สื่อสารผ่าน **Win32 API `HidD_GetIndexedString`** โดยตรง:
+
+| String Index | ข้อมูลที่ได้รับ | ตัวอย่างข้อมูล |
+|--------------|----------------|----------------|
+| **Index 1** | Manufacturer | `"MEC"` |
+| **Index 2** | Product Model | `"MEC0003"` |
+| **Index 3** | Telemetry Q1 Status String | `"(232.1 232.2 232.0 000 50.1 13.8 --.- 00001000"` |
+| **Index 13** | Rating Specs String | `"#220.0 004 12.00 50.0"` |
+
+### ข้อควรระวังและการเปิด Win32 Handle
+- ต้องใช้ `CreateFileW(flags=0)` ในการเปิด Handle หากใส่ `FILE_ATTRIBUTE_NORMAL (0x80)` การอ่านสตริงจะล้มเหลว (Error 31)
+- ต้องทำการสกัดข้อมูลด้วย `parse_mec_q1_string()` เพื่อแปลงค่าแรงดันไฟ, ความถี่, % แบตเตอรี่, % โหลด และสถานะไฟดับ/ปกติ เข้าสู่มาตรฐานระบบ
+
+---
+
+## 🔒 9. กฎบังคับ PHOENIXTEC Direct USB Control Transfer (`libusb0.dll`)
+
+> [!CRITICAL]
+> **กฎบังคับการอ่านค่า Input Voltage ($V_{in}$) สำหรับ UPS ยี่ห้อ PHOENIXTEC**
+> 1. **ห้ามเปลี่ยนวิธีอ่านค่า $V_{in}$ ของ PHOENIXTEC (`Innova Unity` / `Innova Basic G2`)**:
+>    - Windows HID Class Driver (`hid.dll` / `HidD_GetFeature`) บล็อก Feature Report `0x31` ทำให้การอ่านผ่าน API ปกติติด `read error`
+>    - การอ่านค่า $V_{in}$ ที่ถูกต้องจากฮาร์ดแวร์จริง (~215V–220V) ต้องส่ง direct USB control message ผ่าน `libusb0.dll` (`C:\Program Files\WinpowerG2\libUSB_driver\amd64\libusb0.dll`) ตามวิธีของ WinPower G2 เท่านั้น
+> 2. **โครงสร้าง USB Control Transfer Message**:
+>    - `bmRequestType = 0xA1` (Class In / Interface)
+>    - `bRequest = 0x01` (GET_REPORT)
+>    - `wValue = 0x0331` (Feature Report 0x31)
+>    - `wIndex = 0x0000`
+>    - `wLength = 0x0002` (หรือ `0x0005`)
+> 3. **ผลลัพธ์ข้อมูล Payload (2-5 Bytes)**:
+>    - `u16` offset 2: `Input Voltage = (b[2] | (b[3] << 8)) / 10.0` (เช่น `0x08A4` = `221.2 V`)
+
+---
+
+## 📊 10. ข้อกำหนดทางเทคนิค PPC Offline UPS 2000D (`VID=0x06DA`, `PID=0xFFFF`)
+
+อุปกรณ์ **PPC Offline 2000D** ใช้ Feature Report แบบสั้น ซึ่งต่างจาก Phoenixtec Innova Unity:
+
+| Report ID | ขนาด Payload | โครงสร้างข้อมูล (Decoding) | หมายเหตุ |
+| :--- | :--- | :--- | :--- |
+| **Report `0x07`** | **3 Bytes** | `d[0] = Percent Load (%)`<br>`d[1..2] = Battery Voltage (0.1V)` (เช่น `274 = 27.4V`) | Payload สั้น ($\le 4$ bytes) `d[0]` คือ % โหลด (0%) |
+| **Report `0x31`** | **2 Bytes** | `d[0..1] = Input Voltage (1V)` (เช่น `0x00E7 = 231.0V`) | อ่านผ่าน 2-byte Report `0x31` ได้ค่า $V_{in}$ จริง |
+| **Report `0x42`** | **5–14 Bytes** | `d[12..13] = Output Voltage (0.1V)` | ถูกส่งเฉพาะตอน Line/Battery Mode |
+
+---
+
+## ⚡ 11. กฎการแยกค่าฮาร์ดแวร์จริง $V_{in}$ และ $V_{out}$ (Strict Isolation)
+
+1. **ห้ามทำ Fallback คัดลอกค่าระหว่าง $V_{in}$ และ $V_{out}$ เด็ดขาด**:
+   - เมื่อปิดการจ่ายไฟ Output ในโหมด Standby ค่า $V_{out}$ จากฮาร์ดแวร์จริงต้องเป็น **`0.0 V`**
+   - ค่า $V_{in}$ จะต้องดึงจากฮาร์ดแวร์จริงผ่าน Report `0x31` (**`231.0 V`**)
+   - ห้ามคัดลอกค่า $V_{in}$ ไปเป็น $V_{out}$ หรือนำค่า $V_{out}$ มาแทนที่ $V_{in}$ เป็นอันขาด

@@ -191,6 +191,22 @@
             </div>
         </div>
 
+        <!-- Power Flow Topology Diagram Card -->
+        <div class="card" id="card-power-topology" style="margin-bottom: 24px;">
+            <div class="card__header" style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="material-symbols-outlined card__header-icon">schema</span>
+                    <span>ภาพจำลองเส้นทางการจ่ายไฟฟ้า (Power Flow Topology Diagram)</span>
+                </div>
+                <span id="topology-badge" class="badge badge--enterprise" style="font-size: 0.75rem;">True Online (Double Conversion)</span>
+            </div>
+            <div class="card__body" style="padding: 20px 24px;">
+                <div class="topology-container" id="topology-diagram-box">
+                    <!-- Rendered dynamically by app.js -->
+                </div>
+            </div>
+        </div>
+
         <!-- Detail Grid -->
         <div class="detail-grid">
 
@@ -201,23 +217,27 @@
                     <span>สถานะการทำงาน (System Status)</span>
                 </div>
                 <div class="card__body">
-                    <div class="data-row" id="row-ups-status">
+                    <div class="data-row" id="row-ups-topology">
+                        <span class="data-row__label">UPS Topology</span>
+                        <span class="data-row__value" id="val-ups-topology">—</span>
+                    </div>
+                    <div class="data-row alt" id="row-ups-status">
                         <span class="data-row__label">UPS Status</span>
                         <span class="data-row__value" id="val-ups-status">—</span>
                     </div>
-                    <div class="data-row alt" id="row-charging">
+                    <div class="data-row" id="row-charging">
                         <span class="data-row__label">Charging</span>
                         <span class="data-row__value" id="val-charging">—</span>
                     </div>
-                    <div class="data-row" id="row-discharging">
+                    <div class="data-row alt" id="row-discharging">
                         <span class="data-row__label">Discharging</span>
                         <span class="data-row__value" id="val-discharging">—</span>
                     </div>
-                    <div class="data-row alt" id="row-status-good">
+                    <div class="data-row" id="row-status-good">
                         <span class="data-row__label">Status Normal</span>
                         <span class="data-row__value" id="val-status-good">—</span>
                     </div>
-                    <div class="data-row" id="row-battery-test">
+                    <div class="data-row alt" id="row-battery-test">
                         <span class="data-row__label">Battery Test</span>
                         <span class="data-row__value" id="val-battery-test">—</span>
                     </div>
@@ -327,42 +347,54 @@
 
     <!-- ─── Tab: Device Info ─────────────────────────────────────── -->
     <section class="tab-panel" id="panel-device" role="tabpanel">
-        <div class="card card--full">
-            <div class="card__header">
-                <span class="material-symbols-outlined card__header-icon">info</span>
-                <span>รายละเอียดคุณสมบัติอุปกรณ์ UPS (Hardware Specifications)</span>
+            <!-- Hardware Specs Card -->
+            <div class="card card--full">
+                <div class="card__header">
+                    <span class="material-symbols-outlined card__header-icon">info</span>
+                    <span>รายละเอียดคุณสมบัติอุปกรณ์ UPS (Hardware Specifications)</span>
+                </div>
+                <div class="card__body">
+                    <div class="data-row">
+                        <span class="data-row__label">Manufacturer</span>
+                        <span class="data-row__value" id="dev-manufacturer">—</span>
+                    </div>
+                    <div class="data-row alt">
+                        <span class="data-row__label">Product Name</span>
+                        <span class="data-row__value" id="dev-product">—</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="data-row__label">Serial Number</span>
+                        <span class="data-row__value mono" id="dev-serial">—</span>
+                    </div>
+                    <div class="data-row alt">
+                        <span class="data-row__label">Firmware Version</span>
+                        <span class="data-row__value mono" id="dev-firmware">—</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="data-row__label">Release Number</span>
+                        <span class="data-row__value mono" id="dev-release">—</span>
+                    </div>
+                    <div class="data-row alt">
+                        <span class="data-row__label">HID Usage Page</span>
+                        <span class="data-row__value mono" id="dev-usage-page">—</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="data-row__label">HID Usage ID</span>
+                        <span class="data-row__value mono" id="dev-usage">—</span>
+                    </div>
+                </div>
             </div>
-            <div class="card__body">
-                <div class="data-row">
-                    <span class="data-row__label">Manufacturer</span>
-                    <span class="data-row__value" id="dev-manufacturer">—</span>
+
+            <!-- Feature Capabilities Matrix Card -->
+            <div class="card card--full" style="margin-top: 16px;">
+                <div class="card__header">
+                    <span class="material-symbols-outlined card__header-icon">checklist</span>
+                    <span>ตารางความสามารถและฟังก์ชันที่รองรับ (Feature Capabilities Matrix)</span>
                 </div>
-                <div class="data-row alt">
-                    <span class="data-row__label">Product Name</span>
-                    <span class="data-row__value" id="dev-product">—</span>
-                </div>
-                <div class="data-row">
-                    <span class="data-row__label">Serial Number</span>
-                    <span class="data-row__value mono" id="dev-serial">—</span>
-                </div>
-                <div class="data-row alt">
-                    <span class="data-row__label">Firmware Version</span>
-                    <span class="data-row__value mono" id="dev-firmware">—</span>
-                </div>
-                <div class="data-row">
-                    <span class="data-row__label">Release Number</span>
-                    <span class="data-row__value mono" id="dev-release">—</span>
-                </div>
-                <div class="data-row alt">
-                    <span class="data-row__label">HID Usage Page</span>
-                    <span class="data-row__value mono" id="dev-usage-page">—</span>
-                </div>
-                <div class="data-row">
-                    <span class="data-row__label">HID Usage ID</span>
-                    <span class="data-row__value mono" id="dev-usage">—</span>
+                <div class="card__body" id="dev-capabilities-matrix">
+                    <!-- Dynamic Badges rendered by JS -->
                 </div>
             </div>
-        </div>
     </section>
 
     <!-- ─── Tab: Control ─────────────────────────────────────────── -->
@@ -370,23 +402,23 @@
         <div class="control-grid">
 
             <!-- UPS Clock Control (RID 0x29) -->
-            <div class="card">
+            <div class="card" id="card-rtc-sync">
                 <div class="card__header">
                     <span class="material-symbols-outlined card__header-icon">update</span>
                     <span>UPS Real-Time Clock Sync (RID 0x29)</span>
                 </div>
                 <div class="card__body">
-                    <p class="card__desc">ตรวจสอบและปรับตั้งเวลานาฬิกาภายในของ UPS ให้ตรงกับเวลาของเครื่องคอมพิวเตอร์ (PC Host Clock)</p>
+                    <p class="card__desc" id="desc-rtc-sync">ตรวจสอบและปรับตั้งเวลานาฬิกาภายในของ UPS ให้ตรงกับเวลาของเครื่องคอมพิวเตอร์ (PC Host Clock)</p>
                     <div class="data-row" style="margin-bottom: 12px;">
                         <span class="data-row__label">เวลา UPS ปัจจุบัน:</span>
                         <span class="data-row__value mono" id="val-ups-clock-time">—</span>
                     </div>
                     <div class="btn-group">
-                        <button class="btn btn--primary" onclick="readUpsTime()">
+                        <button class="btn btn--primary" id="btn-rtc-read" onclick="readUpsTime()">
                             <span class="material-symbols-outlined">read_more</span>
                             <span>Read UPS Time</span>
                         </button>
-                        <button class="btn btn--secondary" onclick="syncUpsTime()">
+                        <button class="btn btn--secondary" id="btn-rtc-sync" onclick="syncUpsTime()">
                             <span class="material-symbols-outlined">sync</span>
                             <span>Sync Host Time</span>
                         </button>
@@ -395,24 +427,50 @@
                 </div>
             </div>
 
+            <!-- UPS Battery Self-Test Control -->
+            <div class="card" id="card-battery-test">
+                <div class="card__header">
+                    <span class="material-symbols-outlined card__header-icon">flaky</span>
+                    <span>UPS Battery Self-Test Control</span>
+                </div>
+                <div class="card__body">
+                    <p class="card__desc" id="desc-battery-test">ส่งคำสั่งให้ UPS ดำเนินการทดสอบการจ่ายไฟจากแบตเตอรี่ (Battery Self-Test) ชั่วคราว ~10 วินาที</p>
+                    <div class="btn-group">
+                        <button class="btn btn--primary" id="btn-battery-test-start" onclick="upsSelfTest('quick')">
+                            <span class="material-symbols-outlined">play_arrow</span>
+                            <span>Quick Battery Test (10s)</span>
+                        </button>
+                        <button class="btn btn--secondary" id="btn-battery-test-deep" onclick="upsSelfTest('deep')">
+                            <span class="material-symbols-outlined">bolt</span>
+                            <span>Deep Discharge Test</span>
+                        </button>
+                        <button class="btn btn--warning" id="btn-battery-test-cancel" onclick="upsSelfTest('cancel')">
+                            <span class="material-symbols-outlined">stop</span>
+                            <span>Cancel Self-Test</span>
+                        </button>
+                    </div>
+                    <div class="result-box" id="result-selftest"></div>
+                </div>
+            </div>
+
             <!-- UPS Output Shutdown -->
-            <div class="card">
+            <div class="card" id="card-output-shutdown">
                 <div class="card__header card__header--danger">
                     <span class="material-symbols-outlined card__header-icon">power_off</span>
                     <span>UPS Output Control (Shutdown Outlets)</span>
                 </div>
                 <div class="card__body">
-                    <p class="card__desc">ส่งคำสั่งควบคุมให้ UPS ตัดการจ่ายกระแสไฟฟ้าเอาต์พุต (Output Shutdown)</p>
+                    <p class="card__desc" id="desc-output-shutdown">ส่งคำสั่งควบคุมให้ UPS ตัดการจ่ายกระแสไฟฟ้าเอาต์พุต (Output Shutdown)</p>
                     <div class="inline-form">
                         <label for="ups-shutdown-delay">Delay (วินาที):</label>
                         <input type="number" id="ups-shutdown-delay" value="60" min="0" max="86400" class="input-field">
-                        <button class="btn btn--danger" onclick="upsShutdown()">
+                        <button class="btn btn--danger" id="btn-ups-shutdown" onclick="upsShutdown()">
                             <span class="material-symbols-outlined">power_off</span>
                             <span>Shutdown UPS Output</span>
                         </button>
                     </div>
                     <div class="btn-group" style="margin-top: 12px">
-                        <button class="btn btn--warning" onclick="upsShutdownCancel()">
+                        <button class="btn btn--warning" id="btn-ups-shutdown-cancel" onclick="upsShutdownCancel()">
                             <span class="material-symbols-outlined">cancel</span>
                             <span>Cancel UPS Shutdown</span>
                         </button>
@@ -678,6 +736,43 @@
                     <tbody id="events-table-body">
                         <tr>
                             <td colspan="6" style="padding: 20px; text-align: center; color: var(--text-secondary);">กำลังโหลดประวัติเหตุการณ์...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Battery Discharge & Test History (Winpower G2 Compatible Table) -->
+        <div class="card" style="margin-top: 20px;">
+            <div class="card__header" style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="material-symbols-outlined card__header-icon">battery_unknown</span>
+                    <span>ประวัติการทดสอบและใช้ไฟแบตเตอรี่ (Battery Discharge & Test History)</span>
+                    <span class="badge badge--enterprise" style="font-size: 0.7rem; text-transform: none;">Winpower G2 Schema</span>
+                </div>
+                <button class="btn btn--secondary btn--sm" onclick="loadDischargeHistoryData()">
+                    <span class="material-symbols-outlined">refresh</span>
+                    <span>รีเฟรช</span>
+                </button>
+            </div>
+            <div class="card__body" style="padding: 0; overflow-x: auto;">
+                <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.88rem;">
+                    <thead>
+                        <tr style="background: var(--bg-tertiary, #1E293B); color: var(--text-secondary);">
+                            <th style="padding: 10px 14px;"># ID</th>
+                            <th style="padding: 10px 14px;">ประเภท (Reason)</th>
+                            <th style="padding: 10px 14px;">ผลลัพธ์ (Result)</th>
+                            <th style="padding: 10px 14px;">เวลาเริ่มต้น (Start)</th>
+                            <th style="padding: 10px 14px;">เวลาสิ้นสุด (End)</th>
+                            <th style="padding: 10px 14px;">ระยะเวลา</th>
+                            <th style="padding: 10px 14px;">แรงดันแบต (Voltage)</th>
+                            <th style="padding: 10px 14px;">เปอร์เซ็นต์แบต (Charge)</th>
+                            <th style="padding: 10px 14px;">โหลด (Load)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="discharge-table-body">
+                        <tr>
+                            <td colspan="9" style="padding: 20px; text-align: center; color: var(--text-secondary);">กำลังโหลดประวัติการทดสอบแบตเตอรี่...</td>
                         </tr>
                     </tbody>
                 </table>

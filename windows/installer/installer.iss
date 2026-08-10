@@ -14,15 +14,15 @@
 ; ══════════════════════════════════════════════════════════════
 
 #define AppName        "ENEREX UPS Monitor"
-#define AppVersion     "0.1.0"
+#define AppVersion     "0.2.0"
 #define AppPublisher   "ENEREX"
-#define AppURL         "https://github.com/JackPoramet/ups-hid"
+#define AppURL         ""
 #define AppExeName     "ENEREX-UPS-Monitor.exe"
 #define AppDescription "ENEREX UPS Monitor DEMO Version"
 
 [Setup]
 ; ── Identity ───────────────────────────────────────────────────
-AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
+AppId={{E5A8F932-B714-4A8E-9D3F-8C21E50A19D4}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
