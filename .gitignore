@@ -43,6 +43,7 @@ $RECYCLE.BIN/
 
 .gemini/
 .agents/
-OrangePiZero/
+OrangePiZero/etc/
+OrangePiZero/var/
 windows/
 *.rar
