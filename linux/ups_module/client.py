@@ -158,6 +158,28 @@ class UPSClient:
         self._monitor_interval: float = 1.0
 
     # =========================================================================
+    # Auto-Discovery
+    # =========================================================================
+
+    @classmethod
+    def auto_detect(cls, name: str = "ups@local") -> "UPSClient":
+        """
+        Auto-detect any supported Enerex/Phoenixtec/Megatec UPS connected.
+        Returns an initialized UPSClient for the first matching device.
+        """
+        import hid
+        for dev_info in hid.enumerate():
+            vid = dev_info['vendor_id']
+            pid = dev_info['product_id']
+            # Find in registry
+            for profile in _registry.devices:
+                if profile.vid == vid and profile.pid == pid:
+                    logger.info("Auto-detected UPS: %s %s (VID=0x%04X, PID=0x%04X)", profile.manufacturer, profile.model, vid, pid)
+                    return cls(model=profile.id, name=name)
+                    
+        raise RuntimeError("No supported Enerex/Phoenixtec/Megatec UPS found.")
+
+    # =========================================================================
     # Connection management
     # =========================================================================
 
@@ -200,6 +222,17 @@ class UPSClient:
                 raise RuntimeError("Already connected. Call disconnect() before connect().")
             self._handle = h
         self._device_info = info or {}
+
+        # Instantiate driver if protocol is megatec_q1
+        if self._profile and self._profile.protocol == 'megatec_q1':
+            try:
+                from .drivers.megatec import MegatecQ1Driver
+                self._driver = MegatecQ1Driver(self._handle, self._profile)
+            except ImportError as e:
+                logger.error("Failed to load MegatecQ1Driver: %s", e)
+                self._driver = None
+        else:
+            self._driver = None
 
         mfr = self._device_info.get("manufacturer_string", "?")
         prod = self._device_info.get("product_string", "?")
@@ -261,6 +294,9 @@ class UPSClient:
             if h is None:
                 raise RuntimeError("Not connected. Call connect() first.")
 
+            if getattr(self, '_driver', None) is not None:
+                return self._driver.get_vars()
+
             from .core import DEFAULT_REPORT_SIZES as _SIZES  # noqa: PLC0415
             raw_reports, report_meta = read_all_feature_reports(
                 h,
@@ -277,7 +313,7 @@ class UPSClient:
                 "Unable to read authoritative UPS status report 0x01"
                 + (f" ({errors} HID read error(s))" if errors else "")
             )
-        decoded = decode_feature_reports(raw_reports)
+        decoded = decode_feature_reports(raw_reports, device_info=self._device_info)
         decoded.update(infer_tentative_live_values(raw_reports, decoded))
         return decoded
 

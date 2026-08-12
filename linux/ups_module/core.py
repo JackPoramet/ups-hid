@@ -15,7 +15,7 @@ import re
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import hid
 
@@ -460,7 +460,7 @@ def infer_tentative_live_values(raw: Dict[int, List[int]], decoded: dict) -> dic
     return out
 
 
-def decode_feature_reports(raw: Dict[int, List[int]]) -> dict:
+def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict[str, Any]] = None) -> dict:
     ups: Dict[str, object] = {}
 
     def payload(rid: int) -> Optional[List[int]]:
@@ -538,7 +538,12 @@ def decode_feature_reports(raw: Dict[int, List[int]]) -> dict:
             ups["bypass"] = (work_mode_byte == 2)
 
         if len(d) >= 2:
-            ups["percent_load"] = d[1]
+            load = d[1]
+            if device_info and "offline" in (device_info.get("product_string") or "").lower():
+                if load <= 25: # Sensor noise deadband for Offline UPS
+                    load = 0
+            ups["percent_load"] = load
+            ups["ups.load"] = load
 
         if len(d) >= 5:
             temp_k = d[3] | (d[4] << 8)
@@ -586,16 +591,40 @@ def decode_feature_reports(raw: Dict[int, List[int]]) -> dict:
     # ยืนยันจาก usbmon: RID=0x31 data=[0xf4,0x01,0x6d,0x08] → freq=500/10=50.0Hz, volt=2157/10=215.7V
     d = payload(0x31)
     if d and len(d) >= 4:
-        freq_raw = d[0] | (d[1] << 8)
-        volt_raw = d[2] | (d[3] << 8)
-        if freq_raw > 0:
+        # Determine model
+        model = ""
+        if device_info:
+            model = (device_info.get("product_string") or "").lower()
+
+        if "offline" in model or "2000" in model:
+            # Offline UPS 2000D: 0x31 only contains Voltage at d[0], d[1].
+            volt_raw = d[0] | (d[1] << 8)
+            ups["input.voltage"] = round(volt_raw / 10.0, 1)
+            ups["input.frequency"] = 0.0 # Force clear garbage from 0x0D
+        elif "basic" in model or "g2" in model:
+            # InnovaBasicG2: 0x31 uses Big-Endian encoding
+            freq_raw = (d[0] << 8) | d[1]
+            volt_raw = (d[2] << 8) | d[3]
             ups["input.frequency"] = round(freq_raw / 10.0, 1)
-        if volt_raw > 0:
+            ups["input.voltage"] = round(volt_raw / 10.0, 1)
+        else:
+            # Default (Innova Unity): Little-Endian
+            freq_raw = d[0] | (d[1] << 8)
+            volt_raw = d[2] | (d[3] << 8)
+            ups["input.frequency"] = round(freq_raw / 10.0, 1)
             ups["input.voltage"] = round(volt_raw / 10.0, 1)
 
     d = payload(0x17)
     if d and len(d) >= 2:
-        ups["input.transfer.low"] = d[0] | (d[1] << 8)
+        model = ""
+        if device_info:
+            model = (device_info.get("product_string") or "").lower()
+            
+        if "offline" in model or "2000" in model:
+            # Offline UPS 2000D report 0x17 returns garbage (e.g. 17619), so skip or parse differently.
+            pass
+        else:
+            ups["input.transfer.low"] = d[0] | (d[1] << 8)
 
     d = payload(0x25)
     if d and len(d) >= 3:
@@ -608,7 +637,8 @@ def decode_feature_reports(raw: Dict[int, List[int]]) -> dict:
 
     d = payload(0x26)
     if d and len(d) >= 3:
-        ups["ups.firmware"] = f"{d[0]}.{d[1]}.{d[2]}"
+        if not (d[0] == 255 and d[1] == 255 and d[2] == 255):
+            ups["ups.firmware"] = f"{d[0]}.{d[1]}.{d[2]}"
 
     # Report 0x24: Self-test status
     # ยืนยันจากการทดสอบจริง (usbmon + python polling):
@@ -636,11 +666,24 @@ def decode_feature_reports(raw: Dict[int, List[int]]) -> dict:
     # Report 0x42: output power meter
     d = payload(0x42)
     if d and len(d) >= 14:
-        ups["output_active_power_w"] = d[4] | (d[5] << 8)
-        ups["output_apparent_power_va"] = d[6] | (d[7] << 8)
-        ups["output_current_a"] = round((d[8] | (d[9] << 8)) / 10.0, 1)
-        ups["output_frequency_hz"] = round((d[10] | (d[11] << 8)) / 10.0, 1)
-        ups["output_voltage_v"] = round((d[12] | (d[13] << 8)) / 10.0, 1)
+        model = ""
+        if device_info:
+            model = (device_info.get("product_string") or "").lower()
+
+        if "basic" in model or "g2" in model:
+            # InnovaBasicG2 uses Big-Endian encoding
+            ups["output_active_power_w"] = (d[4] << 8) | d[5]
+            ups["output_apparent_power_va"] = (d[6] << 8) | d[7]
+            ups["output_current_a"] = round(((d[8] << 8) | d[9]) / 10.0, 1)
+            ups["output_frequency_hz"] = round(((d[10] << 8) | d[11]) / 10.0, 1)
+            ups["output_voltage_v"] = round(((d[12] << 8) | d[13]) / 10.0, 1)
+        else:
+            ups["output_active_power_w"] = d[4] | (d[5] << 8)
+            ups["output_apparent_power_va"] = d[6] | (d[7] << 8)
+            ups["output_current_a"] = round((d[8] | (d[9] << 8)) / 10.0, 1)
+            ups["output_frequency_hz"] = round((d[10] | (d[11] << 8)) / 10.0, 1)
+            ups["output_voltage_v"] = round((d[12] | (d[13] << 8)) / 10.0, 1)
+            
         ups["output.voltage"] = ups["output_voltage_v"]
 
     # Compose NUT-like status string only when the authoritative status report

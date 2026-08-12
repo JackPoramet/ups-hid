@@ -1,0 +1,135 @@
+root@UP-Connex-Box:/home/UPS# upsc enerex-ups
+Init SSL without certificate database
+battery.charge: 100
+battery.charge.high: 100
+battery.charge.low: 100
+battery.runtime: 59940
+battery.test.status: passed
+battery.voltage: 30.3
+device.mfr: PHOENIXTEC
+device.model: InnovaBasicG2
+device.type: ups
+driver.name: enerex
+driver.parameter.mode: dummy
+driver.parameter.pollinterval: 2
+driver.parameter.port: /etc/nut/enerex-ups.dev
+driver.parameter.synchronous: no
+driver.version: 2.7.4
+driver.version.internal: 0.14
+input.frequency: 50.0
+input.frequency.nominal: 50
+input.transfer.low: 0
+input.voltage: 230.9
+input.voltage.nominal: 230
+output.current: 50.0
+output.frequency: 25.6
+output.power: 0
+output.power.apparent: 0
+output.voltage: 6477.7
+ups.load: 0
+ups.mfr: PHOENIXTEC
+ups.model: InnovaBasicG2
+ups.status: OL
+
+root@UP-Connex-Box:/home/UPS# upsc enerex-ups
+Init SSL without certificate database
+battery.charge: 100
+battery.charge.high: 100
+battery.charge.low: 100
+battery.runtime: 59940
+battery.test.status: passed
+battery.voltage: 30.3
+device.mfr: MEC
+device.model: MEC0003
+device.type: ups
+driver.name: enerex
+driver.parameter.mode: dummy
+driver.parameter.pollinterval: 2
+driver.parameter.port: /etc/nut/enerex-ups.dev
+driver.parameter.synchronous: no
+driver.version: 2.7.4
+driver.version.internal: 0.14
+input.frequency: 50.1
+input.frequency.nominal: 50.0
+input.transfer.low: 0
+input.voltage: 232.0
+input.voltage.nominal: 220.0
+output.current: 50.0
+output.frequency: 0.0
+output.power: 0
+output.power.apparent: 0
+output.voltage: 232.1
+ups.load: 0
+ups.mfr: MEC
+ups.model: MEC0003
+ups.status: OL
+
+root@UP-Connex-Box:/home/UPS# upsc enerex-ups
+Init SSL without certificate database
+battery.charge: 100
+battery.charge.high: 100
+battery.charge.low: 100
+battery.runtime: 4941
+battery.test.status: idle
+battery.voltage: 39.6
+device.mfr: PHOENIXTEC
+device.model: Innova Unity
+device.type: ups
+driver.name: enerex
+driver.parameter.mode: dummy
+driver.parameter.pollinterval: 2
+driver.parameter.port: /etc/nut/enerex-ups.dev
+driver.parameter.synchronous: no
+driver.version: 2.7.4
+driver.version.internal: 0.14
+input.frequency: 49.9
+input.frequency.nominal: 50
+input.transfer.low: 180
+input.voltage: 218.9
+input.voltage.nominal: 230
+output.current: 0.6
+output.frequency: 49.9
+output.power: 110
+output.power.apparent: 140
+output.voltage: 229.8
+ups.firmware: 4.4.19
+ups.load: 14
+ups.mfr: PHOENIXTEC
+ups.model: Innova Unity
+ups.status: OL
+ups.temperature: 32.9
+
+root@UP-Connex-Box:/home/UPS# upsc enerex-ups
+Init SSL without certificate database
+battery.charge: 100
+battery.charge.high: 100
+battery.charge.low: 100
+battery.runtime: 6041
+battery.test.status: passed
+battery.voltage: 39.6
+device.mfr: PPC
+device.model: Offline UPS
+device.type: ups
+driver.name: enerex
+driver.parameter.mode: dummy
+driver.parameter.pollinterval: 2
+driver.parameter.port: /etc/nut/enerex-ups.dev
+driver.parameter.synchronous: no
+driver.version: 2.7.4
+driver.version.internal: 0.14
+input.frequency: 211
+input.frequency.nominal: 50
+input.transfer.low: 17619
+input.voltage: 217.5
+input.voltage.nominal: 230
+output.current: 0.5
+output.frequency: 49.9
+output.power: 90
+output.power.apparent: 130
+output.voltage: 230.4
+ups.firmware: 255.255.255
+ups.load: 18
+ups.mfr: PPC
+ups.model: Offline UPS
+ups.status: OFF DISCHRG
+ups.temperature: 32.9
