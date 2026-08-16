@@ -172,7 +172,7 @@ class UPSPoller(threading.Thread):
             0x13, 0x14, 0x17, 0x21, 0x24, 0x25, 0x26, 0x27, 0x29, 0x30,
             0x31, 0x32, 0x3F, 0x41, 0x42, 0x49, 0x4A, 0x4B,
         ]
-        meta_file = Path(_UPS_DIR) / "meta.json"
+        meta_file = Path(_WIN_DIR) / "meta.json"
         if meta_file.exists() and HID_AVAILABLE:
             try:
                 self._descriptor_profile = load_descriptor_profile(descriptor_meta_path=meta_file)
@@ -317,7 +317,32 @@ class UPSPoller(threading.Thread):
         import os
         os.environ["PYTHONIOENCODING"] = "utf-8"
         os.environ["PYTHONUTF8"] = "1"
+        
+        # --- AUTO DETECT LOGIC ---
+        # 1. Try MEC (0x0001:0x0000) if no specific target is set or if target is MEC
+        if (self.vid in (0x0001, 1) or self.vid == 0x06DA) and not self.target_serial:
+            import pywinusb.hid as pyhid
+            mec_devices = pyhid.HidDeviceFilter(vendor_id=0x0001, product_id=0x0000).get_devices()
+            if mec_devices:
+                dev_path = mec_devices[0].device_path
+                self.vid = 0x0001
+                self.pid = 0x0000
+                self._device_info = {
+                    "vendor_id": 0x0001,
+                    "product_id": 0x0000,
+                    "path_str": dev_path,
+                    "path": dev_path.encode('ascii'),
+                    "manufacturer_string": "MEC",
+                    "product_string": "MEC0003",
+                    "serial_number": "",
+                }
+                logger.info(f"Auto-detected MEC UPS at {dev_path}")
+                self._connected = True
+                if self._on_connect:
+                    self._safe_call(self._on_connect, self._device_info)
+                return
 
+        # 2. Try Phoenixtec via core_hid_ups (0x06DA:0xFFFF)
         try:
             h, info = open_ups_device(self.vid, self.pid, target_path=self.target_path, target_serial=self.target_serial)
             if h is None:
@@ -342,18 +367,37 @@ class UPSPoller(threading.Thread):
             self._connected = True
 
             # เลือก report IDs ตามรุ่นที่เชื่อมต่ออยู่จาก meta.json
-            meta_file = Path(_UPS_DIR) / "meta.json"
+            meta_file = Path(_WIN_DIR) / "meta.json"
             if meta_file.exists() and HID_AVAILABLE:
                 try:
                     import json
                     mdata = json.loads(meta_file.read_text(encoding="utf-8"))
                     dev_vid = info.get("vendor_id", self.vid)
                     target_vid_hex = f"0x{dev_vid:04X}".lower()
+                    prod_str = (info.get("product_string") or "").lower()
                     dev_ids = []
+                    
                     for d in mdata.get("devices", []):
                         if d.get("vid", "").lower() == target_vid_hex:
+                            # If match_product is defined in meta.json, it must match
+                            match_str = d.get("match_product", "").lower()
+                            if match_str and match_str not in prod_str:
+                                continue
+                                
                             rids = d.get("report_ids", [])
                             dev_ids = [int(r, 0) for r in rids]
+                            
+                            # --- OVERRIDE DISPLAY NAME FROM META.JSON ---
+                            info["raw_product_string"] = info.get("product_string", "")
+                            info["raw_manufacturer_string"] = info.get("manufacturer_string", "")
+                            
+                            if d.get("model"):
+                                info["product_string"] = d.get("model")
+                            if d.get("manufacturer"):
+                                info["manufacturer_string"] = d.get("manufacturer")
+                            if "features" in d:
+                                info["features"] = d.get("features")
+                                
                             break
                     if dev_ids:
                         self._report_ids = dev_ids
@@ -450,6 +494,13 @@ class UPSPoller(threading.Thread):
                 ups.update(infer_tentative_live_values(raw, ups))
                 self._fallback_read_input_voltage(ups)
 
+                # --- OFFLINE 2000D SPECIFIC FIXES ---
+                if "offline" in prod_str or "2000" in prod_str or "ppc" in (self._device_info.get("manufacturer_string") or "").lower():
+                    # (Removed load deadband because it masked actual loads)
+                    
+                    # 2. AVR Status
+                    ups["avr_bypass_active"] = ups.get("boost", False) or ups.get("buck", False)
+
             # อัปเดต state (thread-safe)
             with self._state_lock:
                 self._state = ups
@@ -478,103 +529,16 @@ class UPSPoller(threading.Thread):
 
     def _poll_mec_device(self) -> dict:
         """
-        อ่านค่า MEC0003 (VID=0x0001, PID=0x0000) ผ่าน Win32 Indexed String Descriptor (Q1 Protocol)
+        อ่านค่า MEC0003 (VID=0x0001, PID=0x0000) โดยเรียกใช้ mec_hid_ups
         """
         try:
-            import ctypes
-            from ctypes import wintypes
-            try:
-                from tools.unit.read_mec_ups import get_device_path, parse_q1_string
-            except ImportError:
-                from win32_hid_wrapper import parse_q1_string
-                def get_device_path(): return ""
-
-            GENERIC_READ = 0x80000000
-            GENERIC_WRITE = 0x40000000
-            FILE_SHARE_READ = 0x00000001
-            FILE_SHARE_WRITE = 0x00000002
-            OPEN_EXISTING = 3
-            INVALID_HANDLE_VALUE = -1
-
-            hid_dll = ctypes.windll.hid
-            kernel32_dll = ctypes.windll.kernel32
-
-            CreateFileA = kernel32_dll.CreateFileA
-            CreateFileA.argtypes = [wintypes.LPCSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
-            CreateFileA.restype = wintypes.HANDLE
-
-            CloseHandle = kernel32_dll.CloseHandle
-            CloseHandle.argtypes = [wintypes.HANDLE]
-            CloseHandle.restype = wintypes.BOOL
-
-            HidD_GetIndexedString = hid_dll.HidD_GetIndexedString
-            HidD_GetIndexedString.argtypes = [wintypes.HANDLE, wintypes.ULONG, wintypes.LPVOID, wintypes.ULONG]
-            HidD_GetIndexedString.restype = wintypes.BOOL
-
-            dev_path = self._device_info.get("path_str") or str(self._device_info.get("path") or "")
-            if not dev_path:
-                dev_path = get_device_path()
+            import mec_hid_ups
+            dev_path = self._device_info.get("path_str")
             if not dev_path:
                 return {}
-
-            path_bytes = dev_path.encode("ascii") if isinstance(dev_path, str) else dev_path
-            h_dev = CreateFileA(path_bytes, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, None, OPEN_EXISTING, 0, None)
-            if h_dev == INVALID_HANDLE_VALUE or h_dev == 0 or h_dev == -1:
-                return {}
-
-            try:
-                buf = ctypes.create_unicode_buffer(256)
-                raw_status = ""
-                if HidD_GetIndexedString(h_dev, 3, buf, ctypes.sizeof(buf)):
-                    raw_status = buf.value.strip()
-
-                data = parse_q1_string(raw_status)
-
-                ac_on = data.get("utility_normal", True)
-                v_bat = float(data["battery_voltage"]) if data.get("battery_voltage") else 12.0
-                v_in = float(data["input_voltage"]) if data.get("input_voltage") else 220.0
-                v_out = float(data["output_voltage"]) if data.get("output_voltage") else 220.0
-                freq = float(data["frequency"]) if data.get("frequency") else 50.0
-                load = float(data["load_percent"]) if data.get("load_percent") else 0.0
-
-                batt_pct = round(max(0.0, min(100.0, (v_bat - 10.5) / (13.5 - 10.5) * 100.0)), 1)
-                if batt_pct >= 95.0:
-                    batt_pct = 100.0
-
-                ups = {
-                    "ac_present": ac_on,
-                    "discharging": not ac_on,
-                    "charging": ac_on and batt_pct < 100.0,
-                    "status_good": not data.get("ups_failed", False),
-                    "input.voltage": v_in,
-                    "input_voltage_v": v_in,
-                    "input.frequency": freq,
-                    "input_frequency_hz": freq,
-                    "output.voltage": v_out,
-                    "output_voltage_v": v_out,
-                    "output_frequency_hz": freq,
-                    "percent_load": load,
-                    "ups.load": load,
-                    "battery.charge": batt_pct,
-                    "battery_capacity_percent": batt_pct,
-                    "battery_voltage_v": v_bat,
-                    "battery.runtime": 3600 if batt_pct >= 90 else int(batt_pct * 30),
-                    "battery.runtime.hr": round((3600 if batt_pct >= 90 else int(batt_pct * 30)) / 3600.0, 2),
-                    "ups.status": "OL" if ac_on else "OB",
-                    "ups_mode": f"{'Line Mode (ไฟปกติ)' if ac_on else 'Battery Mode (ไฟดับ!)'} [Line Interactive]{' [Charging]' if ac_on and batt_pct < 100 else ''}",
-                    "ups.topology": "Line-Interactive",
-                    "ups_topology": "Line-Interactive",
-                    "topology_tag": "Line Interactive",
-                    "battery_test_status": "running" if data.get("test_in_progress") else "idle",
-                    "internal_failure": data.get("ups_failed", False),
-                    "need_replacement": False,
-                    "overload": False,
-                    "shutdown_imminent": data.get("shutdown_active", False),
-                    "over_temperature": False,
-                }
-                return ups
-            finally:
-                CloseHandle(h_dev)
+            
+            ups = mec_hid_ups.read_mec_telemetry(dev_path)
+            return ups
         except Exception as _e:
             logger.debug(f"_poll_mec_device error: {_e}")
             return {}
@@ -693,8 +657,8 @@ class UPSPoller(threading.Thread):
                 "endLoad": int(load_curr) if load_curr is not None else self._discharge_record.get("endLoad"),
             })
 
-            # หากมี Error เกิดขึ้นระหว่าง Test ให้มาร์ก testResult = 2 (Error)
-            if ups.get("internal_failure") or ups.get("status_good") is False:
+            # หากมี Error เกิดขึ้นระหว่าง Test หรือแบตเตอรี่เสื่อม ให้มาร์ก testResult = 2 (Error)
+            if ups.get("internal_failure"):
                 self._discharge_record["testResult"] = 2
 
             if not discharging:

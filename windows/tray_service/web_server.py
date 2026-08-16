@@ -236,8 +236,8 @@ class WebServer:
             d = self._poller.get_device_info()
             s = self._poller.get_state()
             return jsonify({
-                "manufacturer":  d.get("manufacturer_string"),
-                "product":       d.get("product_string"),
+                "manufacturer":  d.get("raw_manufacturer_string", d.get("manufacturer_string")),
+                "product":       d.get("raw_product_string", d.get("product_string")),
                 "serial":        d.get("serial_number"),
                 "release":       d.get("release_number"),
                 "firmware":      s.get("ups.firmware"),
@@ -268,10 +268,34 @@ class WebServer:
             sel_pid = self._config.get("pid", 0xFFFF)
             is_connected = self._poller.is_connected() if self._poller else False
 
+            # โหลด meta.json เพื่อ override ชื่อ UPS
+            meta_file = Path(__file__).resolve().parent.parent / "meta.json"
+            mdata = {}
+            if meta_file.exists():
+                try:
+                    import json
+                    mdata = json.loads(meta_file.read_text(encoding="utf-8"))
+                except Exception as exc:
+                    logger.debug(f"Error loading meta.json for UI list: {exc}")
+
             formatted = []
             for dev in devices:
                 dev_path = dev.get("path_str", "")
                 dev_serial = dev.get("serial_number", "")
+                prod_str_raw = (dev.get("product_string") or "").lower()
+                target_vid_hex = f"0x{dev.get('vendor_id', 0):04X}".lower()
+
+                # Override names if matching in meta.json
+                for d in mdata.get("devices", []):
+                    if d.get("vid", "").lower() == target_vid_hex:
+                        match_str = d.get("match_product", "").lower()
+                        if match_str and match_str not in prod_str_raw:
+                            continue
+                        if d.get("model"):
+                            dev["product_string"] = d.get("model")
+                        if d.get("manufacturer"):
+                            dev["manufacturer_string"] = d.get("manufacturer")
+                        break
 
                 is_act = False
                 if is_connected:
@@ -635,9 +659,11 @@ def _sanitize(d: dict) -> dict:
             out[k] = v.decode("utf-8", errors="ignore")
         elif isinstance(v, (int, float, str, bool, type(None))):
             out[k] = v
+        elif isinstance(v, dict):
+            out[k] = _sanitize(v)
         elif isinstance(v, list):
             out[k] = [
-                x.decode("utf-8", errors="ignore") if isinstance(x, (bytes, bytearray)) else x
+                _sanitize(x) if isinstance(x, dict) else (x.decode("utf-8", errors="ignore") if isinstance(x, (bytes, bytearray)) else x)
                 for x in v
             ]
         else:

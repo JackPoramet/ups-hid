@@ -72,7 +72,7 @@ def read_innova_unity() -> None:
         raw_reports, _ = read_all_feature_reports(h, report_ids=report_ids, sizes=(64,), retries=2)
 
         data = decode_feature_reports(raw_reports, device_info=info)
-        data.update(infer_tentative_live_values(raw_reports, data))
+        # Tentative values (fallback) removed to show pure raw data
 
         ac_present = data.get("ac_present", True)
         status_str = data.get("ups.status", "OL" if ac_present else "OB")

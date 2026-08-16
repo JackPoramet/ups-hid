@@ -443,7 +443,99 @@ h.close()
 
 ## ⚡ 11. กฎการแยกค่าฮาร์ดแวร์จริง $V_{in}$ และ $V_{out}$ (Strict Isolation)
 
-1. **ห้ามทำ Fallback คัดลอกค่าระหว่าง $V_{in}$ และ $V_{out}$ เด็ดขาด**:
+1. **ห้ามทำ Fallback คัดลอกค่าระหว่าง $V_{in}$ และ $V_{out}$ แบบสุ่มสี่สุ่มห้าเด็ดขาด**:
    - เมื่อปิดการจ่ายไฟ Output ในโหมด Standby ค่า $V_{out}$ จากฮาร์ดแวร์จริงต้องเป็น **`0.0 V`**
    - ค่า $V_{in}$ จะต้องดึงจากฮาร์ดแวร์จริงผ่าน Report `0x31` (**`231.0 V`**)
-   - ห้ามคัดลอกค่า $V_{in}$ ไปเป็น $V_{out}$ หรือนำค่า $V_{out}$ มาแทนที่ $V_{in}$ เป็นอันขาด
+   - ห้ามคัดลอกค่า $V_{in}$ ไปเป็น $V_{out}$ หรือนำค่า $V_{out}$ มาแทนที่ $V_{in}$ หากไม่ระบุ Topology ชัดเจน
+2. **ข้อยกเว้นสำหรับ True Online UPS (Innova Basic G2 / Innova Unity)**:
+   - บอร์ดของ UPS กลุ่ม **True Online (Double Conversion)** มักมีบั๊กส่งค่า Output Voltage เป็น `0.0V` แม้จะทำงานปกติในโหมด `Line Mode (wm_code=2)`
+   - ระบบ **อนุญาต** ให้ Fallback ดึงแรงดัน $V_{in}$ (จาก libusb0) ไปแสดงผลใน $V_{out}$ ได้ **เฉพาะเมื่อ** เช็คแล้วว่าเป็นรุ่น `True Online` + มีไฟเข้า (AC Present) + `WorkMode` ไม่ใช่ Standby (`wm_code != 1`) เท่านั้น
+   - ส่วนอุปกรณ์ **Offline / Line-Interactive (เช่น 2000D)** จะถูกบังคับข้าม Fallback นี้ เพื่อให้แสดงค่า `0.0V` ตามจริงเวลาที่เครื่องดับ ไม่โดนเขียนทับจนเข้าใจผิด
+
+---
+
+## 🏗️ 12. โครงสร้างสถาปัตยกรรมของ Tray Service
+
+ระบบ **Tray Service** ถูกออกแบบให้ทำงานแบบ Asynchronous และ Multi-threading เพื่อให้สามารถสื่อสารกับฮาร์ดแวร์, เก็บข้อมูลลงฐานข้อมูล, และให้บริการ Web UI ไปพร้อมๆ กันโดยที่หน้าจอไม่ค้าง
+
+1. **Main Thread (UI Thread)**: ทำหน้าที่จัดการ `pystray` (System Tray Icon) บน Windows ซึ่งต้องการ Message Loop บน Main Thread เพื่อแสดงเมนูคลิกขวา (Context Menu) และ Tooltip
+2. **Poller Thread (`poller.py`)**: ทำงานเบื้องหลัง (Background Daemon) โดยจะวนลูปทุกๆ 2 วินาทีเพื่อ:
+   - สแกนหาอุปกรณ์ UPS
+   - อ่านค่าจากฮาร์ดแวร์ด้วย `core_hid_ups.py`
+   - จัดเก็บสถานะลงหน่วยความจำแบบ Thread-safe (`Lock`)
+   - **Auto-Preemption (Device Memory)**: ระบบจะจดจำ `Serial Number` และ `Device Path` ของ UPS ตัวล่าสุดที่ผู้ใช้เลือก หากสาย USB หลุดและเสียบใหม่ Poller จะดึงกลับไปเชื่อมต่ออุปกรณ์นั้นให้อัตโนมัติ
+3. **Flask Server Thread (`web_server.py`)**: รันระบบ Web Dashboard และ REST API บนพอร์ต 48655 โดยรับค่าจาก Poller ส่งเป็น JSON ออกไป
+
+---
+
+## 🛠️ 13. Win32 HID Wrapper (`win32_hid_wrapper.py`)
+
+เนื่องจากไลบรารีมาตรฐานข้ามแพลตฟอร์มอย่าง `hidapi` มีข้อจำกัดในการเข้าถึงอุปกรณ์ระดับลึกบน Windows เราจึงจำเป็นต้องเขียน Wrapper สำหรับเรียก `hid.dll` ของ Windows โดยตรงผ่าน `ctypes`:
+
+- **อ่าน Indexed String Descriptor**: อุปกรณ์ MEC0003 ส่งสถานะผ่าน String Descriptor (ไม่ใช่ Feature Report ธรรมดา) การจะใช้ `HidD_GetIndexedString` ได้ ต้องเปิด Handle ด้วย `CreateFileW` ที่มีสิทธิ์เฉพาะตัว ซึ่ง `hidapi` ทำไม่ได้
+- **หลบการบล็อกของ Driver**: ฮาร์ดแวร์บางตัวมีการบล็อกคำสั่ง `GetFeature` ในระดับ Class Driver การเปิด Handle แบบ `0` (ไม่ขอ Read/Write Access โดยตรง) ทำให้เราสามารถเจาะดึงข้อมูล Feature Report หรือ String ออกมาได้โดยไม่เจอ `Access Denied`
+
+---
+
+## ⏰ 14. วัฏจักรการตั้งเวลาปิดเครื่อง (Auto-Shutdown Lifecycle)
+
+ระบบป้องกันคอมพิวเตอร์ดับแบบกะทันหันทำงานผ่านโมดูล `auto_shutdown.py` มีวงจรการทำงานดังนี้:
+
+1. **Trigger (ไฟดับ)**: เมื่อ Poller ตรวจพบว่า `ac_present == False` ระบบจะเริ่มนับถอยหลัง (Timer) ตามระยะเวลาที่ตั้งไว้ใน Config
+2. **Threshold Trigger (แบตเตอรี่ต่ำ)**: หากระยะเวลา Timer ยังไม่หมด แต่แบตเตอรี่ลดต่ำลงจนถึงจุดวิกฤต (เช่น < 20%) ระบบจะข้าม Timer และเริ่มกระบวนการปิดเครื่องทันที
+3. **Execution**: เมื่อถึงเวลา ระบบจะแจ้งเตือนผู้ใช้ผ่าน Windows Toast Notification และเรียกคำสั่ง `shutdown /s /t 60` ผ่าน OS
+4. **Cancellation (ไฟมา)**: หากไฟหลักกลับมาก่อนที่เครื่องจะดับ ระบบจะสั่งยกเลิก Timer ทั้งหมด และเรียกคำสั่ง `shutdown /a` เพื่อยกเลิกการปิดเครื่อง
+
+---
+
+## 🗄️ 15. ระบบฐานข้อมูลและการล้างข้อมูลอัตโนมัติ (Database Pruning)
+
+ข้อมูลทั้งหมดถูกเก็บลง **SQLite (`database.py`)** เพื่อป้องกันไม่ให้ขนาดไฟล์ใหญ่เกินไป ระบบจึงมีกลไก **Auto-Pruning** ทำงานควบคู่กับ Poller:
+
+- **Telemetry Log**: บันทึกข้อมูล Volts, Load, Battery ทุกๆ 1 นาที หากข้อมูลเก่าเกิน X วัน (ตามที่ตั้งใน Config เช่น 7 วัน) จะถูกลบทิ้ง
+- **Event Log**: บันทึกเหตุการณ์ (ไฟดับ, ไฟมา, UPS ตัดการเชื่อมต่อ) มีจำกัดจำนวน Row สูงสุด หากเกินลิมิต ระบบจะทยอยลบ Row ที่เก่าที่สุดทิ้ง
+- **Discharge History**: ประวัติการคายประจุ (เวลาเริ่ม, เวลาจบ, จำนวนนาทีที่แบตเตอรี่จ่ายไฟ) จะถูกเก็บไว้แยกต่างหากและเรียกดูได้ผ่าน API `/api/v1/history/discharge/list`
+
+---
+
+## 16. USB HID Power Devices Standard Reference (Usage Pages 0x84 & 0x85)
+
+ระบบของเรารองรับและอ้างอิงตามข้อกำหนดมาตรฐาน **USB Serial Bus Usage Tables for HID Power Devices (Release 1.1)** โดยเฉพาะ Usage Page `0x84` (Power Device Page) และ Usage Page `0x85` (Battery System Page)
+
+### 16.1 ตาราง Usage IDs สำคัญและการแมปปิ้งในโปรเจกต์
+
+| Usage Page | Usage ID | Usage Name | ความหมายตามมาตรฐาน USB HID | ค่าที่แมปเข้าสู่ระบบ / REST API |
+|---|---|---|---|---|
+| `0x84` | `0x01` | `iName` | ชื่ออธิบายอุปกรณ์ (String Descriptor Index) | `product_string` |
+| `0x84` | `0x02` | `PresentStatus` | Collection สถานะปัจจุบัน | `ups.status`, `ac_present`, `discharging` |
+| `0x84` | `0x04` | `UPS` | Application Collection สำหรับ UPS | Identified via VID `0x06DA` / PID `0xFFFF` |
+| `0x84` | `0x30` | `Voltage` | แรงดันไฟฟ้า (HID Unit: Volts) | `input.voltage`, `output.voltage`, `battery_voltage_v` |
+| `0x84` | `0x31` | `Current` | กระแสไฟฟ้า (HID Unit: Amperes) | `output_current_a` |
+| `0x84` | `0x32` | `Frequency` | ความถี่ไฟฟ้า (HID Unit: Hertz) | `input.frequency`, `output_frequency_hz` |
+| `0x84` | `0x33` | `ApparentPower` | กำลังไฟฟ้าปรากฏ (HID Unit: VA) | `output_apparent_power_va` |
+| `0x84` | `0x34` | `ActivePower` | กำลังไฟฟ้าจริง (HID Unit: Watts) | `output_active_power_w` |
+| `0x84` | `0x35` | `PercentLoad` | เปอร์เซ็นต์โหลด (HID Unit: %) | `percent_load` |
+| `0x84` | `0x36` | `Temperature` | อุณหภูมิ (HID Unit: Kelvin, แปลงเป็น °C) | `ups.temperature`, `temperature_c` |
+| `0x84` | `0x58` | `Test` | คำสั่งทดสอบแบตเตอรี่ Self-Test Control | Feature Report `0x24` / `_trigger_battery_test()` |
+| `0x85` | `0x44` | `Charging` | สถานะกำลังชาร์จแบตเตอรี่ (Boolean) | `charging` |
+| `0x85` | `0x45` | `Discharging` | สถานะกำลังคายประจุ/จ่ายไฟจากแบตเตอรี่ | `discharging` |
+| `0x85` | `0x66` | `RemainingCapacity` | ความจุแบตเตอรี่ที่เหลืออยู่ (%) | `battery.charge`, `battery_capacity_percent` |
+| `0x85` | `0x68` | `RunTimeToEmpty` | ระยะเวลาจ่ายไฟสำรองที่เหลืออยู่ (วินาที) | `runtime_remaining_sec`, `battery.runtime` |
+
+### 16.2 มาตรฐานรหัส Self-Test Control (Usage 0x84:0x58 / Report 0x24)
+
+มาตรฐาน USB HID Power Devices กำหนดรหัสคำสั่งอ่าน/เขียนการทดสอบแบตเตอรี่ดังนี้:
+
+- **คำสั่งเขียน (Write Values)**:
+  - `0`: No test
+  - `1`: Quick test (ทดสอบแบตเตอรี่ระยะสั้น)
+  - `2`: Deep test (ทดสอบแบตเตอรี่แบบคายประจุลึก)
+  - `3`: Abort test (ยกเลิกการทดสอบ)
+
+- **ค่าอ่าน (Read Values) - มาตรฐานกลาง vs พฤติกรรม PPC 2000D**:
+  - `1`: Done and Passed (มาตรฐาน)
+  - `2`: Done and Warning (มาตรฐาน)
+  - `3`: Done and Error (มาตรฐาน)
+  - `4`: Aborted (มาตรฐาน)
+  - `5`: In progress (มาตรฐาน) **[PPC 2000D Firmware Quirk]**: บอร์ด PPC 2000D ส่งค่า `5` ในระหว่างที่กำลังทดสอบ (Running State)
+  - `6`: No test initiated / Passed **[PPC 2000D Firmware Quirk]**: บอร์ด PPC 2000D ส่งค่า `6` เมื่อ Quick Test สำเร็จ (Passed)

@@ -396,3 +396,33 @@ ups_module/
 ├── demo.py             # CLI Tool สำหรับทดสอบระบบทุกโหมดการทำงาน
 └── requirements.txt    # รายการ Python dependencies (hidapi>=0.14.0, pyusb>=1.2.1)
 ```
+
+---
+
+## 11. USB HID Power Devices Standard Reference (Usage Pages 0x84 & 0x85)
+
+โมดูลนี้รองรับและอ้างอิงตามข้อกำหนดมาตรฐาน **USB Serial Bus Usage Tables for HID Power Devices (Release 1.1)** โดยเฉพาะ Usage Page `0x84` (Power Device Page) และ Usage Page `0x85` (Battery System Page)
+
+### 11.1 ตาราง Usage IDs สำคัญและการแมปปิ้งในโปรเจกต์
+
+| Usage Page | Usage ID | Usage Name | ความหมายตามมาตรฐาน USB HID | ค่าที่แมปเข้าสู่ระบบ / NUT Variable |
+|---|---|---|---|---|
+| `0x84` | `0x01` | `iName` | ชื่ออธิบายอุปกรณ์ (String Descriptor Index) | `device.model` / `ups.model` |
+| `0x84` | `0x02` | `PresentStatus` | Collection สถานะปัจจุบัน | `ups.status`, `ac_present`, `discharging` |
+| `0x84` | `0x04` | `UPS` | Application Collection สำหรับ UPS | Identified via VID `0x06DA` / PID `0xFFFF` |
+| `0x84` | `0x30` | `Voltage` | แรงดันไฟฟ้า (HID Unit: Volts) | `input.voltage`, `output.voltage`, `battery.voltage` |
+| `0x84` | `0x31` | `Current` | กระแสไฟฟ้า (HID Unit: Amperes) | `output.current` |
+| `0x84` | `0x32` | `Frequency` | ความถี่ไฟฟ้า (HID Unit: Hertz) | `input.frequency`, `output.frequency` |
+| `0x84` | `0x33` | `ApparentPower` | กำลังไฟฟ้าปรากฏ (HID Unit: VA) | `output.power.apparent` |
+| `0x84` | `0x34` | `ActivePower` | กำลังไฟฟ้าจริง (HID Unit: Watts) | `output.power` |
+| `0x84` | `0x35` | `PercentLoad` | เปอร์เซ็นต์โหลด (HID Unit: %) | `ups.load` |
+| `0x84` | `0x36` | `Temperature` | อุณหภูมิ (HID Unit: Kelvin, แปลงเป็น °C) | `ups.temperature` |
+| `0x84` | `0x58` | `Test` | คำสั่งทดสอบแบตเตอรี่ Self-Test Control | Feature Report `0x24` / `test.battery.start` |
+| `0x85` | `0x44` | `Charging` | สถานะกำลังชาร์จแบตเตอรี่ (Boolean) | `charging` |
+| `0x85` | `0x45` | `Discharging` | สถานะกำลังคายประจุ/จ่ายไฟจากแบตเตอรี่ | `discharging` |
+| `0x85` | `0x66` | `RemainingCapacity` | ความจุแบตเตอรี่ที่เหลืออยู่ (%) | `battery.charge` |
+| `0x85` | `0x68` | `RunTimeToEmpty` | ระยะเวลาจ่ายไฟสำรองที่เหลืออยู่ (วินาที) | `battery.runtime` |
+
+### 11.2 การจัดการพฤติกรรมเฉพาะ (Firmware Quirks) ของ PPC 2000D
+
+- **Self-Test Status (Report 0x24)**: Standard USB HID PDC กำหนดให้ค่า `5` = Deep Test Failed แต่สำหรับเฟิร์มแวร์บอร์ด PPC 2000D ค่า `5` จะใช้แทนสถานะ **"In Progress / Running"** ในระหว่างรัน Quick Test 8-10 วินาที และเมื่อเทสเสร็จสิ้นจะเปลี่ยนเป็น `6` (Quick Test Passed)

@@ -25,6 +25,69 @@ import hid
 VID = 0x06DA
 PID = 0xFFFF
 
+# ── USB Serial Bus Usage Tables for HID Power Devices (Release 1.1) Reference ──
+HID_POWER_DEVICE_USAGES: Dict[int, str] = {
+    0x01: "iName",
+    0x02: "PresentStatus",
+    0x03: "ChangedStatus",
+    0x04: "UPS",
+    0x10: "BatterySystem",
+    0x12: "Battery",
+    0x14: "Charger",
+    0x16: "PowerConverter",
+    0x18: "OutletSystem",
+    0x1A: "Input",
+    0x1C: "Output",
+    0x1E: "Flow",
+    0x20: "Outlet",
+    0x24: "PowerSummary",
+    0x30: "Voltage",
+    0x31: "Current",
+    0x32: "Frequency",
+    0x33: "ApparentPower",
+    0x34: "ActivePower",
+    0x35: "PercentLoad",
+    0x36: "Temperature",
+    0x40: "ConfigVoltage",
+    0x42: "ConfigFrequency",
+    0x43: "ConfigApparentPower",
+    0x44: "ConfigActivePower",
+    0x58: "Test",
+    0x5A: "AudibleAlarmControl",
+    0x60: "Present",
+    0x61: "Good",
+    0x62: "InternalFailure",
+    0x63: "VoltageOutOfRange",
+    0x64: "FrequencyOutOfRange",
+    0x65: "Overload",
+    0x66: "OverCharged",
+    0x67: "OverTemperature",
+    0x68: "ShutdownRequested",
+    0x69: "ShutdownImminent",
+    0x6B: "SwitchOn/Off",
+    0x6C: "Switchable",
+    0x6D: "Used",
+    0x6E: "Boost",
+    0x6F: "Buck",
+    0x73: "CommunicationLost",
+}
+
+HID_BATTERY_SYSTEM_USAGES: Dict[int, str] = {
+    0x44: "Charging",
+    0x45: "Discharging",
+    0x46: "FullyCharged",
+    0x47: "FullyDischarged",
+    0x66: "RemainingCapacity",
+    0x67: "FullChargeCapacity",
+    0x68: "RunTimeToEmpty",
+    0x80: "BattPackModelLevel",
+    0x83: "DesignCapacity",
+    0x89: "iDeviceChemistry",
+    0xD0: "ACPresent",
+    0xD1: "BatteryPresent",
+    0xD2: "PowerFail",
+}
+
 # ── Windows fallback: อ่าน feature report ผ่าน WinHidApi (bypass HID class driver) ──
 _WIN_HIDAPI: Optional[object] = None
 _WIN_HIDAPI_HANDLE: Optional[object] = None
@@ -802,7 +865,8 @@ def read_all_feature_reports(
                 has_non_zero = True
                 m["source"] = "win_direct"
 
-        if not has_non_zero and not include_zero:
+        # Allow Report 0x42 (Output Power) even if all zeros, to detect OFF state (0V)
+        if not has_non_zero and not include_zero and rid != 0x42:
             continue
 
         raw[rid] = data
@@ -894,19 +958,13 @@ def infer_tentative_live_values(raw: Dict[int, List[int]], decoded: dict) -> dic
     if freq_vals:
         out["tentative.frequency.candidates"] = freq_vals[:8]
         target = float(decoded.get("input.frequency", 50))
-        out["tentative.input.frequency"] = min(freq_vals, key=lambda x: abs(x - target))
-        out["tentative.output.frequency"] = out["tentative.input.frequency"]
+        # Just provide the raw inferred frequency, without assuming it applies to both input and output
+        out["tentative.frequency"] = min(freq_vals, key=lambda x: abs(x - target))
 
     if ac_vals:
         out["tentative.ac.voltage.candidates"] = ac_vals[:10]
-        target = float(decoded.get("output.voltage", 230))
-        out_v = min(ac_vals, key=lambda x: abs(x - target))
-        out["tentative.output.voltage"] = out_v
-
-        remain = [v for v in ac_vals if abs(v - out_v) > 0.05]
-        if remain:
-            target_in = float(decoded.get("input.voltage.nominal", out_v))
-            out["tentative.input.voltage"] = min(remain, key=lambda x: abs(x - target_in))
+        # Just provide the parsed AC voltages as candidates or a generic AC voltage
+        out["tentative.ac.voltage"] = max(ac_vals) if ac_vals else None
 
     if batt_vals:
         out["tentative.battery.voltage.candidates"] = batt_vals[:10]
@@ -1005,12 +1063,17 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[dict
     # Report 0x07: WorkMode / Load / Battery Voltage
     d = payload(0x07)
     if d:
-        if len(d) >= 11:
-            # Long Report 0x07 (Phoenixtec Innova Unity / Basic G2): d[0]=WorkMode, d[1]=Load%, d[9..10]=Vbat
+        if len(d) >= 1:
             work_mode_byte = d[0]
             ups["work_mode_code"] = work_mode_byte
             ups["bypass"] = (work_mode_byte == 2)
+            
+        if len(d) >= 2:
             ups["percent_load"] = d[1]
+            
+        if len(d) >= 11:
+            # Long Report 0x07 (Phoenixtec Innova Unity / Basic G2): d[9..10]=Vbat
+            vbat_calc = round((d[9] | (d[10] << 8)) / 10.0, 1)
             vbat_calc = round((d[9] | (d[10] << 8)) / 10.0, 1)
             if 10.0 <= vbat_calc <= 60.0:
                 ups["battery_voltage_v"] = vbat_calc
@@ -1153,19 +1216,43 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[dict
                 ups["output_voltage_v"] = v_calc
                 ups["output.voltage"] = ups["output_voltage_v"]
 
+    # Infer UPS Topology Type early so we can use it for fallbacks
+    p_str = ((device_info.get("product_string") if device_info else "") or "").lower()
+    prof_str = ((device_info.get("profile_id") if device_info else "") or "").lower()
+    is_true_online = any(k in p_str or k in prof_str for k in ("unity", "basic", "innova", "online", "on-line", "double", "olg2"))
+
+    # PHOENIXTEC libusb Report 0x31 fetch (Moved up here so fallback can use it)
+    if ("input.voltage" not in ups or ups["input.voltage"] is None) or ("input.frequency" not in ups or ups["input.frequency"] is None):
+        real_vin, real_fin = read_winpower_libusb_report_31(
+            vid=ups.get("vendor_id", 0x06DA),
+            pid=ups.get("product_id", 0xFFFF),
+            target_serial=ups.get("serial_number"),
+            target_product=ups.get("product_string"),
+        )
+        if real_vin is not None and real_vin > 0:
+            ups["input.voltage"] = real_vin
+            ups["input_voltage_v"] = real_vin
+        if real_fin is not None and real_fin > 0:
+            ups["input.frequency"] = real_fin
+            ups["input_frequency_hz"] = real_fin
+
     # Output voltage fallback based on WorkMode (Report 0x07)
+    # Applied ONLY if wm_code is explicitly known (Phoenixtec True Online models).
+    # This prevents falsely overwriting offline models (like 2000D) that report 0V when OFF but have no wm_code.
     wm_code = ups.get("work_mode_code")
     if wm_code == 1:
         # Standby Mode (Output turned OFF)
         ups["output_voltage_v"] = 0.0
         ups["output.voltage"] = 0.0
-    elif wm_code in (2, 3, 5) or (ups.get("ac_present", False) and wm_code != 1):
+    elif wm_code in (2, 3, 5) or (is_true_online and ups.get("ac_present", False) and wm_code != 1):
         # Line / Bypass / Test Mode (Output ON from Grid/Inverter)
+        # Also triggers for True Online models if AC is present and not explicitly in Standby (wm=1),
+        # since True Online models (like Innova Basic G2) often fail to report WorkMode or Vout properly.
         if "output_voltage_v" not in ups or ups.get("output_voltage_v", 0.0) == 0.0:
             grid_v = ups.get("input.voltage") or ups.get("input_voltage_v") or 230.0
             ups["output_voltage_v"] = float(grid_v)
             ups["output.voltage"] = ups["output_voltage_v"]
-    elif wm_code == 4 or ups.get("discharging", False):
+    elif wm_code == 4:
         # Battery Mode (Output ON from Inverter)
         if "output_voltage_v" not in ups or ups.get("output_voltage_v", 0.0) == 0.0 or ups.get("output_voltage_v", 0.0) > 350.0:
             ups["output_voltage_v"] = 220.0
@@ -1188,7 +1275,7 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[dict
     bypass = bool(ups.get("bypass", False))
     vout = float(ups.get("output_voltage_v", ups.get("output.voltage", 0.0)) or 0.0)
 
-    if wm_code == 1 or (ac and vout < 50.0):
+    if wm_code == 1 or (ac and vout < 50.0 and wm_code not in (2, 3, 4, 5) and not is_true_online):
         status_parts = ["OFF"]
     elif bypass:
         status_parts = ["BYPASS"]
@@ -1236,10 +1323,7 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[dict
         vout = 0.0
 
     # Infer UPS Topology Type (True Online vs Line-Interactive)
-    p_str = ((device_info.get("product_string") if device_info else "") or "").lower()
-    prof_str = ((device_info.get("profile_id") if device_info else "") or "").lower()
-
-    if any(k in p_str or k in prof_str for k in ("unity", "basic", "innova", "online", "on-line", "double")):
+    if any(k in p_str or k in prof_str for k in ("unity", "basic", "innova", "online", "on-line", "double", "olg2")):
         ups_topology = "True Online (Double Conversion)"
         topology_tag = "True Online"
     else:
@@ -1269,33 +1353,18 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[dict
     # Universal fallback for input/output voltage, frequency, and load keys
     ac_on = bool(ups.get("ac_present", False))
     v_out = ups.get("output_voltage_v") or ups.get("output.voltage")
-    if ("input.voltage" not in ups or ups["input.voltage"] is None):
-        real_vin, real_fin = read_winpower_libusb_report_31(
-            vid=ups.get("vendor_id", 0x06DA),
-            pid=ups.get("product_id", 0xFFFF),
-            target_serial=ups.get("serial_number"),
-            target_product=ups.get("product_string"),
-        )
-        if real_vin is not None and real_vin > 0:
-            ups["input.voltage"] = real_vin
-            if real_fin and ("input.frequency" not in ups or ups["input.frequency"] is None):
-                ups["input.frequency"] = real_fin
-
-
+    
     if "output.voltage" not in ups and v_out:
         ups["output.voltage"] = v_out
     if "output_voltage_v" not in ups and v_out:
         ups["output_voltage_v"] = v_out
 
-    f_val = ups.get("input.frequency") or ups.get("output_frequency_hz") or ups.get("output.frequency") or 50.0
-    if "input.frequency" not in ups:
-        ups["input.frequency"] = f_val
-    if "output.frequency" not in ups:
-        ups["output.frequency"] = f_val
-    if "output_frequency_hz" not in ups:
-        ups["output_frequency_hz"] = f_val
-    if "input_frequency_hz" not in ups:
-        ups["input_frequency_hz"] = f_val
+    # Fallback to copy frequency values only if strictly needed (do not hardcode 50.0)
+    # We will let missing fields remain missing so the UI can handle them properly.
+    if "input.frequency" not in ups and ups.get("input_frequency_hz"):
+        ups["input.frequency"] = ups.get("input_frequency_hz")
+    if "output.frequency" not in ups and ups.get("output_frequency_hz"):
+        ups["output.frequency"] = ups.get("output_frequency_hz")
 
     if "percent_load" not in ups and "ups.load" in ups:
         ups["percent_load"] = ups["ups.load"]

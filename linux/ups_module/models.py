@@ -323,7 +323,7 @@ def ups_data_from_raw(raw: Dict[str, Any]) -> UPSData:
 
         # Output
         output_voltage=_first_present("output.voltage", "output_voltage_v"),
-        output_frequency=_get("output_frequency_hz"),
+        output_frequency=_first_present("output.frequency", "output_frequency_hz"),
         output_current=_get("output_current_a"),
         output_power=_get("output_active_power_w"),
         output_power_apparent=_get("output_apparent_power_va"),

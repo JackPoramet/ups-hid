@@ -12,12 +12,13 @@
 | **Dual-Protocol HID Engine** | รองรับทั้ง **Standard HID Feature Reports** (Phoenixtec / Voltronic `VID=0x06DA`) และ **Megatec Q1 Indexed String Descriptors** (MEC MEC0003 `VID=0x0001`, `PID=0x0000`) |
 | **WinPower G2 Topology Schematics** | ภาพจำลองวงจรไฟฟ้าพลังงานแบบ Real-time ถอดแบบวงจร **WinPower G2** (Line-Interactive และ True Online) ปรับสถานะสีและทิศทางการไหลตามโหมดฮาร์ดแวร์จริง 100% |
 | **Direct USB Control Transfer (`libusb0.dll`)** | ดึงค่าแรงดันไฟเข้า $V_{in}$ (215V–231V) จากฮาร์ดแวร์จริง Phoenixtec (`Innova Unity` / `Innova Basic G2`) ผ่าน Direct USB Control Transfer (`bmRequestType=0xA1, bRequest=0x01, wValue=0x0331`) บน Windows |
-| **Real Hardware Telemetry (No Fallbacks)** | แยกค่าแรงดันไฟเข้า $V_{in}$ และไฟออก $V_{out}$ ตามค่าที่วัดได้จากฮาร์ดแวร์จริง เมื่อปิดการจ่ายไฟ Output ค่า $V_{out}$ แสดงผล `0.0 V` จริงโดยไม่ทำ Fallback |
+| **Real Hardware Telemetry** | แยกค่าแรงดันไฟเข้า $V_{in}$ และไฟออก $V_{out}$ ตามค่าที่วัดได้จากฮาร์ดแวร์จริง เมื่อปิดการจ่ายไฟ Output ค่า $V_{out}$ แสดงผล `0.0 V` จริงโดยไม่ทำ Fallback (ยกเว้นอุปกรณ์กลุ่ม True Online เช่น Innova Basic G2 ที่มีระบบ Topology-Aware Fallback ซ่อมแซมค่า 0.0V ผิดปกติในขณะเปิดเครื่อง) |
 | **PPC Offline 2000D Support** | แกะโครงสร้าง Report `0x07` แบบสั้น ($\le 4$ bytes) และ Report `0x31` แบบ 2 bytes แสดงระดับโหลด (%) และ $V_{in}$ ตรงตามฮาร์ดแวร์จริง |
 | **System Tray** | ทำงานเบื้องหลัง ไอคอนเปลี่ยนสีตามสถานะ UPS |
 | **Web Dashboard** | แสดงสถานะ UPS real-time ผ่าน `localhost:48655` |
 | **UPS Device Selection** | เมนูสแกนและเลือกอุปกรณ์ UPS USB HID (รองรับ VID `0x06DA` และ `0x0001` MEC0003) |
 | **Persistent Device Memory** | ระบบจดจำอุปกรณ์ล่าสุด (`selected_device_serial` / `selected_device_path`) และสลับการเชื่อมต่อให้อัตโนมัติเมื่ออุปกรณ์นั้นกลับมาออนไลน์ (Auto-Preemption) |
+| **Battery Self-Test & Control** | สั่งทดสอบแบตเตอรี่ (Quick Test / Deep Test) และสั่งปิดการจ่ายไฟ (Output Shutdown) ได้โดยตรงผ่าน Tray Menu และ Web Dashboard พร้อมระบบ Monitor ผลลัพธ์เบื้องหลัง |
 | **Estimated Battery Runtime** | คำนวณเวลาสำรองไฟคงเหลืออัตโนมัติตามระดับแบตเตอรี่และโหลด (%) |
 | **Disconnected State Handling** | แสดงผลแจ้งเตือนและสถานะ "ไม่ได้เชื่อมต่ออุปกรณ์ UPS" ชัดเจนบน Dashboard เมื่อไม่ได้เสียบสาย USB หรืออุปกรณ์ไม่ออนไลน์ |
 | **SQLite Persistent Log** | บันทึกประวัติสถานะ (Telemetry) และเหตุการณ์ (Event Logs) ในฐานข้อมูล SQLite พร้อมกราฟย้อนหลัง |
@@ -163,6 +164,7 @@ python -X utf8 windows/tray_service/main.py
 |--------|-----|----------|
 | `GET` | `/api/history?hours=24` | ดึงประวัติ Telemetry ย้อนหลังสำหรับกราฟ |
 | `GET` | `/api/events?limit=50` | ดึงรายการ Event Logs ย้อนหลัง |
+| `GET` | `/api/v1/history/discharge/list` | ดึงประวัติการคายประจุแบตเตอรี่ (Battery Discharge History) |
 | `POST` | `/api/database/clear` | ล้างข้อมูลในฐานข้อมูล SQLite |
 
 ### Config & Control
@@ -198,3 +200,12 @@ python -X utf8 windows/tray_service/main.py
 | `shutdown_battery_threshold` | int | `20` | ปิด PC เมื่อแบตเหลือ < N% |
 | `notifications_enabled` | bool | `true` | เปิด/ปิด Notifications ทั้งหมด |
 | `startup_with_windows` | bool | `true` | เปิดทำงานอัตโนมัติพร้อม Windows |
+
+---
+
+## Specification Standards
+
+โปรเจกต์นี้ได้รับการออกแบบและแมปปิ้งโครงสร้างตามข้อกำหนดมาตรฐาน **USB Serial Bus Usage Tables for HID Power Devices (Release 1.1)**:
+- **Power Device Page (`0x84`)**: อ้างอิงและแมปปิ้งค่า Voltage (`0x30`), Current (`0x31`), Frequency (`0x32`), ApparentPower (`0x33`), ActivePower (`0x34`), PercentLoad (`0x35`), Temperature (`0x36`) และ Test (`0x58`)
+- **Battery System Page (`0x85`)**: อ้างอิงและแมปปิ้งค่า Charging (`0x44`), Discharging (`0x45`), RemainingCapacity (`0x66`) และ RunTimeToEmpty (`0x68`)
+- **PHOENIXTEC Mandatory Exception Rule**: อ่านค่า $V_{in}$ ผ่าน direct USB control transfer (`read_winpower_libusb_report_31()`) เพื่อบายพาสการบล็อกของ Windows HID Class Driver ตามมาตรฐาน WinPower G2

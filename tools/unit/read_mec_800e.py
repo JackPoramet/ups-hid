@@ -26,7 +26,7 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
-from tools.read_mec_ups import read_ups_data as read_mec_once
+from tools.unit.read_mec_ups import read_ups_data as read_mec_once
 
 
 def read_mec_800e() -> None:

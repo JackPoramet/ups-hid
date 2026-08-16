@@ -319,7 +319,7 @@ def send_universal_battery_test_command(h: Any, target: dict, cmd_type: str) -> 
     # 1. ส่ง Feature Report ID 0x24 (Power Device > Test) ขนาด 8 บิต ผ่าน hidapi handle ก่อนเสมอ (ทำงาน 100% บน PPC 2000D)
     for rid in (0x24, 0x01, 0x03, 0x07):
         try:
-            payload_8 = [rid, code, 0, 0, 0, 0, 0, 0]
+            payload_8 = bytes([rid, code, 0, 0, 0, 0, 0, 0])
             h.send_feature_report(payload_8)
             return True, f"ส่งคำสั่ง {desc} สำเร็จผ่าน HID Feature Report ID 0x{rid:02X} (8-byte PDC Spec)"
         except Exception:

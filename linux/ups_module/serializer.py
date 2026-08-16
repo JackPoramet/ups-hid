@@ -48,6 +48,7 @@ def build_response_envelope(
             "model": model,
             "serial": serial,
             "type": "ups",
+            "features": device.get("features", {}),
         },
         "ups": ups,
         "meta": {

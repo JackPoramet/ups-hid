@@ -30,6 +30,68 @@ _default_profile = _registry.get_default()
 VID = _default_profile.vid
 PID = _default_profile.pid
 
+# ── USB Serial Bus Usage Tables for HID Power Devices (Release 1.1) Reference ──
+HID_POWER_DEVICE_USAGES: Dict[int, str] = {
+    0x01: "iName",
+    0x02: "PresentStatus",
+    0x03: "ChangedStatus",
+    0x04: "UPS",
+    0x10: "BatterySystem",
+    0x12: "Battery",
+    0x14: "Charger",
+    0x16: "PowerConverter",
+    0x18: "OutletSystem",
+    0x1A: "Input",
+    0x1C: "Output",
+    0x1E: "Flow",
+    0x20: "Outlet",
+    0x24: "PowerSummary",
+    0x30: "Voltage",
+    0x31: "Current",
+    0x32: "Frequency",
+    0x33: "ApparentPower",
+    0x34: "ActivePower",
+    0x35: "PercentLoad",
+    0x36: "Temperature",
+    0x40: "ConfigVoltage",
+    0x42: "ConfigFrequency",
+    0x43: "ConfigApparentPower",
+    0x44: "ConfigActivePower",
+    0x58: "Test",
+    0x5A: "AudibleAlarmControl",
+    0x60: "Present",
+    0x61: "Good",
+    0x62: "InternalFailure",
+    0x63: "VoltageOutOfRange",
+    0x64: "FrequencyOutOfRange",
+    0x65: "Overload",
+    0x66: "OverCharged",
+    0x67: "OverTemperature",
+    0x68: "ShutdownRequested",
+    0x69: "ShutdownImminent",
+    0x6B: "SwitchOn/Off",
+    0x6C: "Switchable",
+    0x6D: "Used",
+    0x6E: "Boost",
+    0x6F: "Buck",
+    0x73: "CommunicationLost",
+}
+
+HID_BATTERY_SYSTEM_USAGES: Dict[int, str] = {
+    0x44: "Charging",
+    0x45: "Discharging",
+    0x46: "FullyCharged",
+    0x47: "FullyDischarged",
+    0x66: "RemainingCapacity",
+    0x67: "FullChargeCapacity",
+    0x68: "RunTimeToEmpty",
+    0x80: "BattPackModelLevel",
+    0x83: "DesignCapacity",
+    0x89: "iDeviceChemistry",
+    0xD0: "ACPresent",
+    0xD1: "BatteryPresent",
+    0xD2: "PowerFail",
+}
 
 DEFAULT_REPORT_SIZES = (64,)
 
@@ -516,7 +578,7 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
         ups["converter_mode"] = d[0]
 
 
-    # Report 0x06: battery capacity + runtime (u32)
+    # Report 0x06: battery capacity + runtime (u32 or u16)
     d = payload(0x06)
     if d:
         if len(d) >= 1:
@@ -527,39 +589,68 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
             ups["runtime_remaining_sec"] = rt_s
             ups["battery.runtime"] = rt_s
             ups["battery.runtime.hr"] = round(rt_s / 3600.0, 2)
+        elif len(d) >= 3:
+            rt_s = d[1] | (d[2] << 8)
+            ups["runtime_remaining_sec"] = rt_s
+            ups["battery.runtime"] = rt_s
+            ups["battery.runtime.hr"] = round(rt_s / 3600.0, 2)
 
-    # Report 0x07: WorkMode Enum (d[0]) / percent load (d[1]) / temperature / battery voltage
+    # Report 0x07: WorkMode / Load / Temperature / Battery Voltage
     d = payload(0x07)
     if d:
         if len(d) >= 1:
-            # d[0] is hardware WorkMode Enum: 1=Standby, 2=Bypass, 3=Line(Online), 4=OnBattery, 5=Test
             work_mode_byte = d[0]
             ups["work_mode_code"] = work_mode_byte
             ups["bypass"] = (work_mode_byte == 2)
 
-        if len(d) >= 2:
+        if len(d) >= 11:
+            # Long Report 0x07 (Innova Unity / Basic G2)
             load = d[1]
-            if device_info and "offline" in (device_info.get("product_string") or "").lower():
-                if load <= 25: # Sensor noise deadband for Offline UPS
-                    load = 0
             ups["percent_load"] = load
             ups["ups.load"] = load
 
-        if len(d) >= 5:
             temp_k = d[3] | (d[4] << 8)
-            if temp_k > 0:
+            vbat_calc = round((d[9] | (d[10] << 8)) / 10.0, 1)
+
+            if temp_k == 0:
+                # Innova Basic G2: Temperature sensor is at d[9..10] (Kelvin), Vbat is at d[11..12]
+                alt_temp = d[9] | (d[10] << 8)
+                if 273 <= alt_temp <= 373:
+                    temp_k = alt_temp
+                    if len(d) >= 13:
+                        vbat_raw = d[11] | (d[12] << 8)
+                        if 100 <= vbat_raw <= 600:
+                            vbat_calc = round(vbat_raw / 10.0, 1)
+
+            if 273 <= temp_k <= 373:
                 ups["temperature_c"] = round(temp_k - 273.15, 1)
                 ups["ups.temperature"] = ups["temperature_c"]
 
-        if len(d) >= 11:
-            ups["battery_voltage_v"] = round((d[9] | (d[10] << 8)) / 10.0, 1)
+            if 10.0 <= vbat_calc <= 60.0:
+                ups["battery_voltage_v"] = vbat_calc
+                ups["battery.voltage"] = vbat_calc
 
-        if len(d) >= 5:
             ups["r07_w0"] = d[0] | (d[1] << 8)
             ups["r07_b2"] = d[2] if len(d) > 2 else 0
             ups["r07_w3"] = d[3] | (d[4] << 8)
-            if len(d) >= 11:
-                ups["r07_w9"] = d[9] | (d[10] << 8)
+            ups["r07_w9"] = d[9] | (d[10] << 8)
+
+        elif len(d) >= 3:
+            # Short Report 0x07 (PPC Offline UPS 2000D): d[0]=Load%, d[1..2]=Vbat (0.1V)
+            load = d[0]
+            if device_info and "offline" in (device_info.get("product_string") or "").lower():
+                if load <= 25:
+                    load = 0
+            ups["percent_load"] = load
+            ups["ups.load"] = load
+            v_bat_raw = d[1] | (d[2] << 8)
+            if 100 <= v_bat_raw <= 600:
+                ups["battery_voltage_v"] = round(v_bat_raw / 10.0, 1)
+                ups["battery.voltage"] = ups["battery_voltage_v"]
+        elif len(d) >= 2:
+            load = d[1]
+            ups["percent_load"] = load
+            ups["ups.load"] = load
 
     d = payload(0x08)
     if d and len(d) >= 1:
@@ -626,6 +717,12 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
         else:
             ups["input.transfer.low"] = d[0] | (d[1] << 8)
 
+    # Report 0x2D: Boost / Buck status for Line-Interactive AVR
+    d = payload(0x2D)
+    if d and len(d) >= 2:
+        ups["boost"] = (d[0] != 0)
+        ups["buck"] = (d[1] != 0)
+
     d = payload(0x25)
     if d and len(d) >= 3:
         # เก็บไว้เป็น runtime สำรอง (บาง firmware ใช้รายงานนี้)
@@ -641,10 +738,6 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
             ups["ups.firmware"] = f"{d[0]}.{d[1]}.{d[2]}"
 
     # Report 0x24: Self-test status
-    # ยืนยันจากการทดสอบจริง (usbmon + python polling):
-    #   0x01 = Idle / Passed (before & after successful test)
-    #   0x05 = Test in progress (~10 seconds)
-    #   0x04 = Failed (hypothesis, ไม่สามารถยืนยันได้โดยไม่มีแบตเตอรี่เสีย)
     d = payload(0x24)
     if d and len(d) >= 1:
         val = d[0]
@@ -658,33 +751,49 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
             0x06: "passed",
         }.get(val, f"unknown(0x{val:02X})")
 
-    # Report 0x27: Status flags (ยืนยันจาก usbmon — d[3] เปลี่ยนระหว่าง self-test)
+    # Report 0x27: Status flags
     d = payload(0x27)
     if d and len(d) >= 4:
         ups["test_discharge_active"] = bool(d[3])
 
     # Report 0x42: output power meter
     d = payload(0x42)
-    if d and len(d) >= 14:
-        model = ""
-        if device_info:
-            model = (device_info.get("product_string") or "").lower()
+    if d:
+        if len(d) >= 14:
+            model = ""
+            if device_info:
+                model = (device_info.get("product_string") or "").lower()
 
-        if "basic" in model or "g2" in model:
-            # InnovaBasicG2 uses Big-Endian encoding
-            ups["output_active_power_w"] = (d[4] << 8) | d[5]
-            ups["output_apparent_power_va"] = (d[6] << 8) | d[7]
-            ups["output_current_a"] = round(((d[8] << 8) | d[9]) / 10.0, 1)
-            ups["output_frequency_hz"] = round(((d[10] << 8) | d[11]) / 10.0, 1)
-            ups["output_voltage_v"] = round(((d[12] << 8) | d[13]) / 10.0, 1)
-        else:
-            ups["output_active_power_w"] = d[4] | (d[5] << 8)
-            ups["output_apparent_power_va"] = d[6] | (d[7] << 8)
-            ups["output_current_a"] = round((d[8] | (d[9] << 8)) / 10.0, 1)
-            ups["output_frequency_hz"] = round((d[10] | (d[11] << 8)) / 10.0, 1)
-            ups["output_voltage_v"] = round((d[12] | (d[13] << 8)) / 10.0, 1)
-            
-        ups["output.voltage"] = ups["output_voltage_v"]
+            if "basic" in model or "g2" in model:
+                # InnovaBasicG2 uses Big-Endian encoding
+                ups["output_active_power_w"] = (d[4] << 8) | d[5]
+                ups["output_apparent_power_va"] = (d[6] << 8) | d[7]
+                ups["output_current_a"] = round(((d[8] << 8) | d[9]) / 10.0, 1)
+                ups["output_frequency_hz"] = round(((d[10] << 8) | d[11]) / 10.0, 1)
+                ups["output_voltage_v"] = round(((d[12] << 8) | d[13]) / 10.0, 1)
+            else:
+                ups["output_active_power_w"] = d[4] | (d[5] << 8)
+                ups["output_apparent_power_va"] = d[6] | (d[7] << 8)
+                ups["output_current_a"] = round((d[8] | (d[9] << 8)) / 10.0, 1)
+                ups["output_frequency_hz"] = round((d[10] | (d[11] << 8)) / 10.0, 1)
+                ups["output_voltage_v"] = round((d[12] | (d[13] << 8)) / 10.0, 1)
+                
+            ups["output.voltage"] = ups["output_voltage_v"]
+            ups["output.frequency"] = ups["output_frequency_hz"]
+            ups["output.current"] = ups["output_current_a"]
+        elif len(d) >= 4:
+            # Short Report 0x42 (e.g. Offline UPS 2000D: d[0..1]=Freq 0.1Hz, d[2..3]=Vout)
+            freq_raw = d[0] | (d[1] << 8)
+            volt_raw = d[2] | (d[3] << 8)
+            if 0 < freq_raw < 1000:
+                ups["output_frequency_hz"] = round(freq_raw / 10.0, 1)
+                ups["output.frequency"] = ups["output_frequency_hz"]
+            v_calc = round(volt_raw / 10.0, 1) if volt_raw > 300 else float(volt_raw)
+            if v_calc > 350:
+                v_calc = round(v_calc / 10.0, 1)
+            if 0.0 <= v_calc <= 350.0:
+                ups["output_voltage_v"] = v_calc
+                ups["output.voltage"] = ups["output_voltage_v"]
 
     # Compose NUT-like status string only when the authoritative status report
     # was read. Missing HID data must remain unknown, never become "OB".
@@ -694,14 +803,20 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
         below_capacity = bool(ups.get("below_capacity_limit", False))
         overload = bool(ups.get("overload", False))
         bypass = bool(ups.get("bypass", False))
+        boost = bool(ups.get("boost", False))
+        buck = bool(ups.get("buck", False))
         vout = float(ups.get("output_voltage_v", ups.get("output.voltage", 0.0)) or 0.0)
 
-        if ac and vout < 50.0:
+        if ac and vout < 50.0 and not (boost or buck):
             status_parts = ["OFF"]
         elif bypass:
             status_parts = ["BYPASS"]
         elif ac:
             status_parts = ["OL"]
+            if boost:
+                status_parts.append("BOOST")
+            elif buck:
+                status_parts.append("TRIM")
         else:
             status_parts = ["OB"]
 

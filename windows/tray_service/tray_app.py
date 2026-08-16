@@ -256,10 +256,13 @@ class TrayApp:
 
                 def _on_done(result):
                     if result["completed"]:
-                        logger.info(
-                            f"✅ Battery test completed in {result['elapsed_s']}s: "
-                            f"{result['result_name']} | batt={result['battery_pct']}%"
-                        )
+                        msg = f"Battery test completed: {result['result_name']} | batt={result['battery_pct']}%"
+                        logger.info(f"✅ {msg}")
+                        if self._icon and hasattr(self._icon, 'notify'):
+                            try:
+                                self._icon.notify(msg, "UPS Battery Test")
+                            except Exception:
+                                pass
                     else:
                         logger.warning(
                             f"⏰ Battery test monitor timeout: {result['result_name']}"
@@ -285,11 +288,6 @@ class TrayApp:
         return Menu(
             item("Open Web UI",      self._open_web_ui, default=True),
             item("Select UPS Device", Menu(lambda: self._build_device_menu())),
-            item("Battery Self-Test", Menu(
-                item("⚡ Quick Test (10s)", lambda icon, item_obj: self._trigger_battery_test("quick")),
-                item("🔋 Deep Discharge Test", lambda icon, item_obj: self._trigger_battery_test("deep")),
-                item("🚫 Cancel Test", lambda icon, item_obj: self._trigger_battery_test("cancel")),
-            )),
             item("Exit",              self._exit),
         )
 
@@ -431,14 +429,23 @@ def _interpret_state(state: dict, device_info: Optional[dict] = None) -> tuple[s
     overload     = state.get("overload")
     shutdown_imm = state.get("shutdown_imminent")
     ups_status   = str(state.get("ups.status") or "")
+    ups_failed   = state.get("internal_failure") or state.get("ups_failed")
+
+    # Determine if we should show certain metrics based on features
+    features = device_info.get("features", {}) if device_info else {}
+    has_active_power = features.get("has_active_power", True)
 
     # Build rich tooltip
     parts = [f"UPS Monitor ({dev_name})"]
+    
+    if ups_failed:
+        parts.append("⚠ FAULT")
+        
     if charge is not None:
         parts.append(f"Batt: {charge:.0f}%")
     if load is not None and load > 0:
         parts.append(f"Load: {load:.0f}%")
-    if power_w is not None and power_w > 0:
+    if has_active_power and power_w is not None and power_w > 0:
         parts.append(f"{power_w:.0f}W")
     elif vout is not None and vout > 0:
         parts.append(f"{vout:.0f}V")
@@ -447,7 +454,7 @@ def _interpret_state(state: dict, device_info: Optional[dict] = None) -> tuple[s
         parts.append(f"~{mins}m")
 
     # Determine status
-    if shutdown_imm or overload:
+    if shutdown_imm or overload or ups_failed:
         return "critical", " | ".join(parts) + " [CRITICAL]"
     if "OFF" in ups_status:
         return "disconnected", " | ".join(parts) + " — Standby (Output Off)"

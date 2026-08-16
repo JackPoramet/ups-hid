@@ -148,18 +148,28 @@ def read_ups_data():
         print(f"   Rating Specs: {rating_str}")
     print(f"   Raw String  : {raw_status}\n")
 
-    print("📊 Real-Time UPS Telemetry:")
-    print("  • UPS Topology        : Line-Interactive")
-    print(f"  • Input Voltage       : {data['input_voltage']} V")
-    print(f"  • Output Voltage      : {data['output_voltage']} V")
-    print(f"  • Line Frequency      : {data['frequency']} Hz")
-    print(f"  • Battery Voltage     : {data['battery_voltage']} V")
-    print(f"  • Load Level          : {data['load_percent']} %")
-    print(f"  • Utility Power (AC)  : {'Normal (AC Connected)' if data['utility_normal'] else 'Fail / Battery Mode'}")
-    print(f"  • Battery Low Status  : {'YES (Low Battery!)' if data['battery_low'] else 'No (Battery OK)'}")
-    print(f"  • Shutdown Active     : {'Active' if data['shutdown_active'] else 'Inactive'}")
-    print(f"  • Test In Progress    : {'Yes' if data['test_in_progress'] else 'No'}")
-    print("=" * 75)
+    print("=" * 76)
+    print(" 📊 Real-Time Telemetry (MEC MEC0003)")
+    print("=" * 76)
+    op_mode = "Line Mode (ไฟปกติ) [Line Interactive] [OL]" if data["utility_normal"] else "Battery Mode (ไฟดับ) [Line Interactive] [OB]"
+    print(f"  • Operating Mode     : {op_mode}")
+    print(f"  • Input Voltage      : {data['input_voltage']} V")
+    if data['fault_voltage'] != "000.0":
+        print(f"  • Fault Voltage      : {data['fault_voltage']} V")
+    print(f"  • Input Frequency    : {data['frequency']} Hz")
+    print(f"  • Output Voltage     : {data['output_voltage']} V")
+    
+    # Do not fallback to input frequency if output is off
+    out_freq = "0.0" if data['output_voltage'] == "000.0" else data['frequency']
+    print(f"  • Output Frequency   : {out_freq} Hz")
+    print(f"  • Load Level         : {data['load_percent']} %")
+    print(f"  • Battery Charge     : {'Low' if data['battery_low'] else 'Normal'}")
+    print(f"  • Battery Voltage    : {data['battery_voltage']} V")
+    if data['temperature'] != "--.-":
+        print(f"  • Temperature        : {data['temperature']} °C")
+    print(f"  • Bypass / AVR       : {'Active' if data['bypass_active'] else 'Inactive'}")
+    print(f"  • UPS Failed         : {'Yes (Fault!)' if data['ups_failed'] else 'No'}")
+    print("=" * 76)
 
     CloseHandle(h_dev)
 

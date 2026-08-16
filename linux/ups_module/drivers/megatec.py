@@ -33,7 +33,13 @@ class MegatecQ1Driver:
                     data["output.voltage"] = float(parts[2])
                     data["ups.load"] = float(parts[3])
                     data["input.frequency"] = float(parts[4])
-                    data["battery.voltage"] = float(parts[5])
+                    v_bat = float(parts[5])
+                    data["battery.voltage"] = v_bat
+                    
+                    # Estimate battery charge percentage via linear interpolation
+                    batt_pct = round(max(0.0, min(100.0, (v_bat - 10.5) / (13.5 - 10.5) * 100.0)), 1)
+                    if batt_pct >= 95.0:
+                        batt_pct = 100.0
                     
                     if parts[6] != "--.-":
                         data["ups.temperature"] = float(parts[6])
@@ -49,6 +55,8 @@ class MegatecQ1Driver:
                             
                         if status_bits[1] == '1':
                             status_list.append("LB")
+                            if batt_pct > 20.0:
+                                batt_pct = 15.0
                             
                         if status_bits[2] == '1':
                             status_list.append("BYPASS")
@@ -59,6 +67,7 @@ class MegatecQ1Driver:
                         if status_bits[5] == '1':
                             status_list.append("CAL")
                             
+                    data["battery.charge"] = batt_pct
                     data["ups.status"] = " ".join(status_list) if status_list else "WAIT"
                 except ValueError as ve:
                     logger.warning(f"Failed to parse telemetry parts: {ve}")

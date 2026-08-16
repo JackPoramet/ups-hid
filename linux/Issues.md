@@ -30,7 +30,7 @@
 cd /opt/enerex-ups
 
 # 2. รันสคริปต์สแกนข้อมูลดิบ
-sudo python3 -m ups_module.client
+sudo python3 -m ups_module.core
 ```
 
 ### ข้อมูลที่ต้องการ

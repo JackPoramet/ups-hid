@@ -52,6 +52,7 @@ class DeviceProfile:
     pid: int
     protocol: str = "phoenixtec_hid"
     report_ids: List[int] = field(default_factory=list)
+    features: dict = field(default_factory=dict)
     notes: str = ""
 
     @classmethod
@@ -65,6 +66,7 @@ class DeviceProfile:
             pid=int(d["pid"], 0),
             protocol=d.get("protocol", "phoenixtec_hid"),
             report_ids=[int(r, 0) for r in d.get("report_ids", [])],
+            features=d.get("features", {}),
             notes=d.get("notes", ""),
         )
 

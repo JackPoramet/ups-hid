@@ -19,7 +19,7 @@ PHOENIXTEC_VID = 0x06DA
 PHOENIXTEC_PID = 0xFFFF
 
 # Polling interval
-POLL_INTERVAL = 2
+POLL_INTERVAL = 1
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 

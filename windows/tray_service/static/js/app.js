@@ -469,14 +469,14 @@ function updateDeviceInfo(device = {}, ups = {}) {
     const capContainer = document.getElementById('dev-capabilities-matrix');
     if (capContainer) {
         const matrix = [
-            { name: 'Active Power Meter (W)', ok: features.has_active_power !== false },
-            { name: 'Apparent Power Meter (VA)', ok: features.has_apparent_power !== false },
-            { name: 'Output Current Meter (A)', ok: features.has_output_current !== false },
-            { name: 'Internal Temperature Sensor (°C)', ok: features.has_temperature !== false },
-            { name: 'RTC Real-Time Clock Sync', ok: features.has_rtc_time_sync !== false },
-            { name: 'Battery Self-Test Control', ok: features.has_battery_test !== false },
-            { name: 'Output Power Shutdown Control', ok: features.has_output_control !== false },
-            { name: 'Nominal Ratings Telemetry', ok: features.has_nominal_ratings !== false },
+            { name: 'Active Power Meter (W)', ok: features.has_active_power === true },
+            { name: 'Apparent Power Meter (VA)', ok: features.has_apparent_power === true },
+            { name: 'Output Current Meter (A)', ok: features.has_output_current === true },
+            { name: 'Internal Temperature Sensor (°C)', ok: features.has_temperature === true },
+            { name: 'RTC Real-Time Clock Sync', ok: features.has_rtc_time_sync === true },
+            { name: 'Battery Self-Test Control', ok: features.has_battery_test === true },
+            { name: 'Output Power Shutdown Control', ok: features.has_output_control === true },
+            { name: 'Nominal Ratings Telemetry', ok: features.has_nominal_ratings === true },
         ];
 
         capContainer.innerHTML = matrix.map(m => `
@@ -1306,7 +1306,7 @@ function renderDeviceList(container, devices) {
                         <span class="material-symbols-outlined">${iconName}</span>
                     </div>
                     <div class="device-card__title-wrap">
-                        <div class="device-card__title">${escapeHtml(manufacturer)} — ${escapeHtml(product)}</div>
+                        <div class="device-card__title">${escapeHtml(product)}</div>
                         <div class="device-card__subtitle">${badgeHtml}</div>
                     </div>
                 </div>
