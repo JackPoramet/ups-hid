@@ -688,11 +688,14 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
         if device_info:
             model = (device_info.get("product_string") or "").lower()
 
-        if "offline" in model or "2000" in model:
-            # Offline UPS 2000D: 0x31 is only 2 bytes containing Voltage at d[0..1]
+        if "offline" in model or "2000" in model or len(d) == 2:
+            # Offline UPS 2000D: 0x31 is 2 bytes containing Voltage at d[0..1]
             if len(d) >= 2:
                 volt_raw = d[0] | (d[1] << 8)
-                ups["input.voltage"] = round(volt_raw / 10.0, 1)
+                if volt_raw >= 1000:
+                    ups["input.voltage"] = round(volt_raw / 10.0, 1)
+                elif 100 <= volt_raw <= 350:
+                    ups["input.voltage"] = float(volt_raw)
         elif "basic" in model or "g2" in model:
             if len(d) >= 4:
                 # InnovaBasicG2: 0x31 uses Big-Endian encoding
@@ -700,7 +703,10 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
                 volt_raw = (d[2] << 8) | d[3]
                 if 400 <= freq_raw <= 700:
                     ups["input.frequency"] = round(freq_raw / 10.0, 1)
-                ups["input.voltage"] = round(volt_raw / 10.0, 1)
+                if volt_raw >= 1000:
+                    ups["input.voltage"] = round(volt_raw / 10.0, 1)
+                elif 100 <= volt_raw <= 350:
+                    ups["input.voltage"] = float(volt_raw)
         else:
             if len(d) >= 4:
                 # Default (Innova Unity): Little-Endian
@@ -708,7 +714,10 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
                 volt_raw = d[2] | (d[3] << 8)
                 if 400 <= freq_raw <= 700:
                     ups["input.frequency"] = round(freq_raw / 10.0, 1)
-                ups["input.voltage"] = round(volt_raw / 10.0, 1)
+                if volt_raw >= 1000:
+                    ups["input.voltage"] = round(volt_raw / 10.0, 1)
+                elif 100 <= volt_raw <= 350:
+                    ups["input.voltage"] = float(volt_raw)
 
     d = payload(0x17)
     if d and len(d) >= 2:
@@ -803,6 +812,15 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
     # Compose NUT-like status string only when the authoritative status report
     # was read. Missing HID data must remain unknown, never become "OB".
     if has_status_report:
+        # Consolidate ac_present & discharging against input voltage
+        vin_val = float(ups.get("input.voltage", 0.0) or 0.0)
+        if vin_val >= 50.0:
+            ups["ac_present"] = True
+            ups["discharging"] = False
+        elif 0 < vin_val < 50.0:
+            ups["ac_present"] = False
+            ups["discharging"] = True
+
         ac = bool(ups.get("ac_present", False))
         discharging = bool(ups.get("discharging", False))
         below_capacity = bool(ups.get("below_capacity_limit", False))
@@ -825,7 +843,7 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
         else:
             status_parts = ["OB"]
 
-        if discharging:
+        if discharging and not ac:
             status_parts.append("DISCHRG")
         if below_capacity:
             status_parts.append("LB")
