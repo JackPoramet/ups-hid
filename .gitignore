@@ -47,3 +47,6 @@ OrangePiZero/etc/
 OrangePiZero/var/
 windows/
 *.rar
+
+linux/datapoll.txt
+data.txt

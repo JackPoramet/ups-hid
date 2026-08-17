@@ -603,24 +603,40 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
             ups["work_mode_code"] = work_mode_byte
             ups["bypass"] = (work_mode_byte == 2)
 
-        if len(d) >= 11:
-            # Long Report 0x07 (Innova Unity / Basic G2)
+        model = ""
+        if device_info:
+            model = (device_info.get("product_string") or "").lower()
+
+        if "basic" in model or "g2" in model:
+            # InnovaBasicG2 (per HID Descriptor):
+            # d[7] = PercentLoad, d[9..10] = Temperature (Kelvin), d[15..16] or d[11..12] = Battery Voltage
+            if len(d) >= 8:
+                load = d[7]
+                ups["percent_load"] = load
+                ups["ups.load"] = load
+            if len(d) >= 11:
+                temp_k = d[9] | (d[10] << 8)
+                if 273 <= temp_k <= 373:
+                    ups["temperature_c"] = round(temp_k - 273.15, 1)
+                    ups["ups.temperature"] = ups["temperature_c"]
+            if len(d) >= 17:
+                vbat_raw = d[15] | (d[16] << 8)
+                if 100 <= vbat_raw <= 600:
+                    ups["battery_voltage_v"] = round(vbat_raw / 10.0, 1)
+                    ups["battery.voltage"] = ups["battery_voltage_v"]
+            elif len(d) >= 13:
+                vbat_raw = d[11] | (d[12] << 8)
+                if 100 <= vbat_raw <= 600:
+                    ups["battery_voltage_v"] = round(vbat_raw / 10.0, 1)
+                    ups["battery.voltage"] = ups["battery_voltage_v"]
+        elif len(d) >= 11:
+            # Long Report 0x07 (Innova Unity / Default)
             load = d[1]
             ups["percent_load"] = load
             ups["ups.load"] = load
 
             temp_k = d[3] | (d[4] << 8)
             vbat_calc = round((d[9] | (d[10] << 8)) / 10.0, 1)
-
-            if temp_k == 0:
-                # Innova Basic G2: Temperature sensor is at d[9..10] (Kelvin), Vbat is at d[11..12]
-                alt_temp = d[9] | (d[10] << 8)
-                if 273 <= alt_temp <= 373:
-                    temp_k = alt_temp
-                    if len(d) >= 13:
-                        vbat_raw = d[11] | (d[12] << 8)
-                        if 100 <= vbat_raw <= 600:
-                            vbat_calc = round(vbat_raw / 10.0, 1)
 
             if 273 <= temp_k <= 373:
                 ups["temperature_c"] = round(temp_k - 273.15, 1)
@@ -760,13 +776,27 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
     # Report 0x42: output power meter
     d = payload(0x42)
     if d:
+        model = ""
+        if device_info:
+            model = (device_info.get("product_string") or "").lower()
+
         if len(d) >= 14:
-            # Standard Little-Endian
-            act_pwr = d[4] | (d[5] << 8)
-            app_pwr = d[6] | (d[7] << 8)
-            curr_raw = d[8] | (d[9] << 8)
-            freq_raw = d[10] | (d[11] << 8)
-            volt_raw = d[12] | (d[13] << 8)
+            if "basic" in model or "g2" in model:
+                # InnovaBasicG2 (per HID Descriptor):
+                # d[2..3]=ActiveW, d[4..5]=ApparentVA, d[6..7]=Current(0.1A), d[8..9]=Freq(0.1Hz), d[11..12]=Volt(0.1V)
+                act_pwr = d[2] | (d[3] << 8)
+                app_pwr = d[4] | (d[5] << 8)
+                curr_raw = d[6] | (d[7] << 8)
+                freq_raw = d[8] | (d[9] << 8)
+                volt_raw = d[11] | (d[12] << 8) if len(d) >= 13 else d[12] | (d[13] << 8)
+            else:
+                # Innova Unity / Default:
+                # d[4..5]=ActiveW, d[6..7]=ApparentVA, d[8..9]=Current(0.1A), d[10..11]=Freq(0.1Hz), d[12..13]=Volt(0.1V)
+                act_pwr = d[4] | (d[5] << 8)
+                app_pwr = d[6] | (d[7] << 8)
+                curr_raw = d[8] | (d[9] << 8)
+                freq_raw = d[10] | (d[11] << 8)
+                volt_raw = d[12] | (d[13] << 8)
 
             ups["output_active_power_w"] = act_pwr
             ups["output_apparent_power_va"] = app_pwr
