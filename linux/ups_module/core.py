@@ -598,18 +598,18 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
     # Report 0x07: WorkMode / Load / Temperature / Battery Voltage
     d = payload(0x07)
     if d:
-        if len(d) >= 1:
-            work_mode_byte = d[0]
-            ups["work_mode_code"] = work_mode_byte
-            ups["bypass"] = (work_mode_byte == 2)
-
         model = ""
         if device_info:
             model = (device_info.get("product_string") or "").lower()
 
         if "basic" in model or "g2" in model:
             # InnovaBasicG2 (per HID Descriptor):
+            # d[6] = WorkMode (Usage FFFF:0094: 1=Standby, 2=Bypass, 3=Line, 4=Battery, 5=Test)
             # d[7] = PercentLoad, d[9..10] = Temperature (Kelvin), d[15..16] or d[11..12] = Battery Voltage
+            if len(d) >= 7:
+                work_mode_byte = d[6]
+                ups["work_mode_code"] = work_mode_byte
+                ups["bypass"] = (work_mode_byte == 2)
             if len(d) >= 8:
                 load = d[7]
                 ups["percent_load"] = load
@@ -631,6 +631,10 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
                     ups["battery.voltage"] = ups["battery_voltage_v"]
         elif len(d) >= 11:
             # Long Report 0x07 (Innova Unity / Default)
+            work_mode_byte = d[0]
+            ups["work_mode_code"] = work_mode_byte
+            ups["bypass"] = (work_mode_byte == 2)
+
             load = d[1]
             ups["percent_load"] = load
             ups["ups.load"] = load
@@ -844,10 +848,12 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
         buck = bool(ups.get("buck", False))
         vout = float(ups.get("output_voltage_v", ups.get("output.voltage", 0.0)) or 0.0)
 
-        if ac and vout < 50.0 and not (boost or buck):
-            status_parts = ["OFF"]
-        elif bypass:
+        if bypass:
             status_parts = ["BYPASS"]
+            if ac:
+                status_parts = ["OL", "BYPASS"]
+        elif ac and vout < 50.0 and not (boost or buck):
+            status_parts = ["OFF"]
         elif ac:
             status_parts = ["OL"]
             if boost:

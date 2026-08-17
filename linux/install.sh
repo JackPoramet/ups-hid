@@ -35,28 +35,28 @@ fi
 cp enerex_ups_bridge.py /opt/enerex-ups/
 chmod +x /opt/enerex-ups/enerex_ups_bridge.py
 
-echo "--- 4. Configuring /etc/nut/ups.conf ---"
-UPS_CONF="/etc/nut/ups.conf"
-
-# Remove any existing [enerex-ups] or old [myups] settings to ensure clean config
-sed -i '/^\[enerex-ups\]/d' "$UPS_CONF"
-sed -i '/^\[myups\]/d' "$UPS_CONF"
-sed -i '/driver = blazer_usb/d' "$UPS_CONF"
-sed -i '/driver = enerex/d' "$UPS_CONF"
-sed -i '/driver = dummy-ups/d' "$UPS_CONF"
-sed -i '/port = auto/d' "$UPS_CONF"
-sed -i '/port = \/etc\/nut\/enerex-ups.dev/d' "$UPS_CONF"
-sed -i '/port = \/etc\/nut\/myups.dev/d' "$UPS_CONF"
-sed -i '/desc = "Universal Enerex Python Bridge"/d' "$UPS_CONF"
-sed -i '/desc = "My UPS"/d' "$UPS_CONF"
-sed -i '/desc = "My UPS (Enerex Python Bridge)"/d' "$UPS_CONF"
-
-echo "" >> "$UPS_CONF"
-echo "[myups]" >> "$UPS_CONF"
-echo "    driver = enerex" >> "$UPS_CONF"
-echo "    port = /etc/nut/myups.dev" >> "$UPS_CONF"
-echo "    desc = \"My UPS (Enerex Python Bridge)\"" >> "$UPS_CONF"
-echo "Configured [myups] in $UPS_CONF"
+# echo "--- 4. Configuring /etc/nut/ups.conf ---"
+# UPS_CONF="/etc/nut/ups.conf"
+# 
+# # Remove any existing [enerex-ups] or old [myups] settings to ensure clean config
+# sed -i '/^\[enerex-ups\]/d' "$UPS_CONF"
+# sed -i '/^\[myups\]/d' "$UPS_CONF"
+# sed -i '/driver = blazer_usb/d' "$UPS_CONF"
+# sed -i '/driver = enerex/d' "$UPS_CONF"
+# sed -i '/driver = dummy-ups/d' "$UPS_CONF"
+# sed -i '/port = auto/d' "$UPS_CONF"
+# sed -i '/port = \/etc\/nut\/enerex-ups.dev/d' "$UPS_CONF"
+# sed -i '/port = \/etc\/nut\/myups.dev/d' "$UPS_CONF"
+# sed -i '/desc = "Universal Enerex Python Bridge"/d' "$UPS_CONF"
+# sed -i '/desc = "My UPS"/d' "$UPS_CONF"
+# sed -i '/desc = "My UPS (Enerex Python Bridge)"/d' "$UPS_CONF"
+# 
+# echo "" >> "$UPS_CONF"
+# echo "[myups]" >> "$UPS_CONF"
+# echo "    driver = enerex" >> "$UPS_CONF"
+# echo "    port = /etc/nut/myups.dev" >> "$UPS_CONF"
+# echo "    desc = \"My UPS (Enerex Python Bridge)\"" >> "$UPS_CONF"
+# echo "Configured [myups] in $UPS_CONF"
 
 echo "--- 4.5. Masking dummy-ups driver name ---"
 if [ -f "/lib/nut/dummy-ups" ]; then
