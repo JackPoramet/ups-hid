@@ -38,23 +38,25 @@ chmod +x /opt/enerex-ups/enerex_ups_bridge.py
 echo "--- 4. Configuring /etc/nut/ups.conf ---"
 UPS_CONF="/etc/nut/ups.conf"
 
-# Remove the old [myups] blazer_usb configuration completely
+# Remove any existing [enerex-ups] or old [myups] settings to ensure clean config
+sed -i '/^\[enerex-ups\]/d' "$UPS_CONF"
 sed -i '/^\[myups\]/d' "$UPS_CONF"
 sed -i '/driver = blazer_usb/d' "$UPS_CONF"
+sed -i '/driver = enerex/d' "$UPS_CONF"
+sed -i '/driver = dummy-ups/d' "$UPS_CONF"
 sed -i '/port = auto/d' "$UPS_CONF"
+sed -i '/port = \/etc\/nut\/enerex-ups.dev/d' "$UPS_CONF"
+sed -i '/port = \/etc\/nut\/myups.dev/d' "$UPS_CONF"
+sed -i '/desc = "Universal Enerex Python Bridge"/d' "$UPS_CONF"
+sed -i '/desc = "My UPS"/d' "$UPS_CONF"
+sed -i '/desc = "My UPS (Enerex Python Bridge)"/d' "$UPS_CONF"
 
-if grep -q "\[enerex-ups\]" "$UPS_CONF"; then
-    echo "[enerex-ups] already exists in $UPS_CONF. Skipping append."
-    # We also sed the driver line just in case it was dummy-ups before
-    sed -i 's/driver = dummy-ups/driver = enerex/' "$UPS_CONF"
-else
-    echo "" >> "$UPS_CONF"
-    echo "[enerex-ups]" >> "$UPS_CONF"
-    echo "    driver = enerex" >> "$UPS_CONF"
-    echo "    port = /etc/nut/enerex-ups.dev" >> "$UPS_CONF"
-    echo "    desc = \"Universal Enerex Python Bridge\"" >> "$UPS_CONF"
-    echo "Added [enerex-ups] to $UPS_CONF"
-fi
+echo "" >> "$UPS_CONF"
+echo "[myups]" >> "$UPS_CONF"
+echo "    driver = enerex" >> "$UPS_CONF"
+echo "    port = /etc/nut/myups.dev" >> "$UPS_CONF"
+echo "    desc = \"My UPS (Enerex Python Bridge)\"" >> "$UPS_CONF"
+echo "Configured [myups] in $UPS_CONF"
 
 echo "--- 4.5. Masking dummy-ups driver name ---"
 if [ -f "/lib/nut/dummy-ups" ]; then
@@ -62,8 +64,8 @@ if [ -f "/lib/nut/dummy-ups" ]; then
 fi
 
 echo "--- 5. Initializing dummy device file ---"
-echo "ups.status: WAIT" > /etc/nut/enerex-ups.dev
-chmod 666 /etc/nut/enerex-ups.dev
+echo "ups.status: WAIT" > /etc/nut/myups.dev
+chmod 666 /etc/nut/myups.dev
 
 echo "--- 6. Setting up Systemd Service ---"
 SERVICE_FILE="/etc/systemd/system/enerex-ups-bridge.service"
@@ -101,5 +103,5 @@ systemctl start nut-server.service
 echo "=========================================================="
 echo "Installation Complete!"
 echo "Check bridge status with: sudo systemctl status enerex-ups-bridge"
-echo "Check UPS data with: upsc enerex-ups"
+echo "Check UPS data with: upsc myups"
 echo "=========================================================="

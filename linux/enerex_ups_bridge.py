@@ -12,7 +12,7 @@ if INSTALL_DIR not in sys.path:
 from ups_module.client import UPSClient
 
 # File that NUT's dummy-ups will read from
-DUMMY_FILE = "/etc/nut/enerex-ups.dev"
+DUMMY_FILE = "/etc/nut/myups.dev"
 
 # Phoenixtec Innova VID/PID
 PHOENIXTEC_VID = 0x06DA

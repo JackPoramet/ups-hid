@@ -26,7 +26,7 @@ chmod +x install.sh
 sudo ./install.sh
 
 # 3. ตรวจสอบข้อมูล Telemetry จาก NUT (รอระบบเริ่มต้นประมาณ 2-5 วินาที)
-upsc enerex-ups
+upsc myups
 ```
 
 ตัวอย่างผลลัพธ์:
@@ -86,8 +86,8 @@ flowchart TD
         Reg["DeviceRegistry (meta.json)"]
         Core["Protocol & Decoder Engine (core.py / megatec.py)"]
         Daemon["enerex_ups_bridge.py (Systemd Service)"]
-        TempFile["/etc/nut/enerex-ups.dev.tmp"]
-        DevFile["/etc/nut/enerex-ups.dev"]
+        TempFile["/etc/nut/myups.dev.tmp"]
+        DevFile["/etc/nut/myups.dev"]
     end
 
     subgraph NUTLayer ["4. NUT Stack"]
@@ -96,7 +96,7 @@ flowchart TD
     end
 
     subgraph Consumers ["5. Clients & Network Monitoring"]
-        CLI["CLI: upsc enerex-ups"]
+        CLI["CLI: upsc myups"]
         HA["Home Assistant / Monitoring Dashboard"]
         PVE["Proxmox / Synology / Remote NUT Clients"]
     end
@@ -117,7 +117,7 @@ flowchart TD
 ### ลำดับการประมวลผล (Execution Flow)
 1. **Auto-Detection**: ตรวจสอบการเชื่อมต่อ USB HID เทียบกับ Vendor ID / Product ID ในระบบ
 2. **Data Polling & Decoding**: ดึงค่า Telemetry ทุก 1 วินาที และถอดรหัสโครงสร้างไบต์ตามโปรไฟล์อุปกรณ์
-3. **Atomic File Write**: บันทึกข้อมูลลงในไฟล์ชั่วคราวแล้วสลับเป็น `/etc/nut/enerex-ups.dev` ด้วย `os.rename()` เพื่อป้องกันปัญหาการอ่านไฟล์ไม่สมบูรณ์
+3. **Atomic File Write**: บันทึกข้อมูลลงในไฟล์ชั่วคราวแล้วสลับเป็น `/etc/nut/myups.dev` ด้วย `os.rename()` เพื่อป้องกันปัญหาการอ่านไฟล์ไม่สมบูรณ์
 4. **NUT Distribution**: ไดรเวอร์ `dummy-ups` อ่านไฟล์สถานะและกระจายตัวแปรผ่านโปรโตคอล NUT มาตรฐาน
 
 ---
@@ -167,17 +167,17 @@ linux/
 - ลบการตั้งค่าเดิมที่ไม่เข้ากัน (เช่น การตั้งค่าไดรเวอร์ `blazer_usb`)
 - กำหนดเซกชันอุปกรณ์ใหม่:
   ```ini
-  [enerex-ups]
+  [myups]
       driver = enerex
-      port = /etc/nut/enerex-ups.dev
-      desc = "Universal Enerex Python Bridge"
+      port = /etc/nut/myups.dev
+      desc = "My UPS (Enerex Python Bridge)"
   ```
 
 ### 5. เชื่อมโยงไดรเวอร์ (Driver Masking)
 สร้าง Symbolic Link จาก `/lib/nut/dummy-ups` ไปยัง `/lib/nut/enerex` เพื่อให้ NUT เรียกใช้ไบนารี `dummy-ups` ภายใต้ชื่อไดรเวอร์ `enerex`
 
 ### 6. สร้างไฟล์สถานะเริ่มต้น
-สร้างไฟล์ `/etc/nut/enerex-ups.dev` กำหนดค่าเริ่มต้น `ups.status: WAIT` และกำหนด Permission เป็น `0666`
+สร้างไฟล์ `/etc/nut/myups.dev` กำหนดค่าเริ่มต้น `ups.status: WAIT` และกำหนด Permission เป็น `0666`
 
 ### 7. ติดตั้ง Systemd Service
 สร้างไฟล์ `/etc/systemd/system/enerex-ups-bridge.service` เพื่อควบคุมให้บริดจ์ทำงานเป็น Background Daemon พร้อมคุณสมบัติเริ่มทำงานอัตโนมัติตอนบูตระบบ และรีสตาร์ทตัวเองทุก 5 วินาทีหากเกิดข้อผิดพลาด
