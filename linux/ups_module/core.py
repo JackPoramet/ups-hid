@@ -688,36 +688,23 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
         if device_info:
             model = (device_info.get("product_string") or "").lower()
 
-        if "offline" in model or "2000" in model or len(d) == 2:
+        if ("offline" in model or "2000" in model) and len(d) == 2:
             # Offline UPS 2000D: 0x31 is 2 bytes containing Voltage at d[0..1]
-            if len(d) >= 2:
-                volt_raw = d[0] | (d[1] << 8)
-                if volt_raw >= 1000:
-                    ups["input.voltage"] = round(volt_raw / 10.0, 1)
-                elif 100 <= volt_raw <= 350:
-                    ups["input.voltage"] = float(volt_raw)
-        elif "basic" in model or "g2" in model:
-            if len(d) >= 4:
-                # InnovaBasicG2: 0x31 uses Big-Endian encoding
-                freq_raw = (d[0] << 8) | d[1]
-                volt_raw = (d[2] << 8) | d[3]
-                if 400 <= freq_raw <= 700:
-                    ups["input.frequency"] = round(freq_raw / 10.0, 1)
-                if volt_raw >= 1000:
-                    ups["input.voltage"] = round(volt_raw / 10.0, 1)
-                elif 100 <= volt_raw <= 350:
-                    ups["input.voltage"] = float(volt_raw)
-        else:
-            if len(d) >= 4:
-                # Default (Innova Unity): Little-Endian
-                freq_raw = d[0] | (d[1] << 8)
-                volt_raw = d[2] | (d[3] << 8)
-                if 400 <= freq_raw <= 700:
-                    ups["input.frequency"] = round(freq_raw / 10.0, 1)
-                if volt_raw >= 1000:
-                    ups["input.voltage"] = round(volt_raw / 10.0, 1)
-                elif 100 <= volt_raw <= 350:
-                    ups["input.voltage"] = float(volt_raw)
+            volt_raw = d[0] | (d[1] << 8)
+            if volt_raw >= 1000:
+                ups["input.voltage"] = round(volt_raw / 10.0, 1)
+            elif 100 <= volt_raw <= 350:
+                ups["input.voltage"] = float(volt_raw)
+        elif len(d) >= 4:
+            # Standard Little-Endian for Innova Unity, InnovaBasicG2, etc.
+            freq_raw = d[0] | (d[1] << 8)
+            volt_raw = d[2] | (d[3] << 8)
+            if 400 <= freq_raw <= 700:
+                ups["input.frequency"] = round(freq_raw / 10.0, 1)
+            if volt_raw >= 1000:
+                ups["input.voltage"] = round(volt_raw / 10.0, 1)
+            elif 100 <= volt_raw <= 350:
+                ups["input.voltage"] = float(volt_raw)
 
     d = payload(0x17)
     if d and len(d) >= 2:
@@ -774,27 +761,24 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
     d = payload(0x42)
     if d:
         if len(d) >= 14:
-            model = ""
-            if device_info:
-                model = (device_info.get("product_string") or "").lower()
+            # Standard Little-Endian
+            act_pwr = d[4] | (d[5] << 8)
+            app_pwr = d[6] | (d[7] << 8)
+            curr_raw = d[8] | (d[9] << 8)
+            freq_raw = d[10] | (d[11] << 8)
+            volt_raw = d[12] | (d[13] << 8)
 
-            if "basic" in model or "g2" in model:
-                # InnovaBasicG2 uses Big-Endian encoding
-                ups["output_active_power_w"] = (d[4] << 8) | d[5]
-                ups["output_apparent_power_va"] = (d[6] << 8) | d[7]
-                ups["output_current_a"] = round(((d[8] << 8) | d[9]) / 10.0, 1)
-                ups["output_frequency_hz"] = round(((d[10] << 8) | d[11]) / 10.0, 1)
-                ups["output_voltage_v"] = round(((d[12] << 8) | d[13]) / 10.0, 1)
-            else:
-                ups["output_active_power_w"] = d[4] | (d[5] << 8)
-                ups["output_apparent_power_va"] = d[6] | (d[7] << 8)
-                ups["output_current_a"] = round((d[8] | (d[9] << 8)) / 10.0, 1)
-                ups["output_frequency_hz"] = round((d[10] | (d[11] << 8)) / 10.0, 1)
-                ups["output_voltage_v"] = round((d[12] | (d[13] << 8)) / 10.0, 1)
+            ups["output_active_power_w"] = act_pwr
+            ups["output_apparent_power_va"] = app_pwr
+            ups["output_current_a"] = round(curr_raw / 10.0, 1)
+            ups["output_frequency_hz"] = round(freq_raw / 10.0, 1) if 400 <= freq_raw <= 700 else round(freq_raw / 10.0, 1)
+            ups["output_voltage_v"] = round(volt_raw / 10.0, 1) if volt_raw >= 1000 else float(volt_raw)
                 
             ups["output.voltage"] = ups["output_voltage_v"]
             ups["output.frequency"] = ups["output_frequency_hz"]
             ups["output.current"] = ups["output_current_a"]
+            ups["output.power"] = ups["output_active_power_w"]
+            ups["output.power.apparent"] = ups["output_apparent_power_va"]
         elif len(d) >= 4:
             # Short Report 0x42 (e.g. Offline UPS 2000D: d[0..1]=Freq 0.1Hz, d[2..3]=Vout)
             freq_raw = d[0] | (d[1] << 8)

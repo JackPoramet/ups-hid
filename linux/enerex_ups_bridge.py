@@ -79,12 +79,29 @@ def enrich_nut_variables(data: dict, info: dict) -> dict:
         else:
             data["battery.charger.status"] = "resting"
 
-    # 4. Input & Output Power Nominals
+    # 4. Input & Output Power Nominals & Smart Fallbacks
     data.setdefault("input.voltage.nominal", 220)
     data.setdefault("input.frequency.nominal", 50)
     data.setdefault("output.voltage.nominal", 220)
     data.setdefault("output.frequency.nominal", 50)
     data.setdefault("outlet.1.status", "on")
+
+    # Smart fallback for input.frequency if hardware does not provide it (e.g. Offline 2000D)
+    if "input.frequency" not in data or float(data.get("input.frequency", 0.0) or 0.0) <= 0.0:
+        vin = float(data.get("input.voltage", 0.0) or 0.0)
+        if vin >= 50.0:
+            data["input.frequency"] = float(data.get("input.frequency.nominal", 50.0))
+
+    if "output.frequency" not in data or float(data.get("output.frequency", 0.0) or 0.0) <= 0.0:
+        data["output.frequency"] = float(data.get("input.frequency", 50.0))
+
+    # Smart fallback for ups.temperature if hardware lacks internal temp sensor (e.g. Offline 2000D / MEC0003)
+    if "ups.temperature" not in data or float(data.get("ups.temperature", 0.0) or 0.0) <= 0.0:
+        data["ups.temperature"] = 25.0
+
+    # Smart fallback for ups.load if not provided
+    if "ups.load" not in data:
+        data["ups.load"] = 0
 
     # 5. UPS Nominal Power & Real Power
     if "ups.power.nominal" in data and "ups.realpower.nominal" not in data:

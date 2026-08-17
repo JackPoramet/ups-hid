@@ -307,11 +307,11 @@ def ups_data_from_raw(raw: Dict[str, Any]) -> UPSData:
         ups_mode=_get("ups_mode"),
 
         # Battery
-        battery_charge=_get("battery.charge"),
+        battery_charge=_first_present("battery.charge", "battery_capacity_percent"),
         battery_charge_low=_get("battery.charge.low"),
         battery_charge_high=_get("battery.charge.high"),
         battery_runtime=_get("battery.runtime"),
-        battery_voltage=_get("battery_voltage_v"),
+        battery_voltage=_first_present("battery.voltage", "battery_voltage_v"),
         battery_test_status=_get("battery_test_status"),
 
         # Input
@@ -324,12 +324,12 @@ def ups_data_from_raw(raw: Dict[str, Any]) -> UPSData:
         # Output
         output_voltage=_first_present("output.voltage", "output_voltage_v"),
         output_frequency=_first_present("output.frequency", "output_frequency_hz"),
-        output_current=_get("output_current_a"),
-        output_power=_get("output_active_power_w"),
-        output_power_apparent=_get("output_apparent_power_va"),
+        output_current=_first_present("output.current", "output_current_a"),
+        output_power=_first_present("output.power", "output_active_power_w"),
+        output_power_apparent=_first_present("output.power.apparent", "output_apparent_power_va"),
 
         # UPS
-        ups_load=_get("percent_load"),
+        ups_load=_first_present("ups.load", "percent_load"),
         ups_temperature=_first_present("ups.temperature", "temperature_c"),
         ups_firmware=_get("ups.firmware"),
         ups_power_nominal=_get("config_max_active_power_w"),
