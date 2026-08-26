@@ -31,6 +31,41 @@ POLL_INTERVAL = 1
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
+# Global flag and single-instance lock
+_running = True
+_lock_fd = None
+
+
+def acquire_single_instance_lock():
+    """Guarantee that only one instance of enerex_ups_bridge runs on the system."""
+    global _lock_fd
+    lock_path = "/run/enerex_ups_bridge.lock" if os.path.exists("/run") else "/tmp/enerex_ups_bridge.lock"
+    try:
+        import fcntl
+        _lock_fd = open(lock_path, "w")
+        fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _lock_fd.write(f"{os.getpid()}\n")
+        _lock_fd.flush()
+    except (ImportError, AttributeError):
+        pass  # fcntl not available on Windows
+    except (BlockingIOError, IOError):
+        logging.warning("Another instance of enerex_ups_bridge is already running. Exiting cleanly.")
+        sys.exit(0)
+
+
+def handle_shutdown_signal(signum, frame):
+    global _running
+    logging.info(f"Received termination signal ({signum}). Shutting down bridge gracefully...")
+    _running = False
+
+
+import signal
+try:
+    signal.signal(signal.SIGINT, handle_shutdown_signal)
+    signal.signal(signal.SIGTERM, handle_shutdown_signal)
+except (ValueError, AttributeError):
+    pass
+
 
 def enrich_nut_variables(data: dict, info: dict) -> dict:
     """
@@ -155,7 +190,10 @@ def enrich_nut_variables(data: dict, info: dict) -> dict:
 
 
 def main():
-    while True:
+    acquire_single_instance_lock()
+    logging.info("Starting Enerex UPS Bridge daemon...")
+
+    while _running:
         client = None
         try:
             logging.info("Scanning for Enerex/Phoenixtec/Megatec UPS...")
@@ -173,7 +211,7 @@ def main():
             time.sleep(2)
 
             # Polling loop for the connected UPS
-            while True:
+            while _running:
                 try:
                     # 1. Read live UPS variables (existing logic preserved 100%)
                     data = client.get_vars()
@@ -192,6 +230,8 @@ def main():
                     os.chmod(DUMMY_FILE, 0o666)
 
                 except Exception as e:
+                    if not _running:
+                        break
                     logging.error(f"Error reading UPS data (Device disconnected?): {e}")
                     # Tell dummy-ups the device is disconnected and overwrite electrical metrics to prevent stale cache
                     temp_file = DUMMY_FILE + ".tmp"
@@ -217,6 +257,8 @@ def main():
                 time.sleep(POLL_INTERVAL)
 
         except Exception as e:
+            if not _running:
+                break
             logging.warning(f"No UPS found or connect failed: {e}. Retrying in 5 seconds...")
             time.sleep(5)
         finally:
@@ -225,7 +267,7 @@ def main():
                     client.disconnect()
                 except Exception:
                     pass
-    logging.info("Exiting...")
+    logging.info("Enerex UPS Bridge exited cleanly.")
 
 
 if __name__ == "__main__":

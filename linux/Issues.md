@@ -8,10 +8,11 @@
 
 ### 1. 🏢 **Innova Unity** (Online UPS 3kVA)
 - **สถานะการทำงาน (Operating Status):**
-  - [ ] `ups.status: OL` — สถานะไฟหลวงปกติ (จ่ายไฟตรง)
-  - [ ] `ups.status: OB` — สถานะเมื่อถอดปลั๊ก / ไฟดับ (ดึงไฟจากแบตเตอรี่)
-  - [ ] `ups.status: OL BYPASS` / `BYPASS` — สถานะเมื่อเปิดใช้งานโหมดบายพาส
+  - [x] `ups.status: OL` — สถานะไฟหลวงปกติ (จ่ายไฟตรง)
+  - [x] `ups.status: OL BYPASS` / `BYPASS` — สถานะเมื่อเปิดใช้งานโหมดบายพาส
   - [ ] `ups.status: OB LB` — สถานะเตือนแบตเตอรี่เหลือน้อย (วิกฤต)
+  - [x] `ups.status: OB DISCHRG`
+
 - **ระบบไฟฟ้าขาเข้า (Input Power):**
   - [x] `input.voltage` (~213.5 - 230.0 V) — แรงดันไฟฟ้าขาเข้า
   - [x] `input.voltage.nominal` (230 V) — แรงดันไฟเข้าพิกัด

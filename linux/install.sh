@@ -14,10 +14,11 @@ echo "--- 1. Installing required dependencies ---"
 apt-get update
 apt-get install -y python3-hid python3-usb
 
-echo "--- 2. Stopping existing NUT services ---"
+echo "--- 2. Stopping existing NUT services and old bridge processes ---"
 systemctl stop nut-server.service || true
 systemctl stop nut-driver.service || true
 systemctl stop enerex-ups-bridge.service 2>/dev/null || true
+pkill -9 -f "enerex_ups_bridge.py" 2>/dev/null || true
 
 echo "--- 3. Copying files to /opt/enerex-ups/ ---"
 # Clear old files and python cache to prevent stale code execution
@@ -35,30 +36,7 @@ fi
 cp enerex_ups_bridge.py /opt/enerex-ups/
 chmod +x /opt/enerex-ups/enerex_ups_bridge.py
 
-# echo "--- 4. Configuring /etc/nut/ups.conf ---"
-# UPS_CONF="/etc/nut/ups.conf"
-# 
-# # Remove any existing [enerex-ups] or old [myups] settings to ensure clean config
-# sed -i '/^\[enerex-ups\]/d' "$UPS_CONF"
-# sed -i '/^\[myups\]/d' "$UPS_CONF"
-# sed -i '/driver = blazer_usb/d' "$UPS_CONF"
-# sed -i '/driver = enerex/d' "$UPS_CONF"
-# sed -i '/driver = dummy-ups/d' "$UPS_CONF"
-# sed -i '/port = auto/d' "$UPS_CONF"
-# sed -i '/port = \/etc\/nut\/enerex-ups.dev/d' "$UPS_CONF"
-# sed -i '/port = \/etc\/nut\/myups.dev/d' "$UPS_CONF"
-# sed -i '/desc = "Universal Enerex Python Bridge"/d' "$UPS_CONF"
-# sed -i '/desc = "My UPS"/d' "$UPS_CONF"
-# sed -i '/desc = "My UPS (Enerex Python Bridge)"/d' "$UPS_CONF"
-# 
-# echo "" >> "$UPS_CONF"
-# echo "[myups]" >> "$UPS_CONF"
-# echo "    driver = enerex" >> "$UPS_CONF"
-# echo "    port = /etc/nut/myups.dev" >> "$UPS_CONF"
-# echo "    desc = \"My UPS (Enerex Python Bridge)\"" >> "$UPS_CONF"
-# echo "Configured [myups] in $UPS_CONF"
-
-echo "--- 4.5. Masking dummy-ups driver name ---"
+echo "--- 4. Masking dummy-ups driver name ---"
 if [ -f "/lib/nut/dummy-ups" ]; then
     ln -sf /lib/nut/dummy-ups /lib/nut/enerex
 fi
@@ -67,12 +45,13 @@ echo "--- 5. Initializing dummy device file ---"
 echo "ups.status: WAIT" > /etc/nut/myups.dev
 chmod 666 /etc/nut/myups.dev
 
-echo "--- 6. Setting up Systemd Service ---"
+echo "--- 6. Setting up Systemd Service (Production Standards) ---"
 SERVICE_FILE="/etc/systemd/system/enerex-ups-bridge.service"
 cat << 'EOF' > "$SERVICE_FILE"
 [Unit]
 Description=Enerex UPS Python to Dummy-UPS Bridge
-After=network.target
+After=network.target local-fs.target
+Wants=network.target
 
 [Service]
 Type=simple
@@ -80,7 +59,12 @@ User=root
 WorkingDirectory=/opt/enerex-ups
 ExecStart=/usr/bin/python3 /opt/enerex-ups/enerex_ups_bridge.py
 Restart=always
-RestartSec=5
+RestartSec=3
+KillMode=mixed
+TimeoutStopSec=5
+StandardOutput=journal
+StandardError=journal
+Nice=0
 
 [Install]
 WantedBy=multi-user.target
