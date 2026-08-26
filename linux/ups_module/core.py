@@ -715,16 +715,23 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
                 ups["input.voltage"] = round(volt_raw / 10.0, 1)
             elif 100 <= volt_raw <= 350:
                 ups["input.voltage"] = float(volt_raw)
+            elif volt_raw == 0:
+                ups["input.voltage"] = 0.0
         elif len(d) >= 4:
             # Standard Little-Endian for Innova Unity, InnovaBasicG2, etc.
             freq_raw = d[0] | (d[1] << 8)
             volt_raw = d[2] | (d[3] << 8)
             if 400 <= freq_raw <= 700:
                 ups["input.frequency"] = round(freq_raw / 10.0, 1)
+            elif freq_raw == 0:
+                ups["input.frequency"] = 0.0
+
             if volt_raw >= 1000:
                 ups["input.voltage"] = round(volt_raw / 10.0, 1)
             elif 100 <= volt_raw <= 350:
                 ups["input.voltage"] = float(volt_raw)
+            elif volt_raw == 0:
+                ups["input.voltage"] = 0.0
 
     d = payload(0x17)
     if d and len(d) >= 2:
@@ -804,9 +811,14 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
 
             ups["output_active_power_w"] = act_pwr
             ups["output_apparent_power_va"] = app_pwr
-            ups["output_current_a"] = round(curr_raw / 10.0, 1)
-            ups["output_frequency_hz"] = round(freq_raw / 10.0, 1) if 400 <= freq_raw <= 700 else round(freq_raw / 10.0, 1)
-            ups["output_voltage_v"] = round(volt_raw / 10.0, 1) if volt_raw >= 1000 else float(volt_raw)
+            ups["output_current_a"] = round(curr_raw / 10.0, 1) if curr_raw > 0 else 0.0
+            ups["output_frequency_hz"] = round(freq_raw / 10.0, 1) if (400 <= freq_raw <= 700 or freq_raw == 0) else round(freq_raw / 10.0, 1)
+            if volt_raw >= 1000:
+                ups["output_voltage_v"] = round(volt_raw / 10.0, 1)
+            elif volt_raw == 0:
+                ups["output_voltage_v"] = 0.0
+            else:
+                ups["output_voltage_v"] = float(volt_raw)
                 
             ups["output.voltage"] = ups["output_voltage_v"]
             ups["output.frequency"] = ups["output_frequency_hz"]
@@ -817,12 +829,15 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
             # Short Report 0x42 (e.g. Offline UPS 2000D: d[0..1]=Freq 0.1Hz, d[2..3]=Vout)
             freq_raw = d[0] | (d[1] << 8)
             volt_raw = d[2] | (d[3] << 8)
-            if 0 < freq_raw < 1000:
+            if 0 <= freq_raw < 1000:
                 ups["output_frequency_hz"] = round(freq_raw / 10.0, 1)
                 ups["output.frequency"] = ups["output_frequency_hz"]
-            v_calc = round(volt_raw / 10.0, 1) if volt_raw > 300 else float(volt_raw)
-            if v_calc > 350:
-                v_calc = round(v_calc / 10.0, 1)
+            if volt_raw == 0:
+                v_calc = 0.0
+            else:
+                v_calc = round(volt_raw / 10.0, 1) if volt_raw > 300 else float(volt_raw)
+                if v_calc > 350:
+                    v_calc = round(v_calc / 10.0, 1)
             if 0.0 <= v_calc <= 350.0:
                 ups["output_voltage_v"] = v_calc
                 ups["output.voltage"] = ups["output_voltage_v"]
@@ -870,6 +885,25 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
         if overload:
             status_parts.append("OVER")
         ups["ups.status"] = " ".join(status_parts)
+
+        # Synchronize electrical metrics with operating status to prevent stale values
+        if "OFF" in status_parts:
+            ups["output.voltage"] = 0.0
+            ups["output.frequency"] = 0.0
+            ups["output.current"] = 0.0
+            ups["output.power"] = 0
+            ups["output.power.apparent"] = 0
+            ups["ups.load"] = 0
+            ups["output_voltage_v"] = 0.0
+            ups["output_frequency_hz"] = 0.0
+            ups["output_current_a"] = 0.0
+            ups["output_active_power_w"] = 0
+            ups["output_apparent_power_va"] = 0
+            ups["percent_load"] = 0
+        elif "OB" in status_parts or (not ac and discharging):
+            # When on battery and no AC line input, explicitly guarantee input metrics are 0.0
+            ups["input.voltage"] = 0.0
+            ups["input.frequency"] = 0.0
 
     # Report 0x74: max power config
     d = payload(0x74)

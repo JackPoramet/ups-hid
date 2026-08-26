@@ -69,6 +69,15 @@ class MegatecQ1Driver:
                             
                     data["battery.charge"] = batt_pct
                     data["ups.status"] = " ".join(status_list) if status_list else "WAIT"
+
+                    # Explicitly zero out input measurements when on battery
+                    if "OB" in status_list:
+                        data["input.voltage"] = 0.0
+                        data["input.frequency"] = 0.0
+
+                    # Zero out load and output if output voltage is 0
+                    if data.get("output.voltage", 0.0) < 10.0:
+                        data["ups.load"] = 0.0
                 except ValueError as ve:
                     logger.warning(f"Failed to parse telemetry parts: {ve}")
 

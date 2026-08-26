@@ -10,7 +10,14 @@ INSTALL_DIR = "/opt/enerex-ups"
 if INSTALL_DIR not in sys.path:
     sys.path.insert(0, INSTALL_DIR)
 
-from ups_module.client import UPSClient
+LOCAL_DIR = os.path.dirname(os.path.abspath(__file__))
+if LOCAL_DIR not in sys.path:
+    sys.path.insert(0, LOCAL_DIR)
+
+try:
+    from ups_module.client import UPSClient
+except ImportError:
+    from client import UPSClient
 
 # File that NUT's dummy-ups will read from
 DUMMY_FILE = "/etc/nut/myups.dev"
@@ -84,16 +91,39 @@ def enrich_nut_variables(data: dict, info: dict) -> dict:
     data.setdefault("input.frequency.nominal", 50)
     data.setdefault("output.voltage.nominal", 220)
     data.setdefault("output.frequency.nominal", 50)
-    data.setdefault("outlet.1.status", "on")
 
-    # Smart fallback for input.frequency if hardware does not provide it (e.g. Offline 2000D)
-    if "input.frequency" not in data or float(data.get("input.frequency", 0.0) or 0.0) <= 0.0:
-        vin = float(data.get("input.voltage", 0.0) or 0.0)
-        if vin >= 50.0:
-            data["input.frequency"] = float(data.get("input.frequency.nominal", 50.0))
+    # 4.1 State-driven synchronization to prevent stale variables
+    status_str = str(data.get("ups.status", "")).upper()
+    vin = float(data.get("input.voltage", 0.0) or 0.0)
+    is_on_batt = "OB" in status_str or "DISCHRG" in status_str or (vin < 50.0 and "OL" not in status_str)
+    is_off = "OFF" in status_str
 
-    if "output.frequency" not in data or float(data.get("output.frequency", 0.0) or 0.0) <= 0.0:
-        data["output.frequency"] = float(data.get("input.frequency", 50.0))
+    if is_off:
+        data["ups.status"] = "OFF"
+        data["output.voltage"] = 0.0
+        data["output.frequency"] = 0.0
+        data["output.current"] = 0.0
+        data["output.power"] = 0
+        data["output.power.apparent"] = 0
+        data["ups.load"] = 0
+        data["outlet.1.status"] = "off"
+        data["battery.charger.status"] = "resting"
+    elif is_on_batt:
+        data["input.voltage"] = 0.0
+        data["input.frequency"] = 0.0
+        data["battery.charger.status"] = "discharging"
+        data.setdefault("outlet.1.status", "on")
+    else:
+        data.setdefault("outlet.1.status", "on")
+        # Smart fallback for input.frequency if hardware does not provide it (e.g. Offline 2000D)
+        if "input.frequency" not in data or float(data.get("input.frequency", 0.0) or 0.0) <= 0.0:
+            if vin >= 50.0:
+                data["input.frequency"] = float(data.get("input.frequency.nominal", 50.0))
+
+    if not is_off:
+        if "output.frequency" not in data or float(data.get("output.frequency", 0.0) or 0.0) <= 0.0:
+            in_freq = float(data.get("input.frequency", 0.0) or 0.0)
+            data["output.frequency"] = in_freq if in_freq > 0.0 else float(data.get("output.frequency.nominal", 50.0))
 
     # Smart fallback for ups.temperature if hardware lacks internal temp sensor (e.g. Offline 2000D / MEC0003)
     if "ups.temperature" not in data or float(data.get("ups.temperature", 0.0) or 0.0) <= 0.0:
@@ -163,9 +193,20 @@ def main():
 
                 except Exception as e:
                     logging.error(f"Error reading UPS data (Device disconnected?): {e}")
-                    # Tell dummy-ups the device is disconnected
+                    # Tell dummy-ups the device is disconnected and overwrite electrical metrics to prevent stale cache
                     temp_file = DUMMY_FILE + ".tmp"
                     with open(temp_file, "w", encoding="utf-8") as f:
+                        f.write("battery.charger.status: resting\n")
+                        f.write("device.type: ups\n")
+                        f.write("input.frequency: 0.0\n")
+                        f.write("input.voltage: 0.0\n")
+                        f.write("outlet.1.status: off\n")
+                        f.write("output.current: 0.0\n")
+                        f.write("output.frequency: 0.0\n")
+                        f.write("output.power: 0\n")
+                        f.write("output.power.apparent: 0\n")
+                        f.write("output.voltage: 0.0\n")
+                        f.write("ups.load: 0\n")
                         f.write("ups.status: OFF\n")
                     os.rename(temp_file, DUMMY_FILE)
                     os.chmod(DUMMY_FILE, 0o666)

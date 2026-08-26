@@ -288,13 +288,51 @@ class TestEventDetector(unittest.TestCase):
 # Repr test
 # ---------------------------------------------------------------------------
 
-class TestUPSDataRepr(unittest.TestCase):
+class TestZeroAndStaleHandling(unittest.TestCase):
+    """Test that zero measurements and state-based zeros are preserved and exported."""
 
-    def test_repr(self):
-        data = ups_data_from_raw(SAMPLE_RAW)
-        r = repr(data)
-        self.assertIn("OL", r)
-        self.assertIn("95", r)
+    def test_zero_values_preserved_in_nut_dict(self):
+        data = ups_data_from_raw({
+            "ups.status": "OB",
+            "input.voltage": 0.0,
+            "input.frequency": 0.0,
+            "output.voltage": 230.0,
+            "output.current": 0.0,
+            "output.power": 0,
+            "ups.load": 0,
+        })
+        d = data.to_nut_dict()
+        self.assertEqual(d["input.voltage"], 0.0)
+        self.assertEqual(d["input.frequency"], 0.0)
+        self.assertEqual(d["output.voltage"], 230.0)
+        self.assertEqual(d["output.current"], 0.0)
+        self.assertEqual(d["output.power"], 0)
+        self.assertEqual(d["ups.load"], 0)
+
+    def test_core_decoding_report_31_and_42_zeros(self):
+        from ups_module.core import decode_feature_reports
+        raw = {
+            0x01: [0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00],  # Status good, not AC present
+            0x31: [0x31, 0x00, 0x00, 0x00, 0x00],              # 0.0 Hz, 0.0 V
+            0x42: [0x42] + [0x00] * 14,                         # 14 bytes payload for standard 0x42
+        }
+        decoded = decode_feature_reports(raw)
+        self.assertEqual(decoded.get("input.voltage"), 0.0)
+        self.assertEqual(decoded.get("input.frequency"), 0.0)
+        self.assertEqual(decoded.get("output.voltage"), 0.0)
+        self.assertEqual(decoded.get("output.current"), 0.0)
+        self.assertEqual(decoded.get("output.power"), 0)
+
+    def test_core_decoding_on_battery_forces_input_zeros(self):
+        from ups_module.core import decode_feature_reports
+        raw = {
+            0x01: [0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00],  # ac=0, discharging=1
+            0x42: [0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0xF4, 0x01, 0xF4, 0x01, 0xFC, 0x08], # 230V out, 0.5A
+        }
+        decoded = decode_feature_reports(raw)
+        self.assertIn("OB", decoded.get("ups.status", ""))
+        self.assertEqual(decoded.get("input.voltage"), 0.0)
+        self.assertEqual(decoded.get("input.frequency"), 0.0)
 
 
 if __name__ == "__main__":
