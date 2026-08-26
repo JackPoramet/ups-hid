@@ -128,6 +128,7 @@ flowchart TD
 linux/
 ├── enerex_ups_bridge.py      # เซอร์วิสหลักสำหรับ Poll ข้อมูลและแปลงเข้าสู่ dummy-ups
 ├── install.sh                # สคริปต์ติดตั้งระบบ, คอนฟิก NUT และตั้งค่า Systemd
+├── uninstall.sh              # สคริปต์ถอนการติดตั้งและล้างการตั้งค่าทั้งหมด
 ├── Issues.md                 # เอกสารบันทึกปัญหาและแนวทางทดสอบสอบเทียบค่า Telemetry
 ├── README.md                 # เอกสารกำกับการใช้งานระบบ (ไฟล์นี้)
 └── ups_module/               # ไลบรารี Python สำหรับติดต่อสื่อสารกับฮาร์ดแวร์
@@ -204,11 +205,11 @@ sudo journalctl -u enerex-ups-bridge -f
 sudo systemctl status nut-server
 ```
 
-### การสแกนข้อมูลดิบเพื่อการสอบเทียบ (Diagnostic Mode)
-หากต้องการตรวจสอบข้อมูลดิบระดับฮาร์ดแวร์ (Raw Feature Reports):
+### การถอนการติดตั้งระบบ (Uninstallation)
+หากต้องการล้างและถอนการติดตั้งทุกอย่างที่ `install.sh` ทำไว้:
 ```bash
-cd /opt/enerex-ups
-sudo python3 -m ups_module.core
+chmod +x uninstall.sh
+sudo ./uninstall.sh
 ```
 
 ---
