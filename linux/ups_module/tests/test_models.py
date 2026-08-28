@@ -347,17 +347,20 @@ class TestZeroAndStaleHandling(unittest.TestCase):
         self.assertIn("LB", status)
         self.assertIn("DISCHRG", status)
 
-    def test_low_battery_software_fallback_when_charge_low(self):
+    def test_offline_2000d_on_battery_status_is_ob_dischrg_not_bypass(self):
         from ups_module.core import decode_feature_reports
+        # PPC Offline 2000D Report 0x01: 7 bytes where d[3]=1 is Discharging (NOT Bypass)
         raw = {
-            0x01: [0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00],  # ac=0, below_capacity=0, discharging=1
-            0x06: [0x06, 0x0F, 0x00, 0x00, 0x00, 0x00],        # battery.charge = 15% (<= 20%)
-            0x42: [0x42] + [0x00] * 14,
+            0x01: [0x01, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00],  # ac=0, below_capacity=0, d[3]=1 (discharging)
+            0x06: [0x06, 0x50, 0x00, 0x00, 0x00, 0x00],        # battery.charge = 80%
+            0x42: [0x42, 0xF4, 0x01, 0xFC, 0x08],               # 50.0 Hz, 230.0 V
         }
-        decoded = decode_feature_reports(raw)
+        device_info = {"product_string": "Offline UPS 2000D", "profile_id": "ppc_offline_2000d"}
+        decoded = decode_feature_reports(raw, device_info=device_info)
         status = decoded.get("ups.status", "")
         self.assertIn("OB", status)
-        self.assertIn("LB", status)
+        self.assertIn("DISCHRG", status)
+        self.assertNotIn("BYPASS", status)
 
 
 if __name__ == "__main__":

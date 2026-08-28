@@ -149,17 +149,25 @@ def enrich_nut_variables(data: dict, info: dict) -> dict:
         data["battery.charger.status"] = "discharging"
         data.setdefault("outlet.1.status", "on")
 
+        # Sanitize status: If AC is absent, Bypass cannot exist; enforce OB
+        parts = [p for p in status_str.split() if p != "BYPASS"]
+        if "OB" not in parts:
+            parts.insert(0, "OB")
+
         # Standard NUT fallback: ensure LB is appended when battery is depleted/low on battery power
-        charge = float(data.get("battery.charge", 100) or 100)
-        charge_low = float(data.get("battery.charge.low", 20) or 20)
-        runtime = float(data.get("battery.runtime", 9999) or 9999)
-        runtime_low = float(data.get("battery.runtime.low", 180) or 180)
+        b_chg = data.get("battery.charge")
+        charge = float(b_chg) if b_chg is not None else 100.0
+        b_low = data.get("battery.charge.low")
+        charge_low = float(b_low) if b_low is not None else 20.0
+        b_rt = data.get("battery.runtime")
+        runtime = float(b_rt) if b_rt is not None else 9999.0
+        b_rt_low = data.get("battery.runtime.low")
+        runtime_low = float(b_rt_low) if b_rt_low is not None else 180.0
 
         if charge <= charge_low or runtime <= runtime_low or charge <= 0:
-            parts = status_str.split()
             if "LB" not in parts:
                 parts.append("LB")
-                data["ups.status"] = " ".join(parts)
+        data["ups.status"] = " ".join(parts)
     else:
         data.setdefault("outlet.1.status", "on")
         # Smart fallback for input.frequency if hardware does not provide it (e.g. Offline 2000D)

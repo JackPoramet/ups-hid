@@ -52,7 +52,7 @@
   - [x] `ups.status: OL` — สถานะไฟหลวงปกติ (จ่ายไฟตรง)
   - [x] `ups.status: OB DISCHRG` — สถานะเมื่อถอดปลั๊ก / ไฟดับ (ดึงไฟจากแบตเตอรี่)
   - [x] `ups.status: OL BYPASS`  — สถานะเมื่อเปิดใช้งานโหมดบายพาส (Report 0x07 `d[6]=2`)
-  - [ ] `ups.status: OB LB` — สถานะเตือนแบตเตอรี่เหลือน้อย
+  - [x] `ups.status: OB DISCHRG LB` — สถานะเตือนแบตเตอรี่เหลือน้อย
 - **ระบบไฟฟ้าขาเข้า (Input Power):**
   - [x] `input.voltage` (~229.1 - 230.0 V) — แรงดันไฟฟ้าขาเข้า (Report 0x31 Little-Endian)
   - [x] `input.voltage.nominal` (230 V) — แรงดันไฟเข้าพิกัด
@@ -65,7 +65,7 @@
   - [x] `output.frequency.nominal` (50 Hz) — ความถี่ไฟออกพิกัด
   - [x] `output.current` (~0.0 - 0.2 A) — กระแสไฟฟ้าขาออก (Report 0x42 `d[6..7]`)
   - [x] `output.power` (0 - 20 W)
-  - [x]  `output.power.apparent` — กำลังไฟฟ้าปรากฏ (Apparent Power)
+  - [x] `output.power.apparent` — กำลังไฟฟ้าปรากฏ (Apparent Power)
   - [x] `outlet.1.status` (`on`) — สถานะเต้ารับจ่ายไฟ
 - **ระบบแบตเตอรี่ (Battery Subsystem):**
   - [x] `battery.charge` (100 %) — เปอร์เซ็นต์แบตเตอรี่
@@ -85,14 +85,15 @@
 
 ### 3. 🏢 **Offline UPS 2000D** (Offline / Line-Interactive 2000D)
 - **สถานะการทำงาน (Operating Status):**
-  - [ ] `ups.status: OL` — สถานะไฟหลวงปกติ
+  - [x] `ups.status: OFF` — ปิด UPS
+  - [x] `ups.status: OL` — สถานะไฟหลวงปกติ
   - [ ] `ups.status: OB` — สถานะเมื่อไฟดับ / สลับเข้าแบตเตอรี่
   - [ ] `ups.status: OB LB` — สถานะแบตเตอรี่เหลือน้อย
 - **ระบบไฟฟ้าขาเข้า (Input Power):**
-  - [ ] `input.voltage` (231.0 V) — แรงดันไฟฟ้าขาเข้า
-  - [ ] `input.voltage.nominal` (220 V) — แรงดันไฟเข้าพิกัด
-  - [ ] `input.frequency` (50.0 Hz) — ความถี่ไฟฟ้าขาเข้า (Smart Fallback)
-  - [ ] `input.frequency.nominal` (50 Hz) — ความถี่ไฟเข้าพิกัด
+  - [x] `input.voltage` (231.0 V) — แรงดันไฟฟ้าขาเข้า
+  - [x] `input.voltage.nominal` (220 V) — แรงดันไฟเข้าพิกัด
+  - [x] `input.frequency` (50.0 Hz) — ความถี่ไฟฟ้าขาเข้า (Smart Fallback)
+  - [x] `input.frequency.nominal` (50 Hz) — ความถี่ไฟเข้าพิกัด
 - **ระบบไฟฟ้าขาออก (Output Power):**
   - [ ] `output.voltage` (231.0 V) — แรงดันไฟฟ้าขาออก
   - [ ] `output.voltage.nominal` (220 V) — แรงดันไฟออกพิกัด

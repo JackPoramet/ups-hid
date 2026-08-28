@@ -533,15 +533,41 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
     # synthesize an on-battery state when this report was not successfully read.
     has_status_report = bool(payload(0x01))
 
-    # Report 0x01: Status flags (mapping ตามไฟล์ UPS_data.py)
+    # Report 0x01: Status flags
     d = payload(0x01)
     if d:
+        model = ""
+        if device_info:
+            model = (device_info.get("product_string") or "").lower()
+            if not model and device_info.get("profile_id"):
+                model = str(device_info.get("profile_id")).lower()
+
+        is_offline_2000d = "offline" in model or "2000" in model or "ppc" in model
+
         ac = bool(d[0]) if len(d) > 0 else False
         below_capacity_limit = bool(d[1]) if len(d) > 1 else False
         charging = bool(d[2]) if len(d) > 2 else False
-        bypass_flag = bool(d[3]) if len(d) > 3 else False
-        discharging = bool(d[4]) if len(d) > 4 else False
-        status_good = bool(d[5]) if len(d) > 5 else False
+
+        if is_offline_2000d:
+            # PPC Offline 2000D Descriptor (7 bytes):
+            # Byte 0: ACPresent, Byte 1: BelowRemainingCapacityLimit, Byte 2: Charging
+            # Byte 3: Discharging (Offline UPS has no Bypass!)
+            # Byte 4: Good, Byte 5: InternalFailure, Byte 6: Overload
+            bypass_flag = False
+            discharging = bool(d[3]) if len(d) > 3 else (not ac)
+            status_good = bool(d[4]) if len(d) > 4 else False
+        else:
+            # Online UPS / Innova Unity (8 bytes):
+            # Byte 0: ACPresent, Byte 1: BelowRemainingCapacityLimit, Byte 2: Charging
+            # Byte 3: Bypass, Byte 4: Discharging, Byte 5: Good
+            bypass_flag = bool(d[3]) if len(d) > 3 else False
+            discharging = bool(d[4]) if len(d) > 4 else (not ac)
+            status_good = bool(d[5]) if len(d) > 5 else False
+
+        # When AC is absent, Bypass is physically impossible on all UPS models
+        if not ac:
+            bypass_flag = False
+            discharging = True
 
         ups.update(
             {
@@ -863,10 +889,10 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
         buck = bool(ups.get("buck", False))
         vout = float(ups.get("output_voltage_v", ups.get("output.voltage", 0.0)) or 0.0)
 
-        if bypass:
-            status_parts = ["BYPASS"]
-            if ac:
-                status_parts = ["OL", "BYPASS"]
+        if bypass and ac:
+            status_parts = ["OL", "BYPASS"]
+        elif bypass and not ac:
+            status_parts = ["OB"]
         elif ac and vout < 50.0 and not (boost or buck):
             status_parts = ["OFF"]
         elif ac:
