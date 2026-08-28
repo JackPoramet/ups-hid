@@ -101,14 +101,14 @@
   - [x] `output.frequency.nominal` (50 Hz) — ความถี่ไฟออกพิกัด
   - [x] `outlet.1.status` (`on` `off`) — สถานะเต้ารับจ่ายไฟ
 - **ระบบแบตเตอรี่ (Battery Subsystem):**
-  - [ ] `battery.charge` (100 %) — เปอร์เซ็นต์แบตเตอรี่
+  - [x] `battery.charge` (100 %) — เปอร์เซ็นต์แบตเตอรี่
   - [x] `battery.voltage` (27.7 V) — แรงดันไฟฟ้าแบตเตอรี่
   - [x] `battery.runtime` (~3359 วินาที) — เวลาสำรองไฟที่เหลือ
   - [x] `battery.charger.status` (`resting` / `floating` / `charging`) — สถานะการชาร์จ
   - [ ] `battery.test.status` (`passed`) — ผลการทดสอบแบตเตอรี่
 - **ข้อมูลตัวเครื่องและระบบ (Device & System Info):**
-  - [ ] `ups.load` (0 % เมื่อไม่มีโหลด / แสดงค่าจริงเมื่อต่อโหลด)
-  - [ ] `ups.temperature` (25.0 °C) — อุณหภูมิ Fallback (ป้องกันหน้าเว็บขึ้น Alarm สีแดง)
+  - [x] `ups.load` (0 % เมื่อไม่มีโหลด / แสดงค่าจริงเมื่อต่อโหลด)
+  - [x] `ups.temperature` (25.0 °C) — อุณหภูมิ Fallback (ป้องกันหน้าเว็บขึ้น Alarm สีแดง)
   - [x] `ups.power.nominal` (2700 VA) / `ups.realpower.nominal` (2700 W)
   - [x] `device.mfr` (`PPC`) / `device.model` (`Offline UPS`)
   - [x] `device.serial` (`000000000`) — Serial Number จากโรงงาน
@@ -117,7 +117,7 @@
 
 ### 4. 🏢 **MEC0003** (Megatec Q1 Protocol)
 - **สถานะการทำงาน (Operating Status):**
-  - [ ] `ups.status: OL` — สถานะไฟหลวงปกติ
+  - [x] `ups.status: OL` — สถานะไฟหลวงปกติ
   - [ ] `ups.status: OB` — สถานะเมื่อไฟดับ / สลับเข้าแบตเตอรี่
   - [ ] `ups.status: OB LB` — สถานะแบตเตอรี่เหลือน้อย
   - [ ] `ups.status: BYPASS` — สถานะเมื่อเข้า Bypass

@@ -75,9 +75,16 @@ class MegatecQ1Driver:
                         data["input.voltage"] = 0.0
                         data["input.frequency"] = 0.0
 
-                    # Zero out load and output if output voltage is 0
-                    if data.get("output.voltage", 0.0) < 10.0:
+                    # If output voltage is 0/low (< 50V) and not on battery, the UPS power button is turned OFF
+                    vout = data.get("output.voltage", 0.0)
+                    if vout < 50.0 and "OB" not in status_list:
+                        data["ups.status"] = "OFF"
+                        data["outlet.1.status"] = "off"
+                        data["output.voltage"] = 0.0
+                        data["output.frequency"] = 0.0
                         data["ups.load"] = 0.0
+                    else:
+                        data.setdefault("outlet.1.status", "on")
                 except ValueError as ve:
                     logger.warning(f"Failed to parse telemetry parts: {ve}")
 

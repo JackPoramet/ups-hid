@@ -377,6 +377,28 @@ class TestZeroAndStaleHandling(unittest.TestCase):
         self.assertEqual(enriched.get("output.power.apparent"), 324)
         self.assertEqual(enriched.get("output.current"), 1.4)
 
+    def test_megatec_off_state_outlets_off(self):
+        from unittest.mock import MagicMock
+        from ups_module.drivers.megatec import MegatecQ1Driver
+        from enerex_ups_bridge import enrich_nut_variables
+
+        mock_dev = MagicMock()
+        # Telemetry string with output.voltage = 000.0 (UPS button pressed OFF while AC is plugged in)
+        mock_dev.get_indexed_string.side_effect = lambda idx: "(230.8 230.8 000.0 000 50.1 13.8 25.0 00000000" if idx == 3 else "#220.0 004 12.00 50.0"
+        mock_dev.get_manufacturer_string.return_value = "Enerex"
+
+        driver = MegatecQ1Driver(mock_dev)
+        vars_dict = driver.get_vars()
+        self.assertEqual(vars_dict.get("ups.status"), "OFF")
+        self.assertEqual(vars_dict.get("outlet.1.status"), "off")
+        self.assertEqual(vars_dict.get("output.voltage"), 0.0)
+
+        enriched = enrich_nut_variables(vars_dict, {})
+        self.assertEqual(enriched.get("ups.status"), "OFF")
+        self.assertEqual(enriched.get("outlet.1.status"), "off")
+        self.assertEqual(enriched.get("output.voltage"), 0.0)
+        self.assertEqual(enriched.get("battery.charger.status"), "resting")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

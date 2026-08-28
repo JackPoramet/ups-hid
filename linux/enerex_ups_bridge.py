@@ -130,8 +130,15 @@ def enrich_nut_variables(data: dict, info: dict) -> dict:
     # 4.1 State-driven synchronization to prevent stale variables
     status_str = str(data.get("ups.status", "")).upper()
     vin = float(data.get("input.voltage", 0.0) or 0.0)
-    is_on_batt = "OB" in status_str or "DISCHRG" in status_str or (vin < 50.0 and "OL" not in status_str)
-    is_off = "OFF" in status_str
+    vout = float(data.get("output.voltage", 0.0) or 0.0)
+
+    # If output voltage is 0/low (< 50V) and not in battery operation, the UPS is OFF
+    if vout < 50.0 and "OB" not in status_str and "DISCHRG" not in status_str:
+        status_str = "OFF"
+        data["ups.status"] = "OFF"
+
+    is_on_batt = "OB" in status_str or "DISCHRG" in status_str or (vin < 50.0 and "OL" not in status_str and status_str != "OFF")
+    is_off = "OFF" in status_str or (vout < 50.0 and not is_on_batt)
 
     if is_off:
         data["ups.status"] = "OFF"
@@ -147,7 +154,7 @@ def enrich_nut_variables(data: dict, info: dict) -> dict:
         data["input.voltage"] = 0.0
         data["input.frequency"] = 0.0
         data["battery.charger.status"] = "discharging"
-        data.setdefault("outlet.1.status", "on")
+        data["outlet.1.status"] = "on"
 
         # Sanitize status: If AC is absent, Bypass cannot exist; enforce OB
         parts = [p for p in status_str.split() if p != "BYPASS"]
