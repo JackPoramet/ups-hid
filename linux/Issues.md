@@ -72,6 +72,7 @@
   - [x] `battery.voltage` (~27.0 - 30.2 V) — แรงดันแบตเตอรี่ (Report 0x07 `d[15..16]`)
   - [x] `battery.runtime` (~15146 - 59940 วินาที) — เวลาสำรองไฟที่เหลือ
   - [x] `battery.charger.status` (`floating` / `charging`) — สถานะการชาร์จ
+  - [x] `battery.type` (`PbAc`) — ชนิดแบตเตอรี่
   - [ ] `battery.test.status` (`passed`) — ผลการทดสอบแบตเตอรี่
 - **ข้อมูลตัวเครื่องและระบบ (Device & System Info):**
   - [x] `ups.load` (ตรงกับหน้าจอเครื่องจริง เช่น 4%, 9%) — ภาระโหลด (Report 0x07 `d[7]`)
@@ -105,10 +106,11 @@
   - [x] `battery.voltage` (27.7 V) — แรงดันไฟฟ้าแบตเตอรี่
   - [x] `battery.runtime` (~3359 วินาที) — เวลาสำรองไฟที่เหลือ
   - [x] `battery.charger.status` (`resting` / `floating` / `charging`) — สถานะการชาร์จ
+  - [x] `battery.type` (`PbAc`) — ชนิดแบตเตอรี่
   - [ ] `battery.test.status` (`passed`) — ผลการทดสอบแบตเตอรี่
 - **ข้อมูลตัวเครื่องและระบบ (Device & System Info):**
   - [x] `ups.load` (0 % เมื่อไม่มีโหลด / แสดงค่าจริงเมื่อต่อโหลด)
-  - [x] `ups.temperature` (25.0 °C) — อุณหภูมิ Fallback (ป้องกันหน้าเว็บขึ้น Alarm สีแดง)
+  - [ไม่มี] `ups.temperature` (25.0 °C) — อุณหภูมิ Fallback
   - [x] `ups.power.nominal` (2700 VA) / `ups.realpower.nominal` (2700 W)
   - [x] `device.mfr` (`PPC`) / `device.model` (`Offline UPS`)
   - [x] `device.serial` (`000000000`) — Serial Number จากโรงงาน
@@ -122,24 +124,26 @@
   - [ ] `ups.status: OB LB` — สถานะแบตเตอรี่เหลือน้อย
   - [ ] `ups.status: BYPASS` — สถานะเมื่อเข้า Bypass
 - **ระบบไฟฟ้าขาเข้า (Input Power):**
-  - [ ] `input.voltage` (230.8 V) — แรงดันไฟฟ้าขาเข้า
-  - [ ] `input.voltage.nominal` (220.0 V) — แรงดันไฟเข้าพิกัด
-  - [ ] `input.frequency` (50.1 Hz) — ความถี่ไฟฟ้าขาเข้า
-  - [ ] `input.frequency.nominal` (50.0 Hz) — ความถี่ไฟเข้าพิกัด
+  - [x] `input.voltage` (230.8 V) — แรงดันไฟฟ้าขาเข้า
+  - [x] `input.voltage.nominal` (220.0 V) — แรงดันไฟเข้าพิกัด
+  - [x] `input.frequency` (50.1 Hz) — ความถี่ไฟฟ้าขาเข้า
+  - [x] `input.frequency.nominal` (50.0 Hz) — ความถี่ไฟเข้าพิกัด
 - **ระบบไฟฟ้าขาออก (Output Power):**
-  - [ ] `output.voltage` (230.9 V) — แรงดันไฟฟ้าขาออก
-  - [ ] `output.voltage.nominal` (220 V) — แรงดันไฟออกพิกัด
-  - [ ] `output.frequency` (50.1 Hz) — ความถี่ไฟฟ้าขาออก
-  - [ ] `output.frequency.nominal` (50 Hz) — ความถี่ไฟออกพิกัด
-  - [ ] `outlet.1.status` (`on`) — สถานะเต้ารับจ่ายไฟ
+  - [x] `output.voltage` (230.9 V) — แรงดันไฟฟ้าขาออก
+  - [x] `output.voltage.nominal` (220 V) — แรงดันไฟออกพิกัด
+  - [x] `output.frequency` (50.1 Hz) — ความถี่ไฟฟ้าขาออก
+  - [x] `output.frequency.nominal` (50 Hz) — ความถี่ไฟออกพิกัด
+  - [x] `outlet.1.status` (`on` / `off`) — สถานะเต้ารับจ่ายไฟ
 - **ระบบแบตเตอรี่ (Battery Subsystem):**
-  - [ ] `battery.charge` (100.0 %) — เปอร์เซ็นต์แบตเตอรี่
+  - [x] `battery.charge` (100.0 %) — เปอร์เซ็นต์แบตเตอรี่
   - [ ] `battery.voltage` (27.6 V) — แรงดันไฟฟ้าแบตเตอรี่ (Megatec `v_bat`)
+  - [ไม่มี] `battery.runtime` — เวลาสำรองไฟที่เหลือ
   - [ ] `battery.charger.status` (`floating` / `charging`) — สถานะการชาร์จ
+  - [x] `battery.type` (`PbAc`) — ชนิดแบตเตอรี่
   - [ ] `battery.voltage.nominal` (12.0 V / 24.0 V) — แรงดันแบตเตอรี่พิกัด
 - **ข้อมูลตัวเครื่องและระบบ (Device & System Info):**
   - [ ] `ups.load` (แสดงค่าโหลด % จาก Megatec Q1)
-  - [ ] `ups.temperature` (25.0 °C) — อุณหภูมิ Fallback
+  - [ไม่มี] `ups.temperature` (25.0 °C) — อุณหภูมิ Fallback
   - [ ] `ups.power.nominal` (2700 VA) / `ups.realpower.nominal` (2700 W)
-  - [ ] `device.mfr` (`MEC`) / `device.model` (`MEC0003`)
-  - [ ] `device.serial` (`MEC0003`) — Serial Number ถูกต้อง (ไม่ถูกทับด้วย 2700)
+  - [x] `device.mfr` (`MEC`) / `device.model` (`MEC0003`)
+  - [x] `device.serial` (`MEC0003`) — Serial Number ถูกต้อง (ไม่ถูกทับด้วย 2700)

@@ -372,10 +372,12 @@ class TestZeroAndStaleHandling(unittest.TestCase):
         
         enriched = enrich_nut_variables(decoded, device_info)
         self.assertEqual(enriched.get("ups.load"), 12)
-        # Power calculation: 12% of 2700 = 324 W / 324 VA
-        self.assertEqual(enriched.get("output.power"), 324)
-        self.assertEqual(enriched.get("output.power.apparent"), 324)
-        self.assertEqual(enriched.get("output.current"), 1.4)
+        self.assertEqual(enriched.get("ups.power.nominal"), 2000)
+        self.assertEqual(enriched.get("ups.realpower.nominal"), 1200)
+        # Power calculation: 12% of 2000VA = 240 VA, 12% of 1200W = 144 W
+        self.assertEqual(enriched.get("output.power"), 144)
+        self.assertEqual(enriched.get("output.power.apparent"), 240)
+        self.assertEqual(enriched.get("output.current"), 1.0)
 
     def test_megatec_off_state_outlets_off(self):
         from unittest.mock import MagicMock
@@ -392,12 +394,16 @@ class TestZeroAndStaleHandling(unittest.TestCase):
         self.assertEqual(vars_dict.get("ups.status"), "OFF")
         self.assertEqual(vars_dict.get("outlet.1.status"), "off")
         self.assertEqual(vars_dict.get("output.voltage"), 0.0)
+        self.assertEqual(vars_dict.get("ups.power.nominal"), 880)
+        self.assertEqual(vars_dict.get("ups.realpower.nominal"), 528)
 
-        enriched = enrich_nut_variables(vars_dict, {})
+        enriched = enrich_nut_variables(vars_dict, {"product_string": "MEC0003"})
         self.assertEqual(enriched.get("ups.status"), "OFF")
         self.assertEqual(enriched.get("outlet.1.status"), "off")
         self.assertEqual(enriched.get("output.voltage"), 0.0)
         self.assertEqual(enriched.get("battery.charger.status"), "resting")
+        self.assertEqual(enriched.get("ups.power.nominal"), 880)
+        self.assertEqual(enriched.get("ups.realpower.nominal"), 528)
 
 
 if __name__ == "__main__":

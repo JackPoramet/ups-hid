@@ -946,9 +946,22 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
 
     # Report 0x74: max power config
     d = payload(0x74)
-    if d and len(d) >= 5:
-        ups["config_max_active_power_w"] = d[1] | (d[2] << 8)
-        ups["config_max_apparent_power_va"] = d[3] | (d[4] << 8)
+    if d:
+        if len(d) >= 5:
+            w_val = d[1] | (d[2] << 8)
+            va_val = d[3] | (d[4] << 8)
+            ups["config_max_active_power_w"] = w_val
+            ups["config_max_apparent_power_va"] = va_val
+            if w_val > 0:
+                ups["ups.realpower.nominal"] = w_val
+            if va_val > 0:
+                ups["ups.power.nominal"] = va_val
+        elif len(d) >= 2:
+            va_val = d[0] | (d[1] << 8)
+            ups["config_max_apparent_power_va"] = va_val
+            if va_val > 0:
+                ups["ups.power.nominal"] = va_val
+                ups["ups.realpower.nominal"] = int(round(va_val * 0.6))
 
     d = payload(0x29)
     if d and len(d) >= 4:

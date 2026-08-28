@@ -100,10 +100,25 @@ class MegatecQ1Driver:
             sp = specs[1:].split()
             if len(sp) >= 4:
                 try:
-                    data["input.voltage.nominal"] = float(sp[0])
-                    # sp[1] is max current
-                    data["battery.voltage.nominal"] = float(sp[2])
-                    data["input.frequency.nominal"] = float(sp[3])
+                    nom_v = float(sp[0])
+                    nom_i = float(sp[1])
+                    v_bat_nom = float(sp[2])
+                    freq_nom = float(sp[3])
+
+                    data["input.voltage.nominal"] = nom_v
+                    data["output.voltage.nominal"] = nom_v
+                    data["battery.voltage.nominal"] = v_bat_nom
+                    data["input.frequency.nominal"] = freq_nom
+                    data["output.frequency.nominal"] = freq_nom
+
+                    # Compute nominal VA & Watt from rating string (e.g. 220V * 4A = 880 VA, 480W)
+                    if nom_v > 0 and nom_i > 0:
+                        nom_va = int(round(nom_v * nom_i))
+                        data["ups.power.nominal"] = nom_va
+                        data["ups.realpower.nominal"] = int(round(nom_va * 0.6))
+                    else:
+                        data.setdefault("ups.power.nominal", 800)
+                        data.setdefault("ups.realpower.nominal", 480)
                 except ValueError:
                     pass
 

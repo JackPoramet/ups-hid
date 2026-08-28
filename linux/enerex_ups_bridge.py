@@ -195,14 +195,26 @@ def enrich_nut_variables(data: dict, info: dict) -> dict:
     if "ups.load" not in data:
         data["ups.load"] = 0
 
-    # 5. UPS Nominal Power & Real Power
-    if "ups.power.nominal" in data and "ups.realpower.nominal" not in data:
-        data["ups.realpower.nominal"] = data["ups.power.nominal"]
-    elif "ups.realpower.nominal" in data and "ups.power.nominal" not in data:
-        data["ups.power.nominal"] = data["ups.realpower.nominal"]
-    else:
-        data.setdefault("ups.power.nominal", 2700)
+    # 5. UPS Nominal Power & Real Power (Model-specific ratings)
+    model_str = (info.get("product_string") or data.get("device.model") or data.get("ups.model") or "").lower()
+
+    if "2000" in model_str or "offline" in model_str:
+        data.setdefault("ups.power.nominal", 2000)
+        data.setdefault("ups.realpower.nominal", 1200)
+    elif "mec" in model_str or "800" in model_str:
+        data.setdefault("ups.power.nominal", 800)
+        data.setdefault("ups.realpower.nominal", 480)
+    elif "innova" in model_str or "unity" in model_str or "basic" in model_str:
+        data.setdefault("ups.power.nominal", 3000)
         data.setdefault("ups.realpower.nominal", 2700)
+    else:
+        if "ups.power.nominal" in data and "ups.realpower.nominal" not in data:
+            data["ups.realpower.nominal"] = int(round(float(data["ups.power.nominal"]) * 0.8))
+        elif "ups.realpower.nominal" in data and "ups.power.nominal" not in data:
+            data["ups.power.nominal"] = data["ups.realpower.nominal"]
+        else:
+            data.setdefault("ups.power.nominal", 2000)
+            data.setdefault("ups.realpower.nominal", 1200)
 
     # 5.1 Dynamic Output Power & Current Calculation (for models lacking raw power meters e.g. Offline 2000D)
     if not is_off:
