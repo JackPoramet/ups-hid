@@ -1,12 +1,12 @@
-# 📋 คู่มือและ Checklist ตรวจสอบค่า Telemetry แยกรายเครื่อง (NUT Standard)
+# คู่มือและ Checklist ตรวจสอบค่า Telemetry แยกรายเครื่อง (NUT Standard)
 
 เอกสารนี้ใช้สำหรับบันทึกและตรวจสอบความถูกต้องของค่าตัวแปรและสถานะการทำงานของ UPS แต่ละเครื่องที่ผ่านการทดสอบจริง โดยอ้างอิงตามมาตรฐานของ **Network UPS Tools (`usbhid-ups` / `blazer_usb`)**
 
 ---
 
-## 🔍 รายการตรวจสอบความถูกต้องแยกรายเครื่อง (Per-Device Checklist)
+## รายการตรวจสอบความถูกต้องแยกรายเครื่อง (Per-Device Checklist)
 
-### 1. 🏢 **Innova Unity** (Online Double-Conversion 3kVA)
+### 1. **Innova Unity** (Online Double-Conversion 3kVA)
 * **สถานะการทำงาน (Operating Status):**
   - [x] `ups.status: OL` — สถานะไฟหลวงปกติ (จ่ายไฟตรง)
   - [x] `ups.status: OL BYPASS` / `BYPASS` — สถานะเมื่อเปิดใช้งานโหมดบายพาส
@@ -46,7 +46,7 @@
 
 ---
 
-### 2. 🏢 **InnovaBasicG2** (Line-Interactive / Basic G2 3kVA)
+### 2. **InnovaBasicG2** (Line-Interactive / Basic G2 3kVA)
 * **สถานะการทำงาน (Operating Status):**
   - [x] `ups.status: OL` — สถานะไฟหลวงปกติ (จ่ายไฟตรง)
   - [x] `ups.status: OB DISCHRG` — สถานะเมื่อถอดปลั๊ก / ไฟดับ
@@ -83,12 +83,12 @@
 
 ---
 
-### 3. 🏢 **Offline UPS 2000D** (Offline / Line-Interactive 2000VA)
+### 3. **Offline UPS 2000D** (Offline / Line-Interactive 2000VA)
 * **สถานะการทำงาน (Operating Status):**
   - [x] `ups.status: OFF` — ปิดสวิตช์ UPS
   - [x] `ups.status: OL` — สถานะไฟหลวงปกติ
   - [x] `ups.status: OB DISCHRG` — สถานะเมื่อไฟดับ / สลับเข้าแบตเตอรี่
-  - [x] `ups.status: OB DISCHRG LB` — สถานะแบตเตอรี่เหลือน้อย (Software Fallback)
+  - [ ] `ups.status: OB DISCHRG LB` — สถานะแบตเตอรี่เหลือน้อย (Software Fallback)
   - [➖] `ups.status: BYPASS` — สถานะบายพาส
 * **ระบบไฟฟ้าขาเข้า (Input Power):**
   - [x] `input.voltage` (231.0 V) — แรงดันไฟฟ้าขาเข้า (Report 0x31)
@@ -120,12 +120,12 @@
 
 ---
 
-### 4. 🏢 **MEC0003** (Megatec Q1 Protocol 800VA)
+### 4. **MEC0003** (Megatec Q1 Protocol 800VA)
 * **สถานะการทำงาน (Operating Status):**
   - [x] `ups.status: OFF` — ปิดสวิตช์ UPS
   - [x] `ups.status: OL` — สถานะไฟหลวงปกติ
   - [x] `ups.status: OB` — สถานะเมื่อไฟดับ / สลับเข้าแบตเตอรี่
-  - [x] `ups.status: OB LB` — สถานะแบตเตอรี่เหลือน้อย (Software Fallback)
+  - [ ] `ups.status: OB LB` — สถานะแบตเตอรี่เหลือน้อย (Software Fallback)
   - [➖] `ups.status: BYPASS` — สถานะบายพาส
 * **ระบบไฟฟ้าขาเข้า (Input Power):**
   - [x] `input.voltage` (230.8 V) — แรงดันไฟฟ้าขาเข้า (Megatec Index 3)
