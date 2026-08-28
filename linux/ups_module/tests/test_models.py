@@ -334,6 +334,31 @@ class TestZeroAndStaleHandling(unittest.TestCase):
         self.assertEqual(decoded.get("input.voltage"), 0.0)
         self.assertEqual(decoded.get("input.frequency"), 0.0)
 
+    def test_low_battery_software_fallback_when_charge_zero(self):
+        from ups_module.core import decode_feature_reports
+        raw = {
+            0x01: [0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00],  # ac=0, below_capacity=0, discharging=1
+            0x06: [0x06, 0x00, 0x00, 0x00, 0x00, 0x00],        # battery.charge = 0%
+            0x42: [0x42] + [0x00] * 14,
+        }
+        decoded = decode_feature_reports(raw)
+        status = decoded.get("ups.status", "")
+        self.assertIn("OB", status)
+        self.assertIn("LB", status)
+        self.assertIn("DISCHRG", status)
+
+    def test_low_battery_software_fallback_when_charge_low(self):
+        from ups_module.core import decode_feature_reports
+        raw = {
+            0x01: [0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00],  # ac=0, below_capacity=0, discharging=1
+            0x06: [0x06, 0x0F, 0x00, 0x00, 0x00, 0x00],        # battery.charge = 15% (<= 20%)
+            0x42: [0x42] + [0x00] * 14,
+        }
+        decoded = decode_feature_reports(raw)
+        status = decoded.get("ups.status", "")
+        self.assertIn("OB", status)
+        self.assertIn("LB", status)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -10,7 +10,7 @@
 - **สถานะการทำงาน (Operating Status):**
   - [x] `ups.status: OL` — สถานะไฟหลวงปกติ (จ่ายไฟตรง)
   - [x] `ups.status: OL BYPASS` / `BYPASS` — สถานะเมื่อเปิดใช้งานโหมดบายพาส
-  - [ ] `ups.status: OB LB` — สถานะเตือนแบตเตอรี่เหลือน้อย (วิกฤต)
+  - [x] `ups.status: OB DISCHRG LB` — สถานะเตือนแบตเตอรี่เหลือน้อย (วิกฤต)
   - [x] `ups.status: OB DISCHRG`
 
 - **ระบบไฟฟ้าขาเข้า (Input Power):**
@@ -49,36 +49,37 @@
 
 ### 2. 🏢 **InnovaBasicG2** (Line-Interactive / Basic G2)
 - **สถานะการทำงาน (Operating Status):**
-  - [ ] `ups.status: OL` — สถานะไฟหลวงปกติ (จ่ายไฟตรง)
-  - [ ] `ups.status: OB` — สถานะเมื่อถอดปลั๊ก / ไฟดับ (ดึงไฟจากแบตเตอรี่)
-  - [ ] `ups.status: OL BYPASS` / `BYPASS` — สถานะเมื่อเปิดใช้งานโหมดบายพาส (Report 0x07 `d[6]=2`)
+  - [x] `ups.status: OL` — สถานะไฟหลวงปกติ (จ่ายไฟตรง)
+  - [x] `ups.status: OB DISCHRG` — สถานะเมื่อถอดปลั๊ก / ไฟดับ (ดึงไฟจากแบตเตอรี่)
+  - [x] `ups.status: OL BYPASS`  — สถานะเมื่อเปิดใช้งานโหมดบายพาส (Report 0x07 `d[6]=2`)
   - [ ] `ups.status: OB LB` — สถานะเตือนแบตเตอรี่เหลือน้อย
 - **ระบบไฟฟ้าขาเข้า (Input Power):**
-  - [ ] `input.voltage` (~229.1 - 230.0 V) — แรงดันไฟฟ้าขาเข้า (Report 0x31 Little-Endian)
-  - [ ] `input.voltage.nominal` (230 V) — แรงดันไฟเข้าพิกัด
-  - [ ] `input.frequency` (49.9 - 50.0 Hz) — ความถี่ไฟฟ้าขาเข้า
-  - [ ] `input.frequency.nominal` (50 Hz) — ความถี่ไฟเข้าพิกัด
+  - [x] `input.voltage` (~229.1 - 230.0 V) — แรงดันไฟฟ้าขาเข้า (Report 0x31 Little-Endian)
+  - [x] `input.voltage.nominal` (230 V) — แรงดันไฟเข้าพิกัด
+  - [x] `input.frequency` (49.9 - 50.0 Hz) — ความถี่ไฟฟ้าขาเข้า
+  - [x] `input.frequency.nominal` (50 Hz) — ความถี่ไฟเข้าพิกัด
 - **ระบบไฟฟ้าขาออก (Output Power):**
-  - [ ] `output.voltage` (~228.0 - 231.2 V) — แรงดันไฟฟ้าขาออก (Report 0x42 `d[11..12]`)
-  - [ ] `output.voltage.nominal` (220 V) — แรงดันไฟออกพิกัด
-  - [ ] `output.frequency` (49.9 - 50.0 Hz) — ความถี่ไฟฟ้าขาออก (Report 0x42 `d[8..9]`)
-  - [ ] `output.frequency.nominal` (50 Hz) — ความถี่ไฟออกพิกัด
-  - [ ] `output.current` (~0.0 - 0.2 A) — กระแสไฟฟ้าขาออก (Report 0x42 `d[6..7]`)
-  - [ ] `output.power` (0 - 20 W) / `output.power.apparent` (0 - 50 VA)
-  - [ ] `outlet.1.status` (`on`) — สถานะเต้ารับจ่ายไฟ
+  - [x] `output.voltage` (~228.0 - 231.2 V) — แรงดันไฟฟ้าขาออก (Report 0x42 `d[11..12]`)
+  - [x] `output.voltage.nominal` (220 V) — แรงดันไฟออกพิกัด
+  - [x] `output.frequency` (49.9 - 50.0 Hz) — ความถี่ไฟฟ้าขาออก (Report 0x42 `d[8..9]`)
+  - [x] `output.frequency.nominal` (50 Hz) — ความถี่ไฟออกพิกัด
+  - [x] `output.current` (~0.0 - 0.2 A) — กระแสไฟฟ้าขาออก (Report 0x42 `d[6..7]`)
+  - [x] `output.power` (0 - 20 W)
+  - [x]  `output.power.apparent` — กำลังไฟฟ้าปรากฏ (Apparent Power)
+  - [x] `outlet.1.status` (`on`) — สถานะเต้ารับจ่ายไฟ
 - **ระบบแบตเตอรี่ (Battery Subsystem):**
-  - [ ] `battery.charge` (100 %) — เปอร์เซ็นต์แบตเตอรี่
-  - [ ] `battery.voltage` (~27.0 - 30.2 V) — แรงดันแบตเตอรี่ (Report 0x07 `d[15..16]`)
-  - [ ] `battery.runtime` (~15146 - 59940 วินาที) — เวลาสำรองไฟที่เหลือ
-  - [ ] `battery.charger.status` (`floating` / `charging`) — สถานะการชาร์จ
+  - [x] `battery.charge` (100 %) — เปอร์เซ็นต์แบตเตอรี่
+  - [x] `battery.voltage` (~27.0 - 30.2 V) — แรงดันแบตเตอรี่ (Report 0x07 `d[15..16]`)
+  - [x] `battery.runtime` (~15146 - 59940 วินาที) — เวลาสำรองไฟที่เหลือ
+  - [x] `battery.charger.status` (`floating` / `charging`) — สถานะการชาร์จ
   - [ ] `battery.test.status` (`passed`) — ผลการทดสอบแบตเตอรี่
 - **ข้อมูลตัวเครื่องและระบบ (Device & System Info):**
-  - [ ] `ups.load` (ตรงกับหน้าจอเครื่องจริง เช่น 4%, 9%) — ภาระโหลด (Report 0x07 `d[7]`)
-  - [ ] `ups.temperature` (28.9 °C) — อุณหภูมิเครื่อง (Report 0x07 `d[9..10]`)
-  - [ ] `ups.power.nominal` (2700 VA) / `ups.realpower.nominal` (2700 W)
-  - [ ] `device.mfr` (`PHOENIXTEC`) / `device.model` (`InnovaBasicG2`)
-  - [ ] `device.serial` (`CPLUV1279190013`) — Serial Number
-  - [ ] `ups.beeper.status` (`enabled`) — สถานะเสียงเตือน
+  - [x] `ups.load` (ตรงกับหน้าจอเครื่องจริง เช่น 4%, 9%) — ภาระโหลด (Report 0x07 `d[7]`)
+  - [x] `ups.temperature` (28.9 °C) — อุณหภูมิเครื่อง (Report 0x07 `d[9..10]`)
+  - [x] `ups.power.nominal` (2700 VA) / `ups.realpower.nominal` (2700 W)
+  - [x] `device.mfr` (`PHOENIXTEC`) / `device.model` (`InnovaBasicG2`)
+  - [x] `device.serial` (`CPLUV1279190013`) — Serial Number
+  - [x] `ups.beeper.status` (`enabled`) — สถานะเสียงเตือน
 
 ---
 

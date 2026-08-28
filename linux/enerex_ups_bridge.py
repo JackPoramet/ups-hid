@@ -148,6 +148,18 @@ def enrich_nut_variables(data: dict, info: dict) -> dict:
         data["input.frequency"] = 0.0
         data["battery.charger.status"] = "discharging"
         data.setdefault("outlet.1.status", "on")
+
+        # Standard NUT fallback: ensure LB is appended when battery is depleted/low on battery power
+        charge = float(data.get("battery.charge", 100) or 100)
+        charge_low = float(data.get("battery.charge.low", 20) or 20)
+        runtime = float(data.get("battery.runtime", 9999) or 9999)
+        runtime_low = float(data.get("battery.runtime.low", 180) or 180)
+
+        if charge <= charge_low or runtime <= runtime_low or charge <= 0:
+            parts = status_str.split()
+            if "LB" not in parts:
+                parts.append("LB")
+                data["ups.status"] = " ".join(parts)
     else:
         data.setdefault("outlet.1.status", "on")
         # Smart fallback for input.frequency if hardware does not provide it (e.g. Offline 2000D)

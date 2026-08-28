@@ -880,7 +880,23 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
 
         if discharging and not ac:
             status_parts.append("DISCHRG")
-        if below_capacity:
+
+        # Standard NUT Low Battery (LB) evaluation:
+        # Triggered if hardware raises below_capacity OR when on battery and charge/runtime falls below low thresholds
+        b_chg = ups.get("battery.charge", ups.get("battery_capacity_percent"))
+        batt_charge = float(b_chg) if b_chg is not None else 100.0
+
+        b_low = ups.get("battery.charge.low", ups.get("low_batt_alert_limit_percent"))
+        batt_charge_low = float(b_low) if b_low is not None else 20.0
+
+        b_rt = ups.get("battery.runtime", ups.get("runtime_remaining_sec"))
+        batt_runtime = float(b_rt) if b_rt is not None else 9999.0
+
+        b_rt_low = ups.get("battery.runtime.low")
+        batt_runtime_low = float(b_rt_low) if b_rt_low is not None else 180.0
+
+        is_low_battery = below_capacity or ((discharging or not ac) and (batt_charge <= batt_charge_low or batt_runtime <= batt_runtime_low or batt_charge <= 0.0))
+        if is_low_battery:
             status_parts.append("LB")
         if overload:
             status_parts.append("OVER")

@@ -260,7 +260,15 @@ class UPSData:
     def is_low_battery(self) -> bool:
         """True when battery is below the low threshold."""
         status = self.ups_status or ""
-        return "LB" in status or (self.below_capacity_limit is True)
+        charge = self.battery_charge if self.battery_charge is not None else 100.0
+        charge_low = self.battery_charge_low if self.battery_charge_low is not None else 20.0
+        runtime = self.battery_runtime if self.battery_runtime is not None else 9999
+        runtime_low = self.battery_runtime_low if self.battery_runtime_low is not None else 180
+        return (
+            "LB" in status
+            or (self.below_capacity_limit is True)
+            or (self.is_on_battery() and (charge <= charge_low or runtime <= runtime_low or charge <= 0))
+        )
 
     def is_charging(self) -> bool:
         """True when battery is actively charging."""
