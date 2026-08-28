@@ -197,6 +197,25 @@ def enrich_nut_variables(data: dict, info: dict) -> dict:
         data.setdefault("ups.power.nominal", 2700)
         data.setdefault("ups.realpower.nominal", 2700)
 
+    # 5.1 Dynamic Output Power & Current Calculation (for models lacking raw power meters e.g. Offline 2000D)
+    if not is_off:
+        load_pct = float(data.get("ups.load", 0) or 0)
+        nom_va = float(data.get("ups.power.nominal", 2700) or 2700)
+        nom_w = float(data.get("ups.realpower.nominal", 2700) or 2700)
+        vout = float(data.get("output.voltage", 230.0) or 230.0)
+
+        if "output.power.apparent" not in data or data.get("output.power.apparent") is None:
+            data["output.power.apparent"] = int(round((load_pct / 100.0) * nom_va))
+
+        if "output.power" not in data or data.get("output.power") is None:
+            data["output.power"] = int(round((load_pct / 100.0) * nom_w))
+
+        if "output.current" not in data or data.get("output.current") is None:
+            if vout > 50.0:
+                data["output.current"] = round(float(data["output.power.apparent"]) / vout, 1)
+            else:
+                data["output.current"] = 0.0
+
     # 6. System Timers, Control & Dates
     data.setdefault("ups.delay.shutdown", 20)
     data.setdefault("ups.delay.start", 30)

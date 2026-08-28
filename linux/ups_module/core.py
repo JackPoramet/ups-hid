@@ -684,9 +684,6 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
         elif len(d) >= 3:
             # Short Report 0x07 (PPC Offline UPS 2000D): d[0]=Load%, d[1..2]=Vbat (0.1V)
             load = d[0]
-            if device_info and "offline" in (device_info.get("product_string") or "").lower():
-                if load <= 25:
-                    load = 0
             ups["percent_load"] = load
             ups["ups.load"] = load
             v_bat_raw = d[1] | (d[2] << 8)

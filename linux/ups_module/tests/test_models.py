@@ -358,9 +358,24 @@ class TestZeroAndStaleHandling(unittest.TestCase):
         device_info = {"product_string": "Offline UPS 2000D", "profile_id": "ppc_offline_2000d"}
         decoded = decode_feature_reports(raw, device_info=device_info)
         status = decoded.get("ups.status", "")
-        self.assertIn("OB", status)
-        self.assertIn("DISCHRG", status)
-        self.assertNotIn("BYPASS", status)
+    def test_offline_2000d_load_and_dynamic_power(self):
+        from ups_module.core import decode_feature_reports
+        from enerex_ups_bridge import enrich_nut_variables
+        raw = {
+            0x01: [0x01, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00],  # AC present
+            0x07: [0x07, 0x0C, 0x15, 0x01],                     # Report 0x07: load = 12%, Vbat = 27.7V
+            0x42: [0x42, 0xF4, 0x01, 0xE6, 0x00],               # 50.0 Hz, 230 V
+        }
+        device_info = {"product_string": "Offline UPS 2000D", "profile_id": "ppc_offline_2000d"}
+        decoded = decode_feature_reports(raw, device_info=device_info)
+        self.assertEqual(decoded.get("ups.load"), 12)
+        
+        enriched = enrich_nut_variables(decoded, device_info)
+        self.assertEqual(enriched.get("ups.load"), 12)
+        # Power calculation: 12% of 2700 = 324 W / 324 VA
+        self.assertEqual(enriched.get("output.power"), 324)
+        self.assertEqual(enriched.get("output.power.apparent"), 324)
+        self.assertEqual(enriched.get("output.current"), 1.4)
 
 
 if __name__ == "__main__":

@@ -87,7 +87,7 @@
 - **สถานะการทำงาน (Operating Status):**
   - [x] `ups.status: OFF` — ปิด UPS
   - [x] `ups.status: OL` — สถานะไฟหลวงปกติ
-  - [ ] `ups.status: OB` — สถานะเมื่อไฟดับ / สลับเข้าแบตเตอรี่
+  - [x] `ups.status: OB DISCHRG` — สถานะเมื่อไฟดับ / สลับเข้าแบตเตอรี่
   - [ ] `ups.status: OB LB` — สถานะแบตเตอรี่เหลือน้อย
 - **ระบบไฟฟ้าขาเข้า (Input Power):**
   - [x] `input.voltage` (231.0 V) — แรงดันไฟฟ้าขาเข้า
@@ -95,23 +95,23 @@
   - [x] `input.frequency` (50.0 Hz) — ความถี่ไฟฟ้าขาเข้า (Smart Fallback)
   - [x] `input.frequency.nominal` (50 Hz) — ความถี่ไฟเข้าพิกัด
 - **ระบบไฟฟ้าขาออก (Output Power):**
-  - [ ] `output.voltage` (231.0 V) — แรงดันไฟฟ้าขาออก
-  - [ ] `output.voltage.nominal` (220 V) — แรงดันไฟออกพิกัด
-  - [ ] `output.frequency` (50.2 Hz) — ความถี่ไฟฟ้าขาออก
-  - [ ] `output.frequency.nominal` (50 Hz) — ความถี่ไฟออกพิกัด
-  - [ ] `outlet.1.status` (`on`) — สถานะเต้ารับจ่ายไฟ
+  - [x] `output.voltage` (231.0 V) — แรงดันไฟฟ้าขาออก
+  - [x] `output.voltage.nominal` (220 V) — แรงดันไฟออกพิกัด
+  - [x] `output.frequency` (50.2 Hz) — ความถี่ไฟฟ้าขาออก
+  - [x] `output.frequency.nominal` (50 Hz) — ความถี่ไฟออกพิกัด
+  - [x] `outlet.1.status` (`on` `off`) — สถานะเต้ารับจ่ายไฟ
 - **ระบบแบตเตอรี่ (Battery Subsystem):**
   - [ ] `battery.charge` (100 %) — เปอร์เซ็นต์แบตเตอรี่
-  - [ ] `battery.voltage` (27.7 V) — แรงดันไฟฟ้าแบตเตอรี่
-  - [ ] `battery.runtime` (~3359 วินาที) — เวลาสำรองไฟที่เหลือ
-  - [ ] `battery.charger.status` (`floating` / `charging`) — สถานะการชาร์จ
+  - [x] `battery.voltage` (27.7 V) — แรงดันไฟฟ้าแบตเตอรี่
+  - [x] `battery.runtime` (~3359 วินาที) — เวลาสำรองไฟที่เหลือ
+  - [x] `battery.charger.status` (`resting` / `floating` / `charging`) — สถานะการชาร์จ
   - [ ] `battery.test.status` (`passed`) — ผลการทดสอบแบตเตอรี่
 - **ข้อมูลตัวเครื่องและระบบ (Device & System Info):**
   - [ ] `ups.load` (0 % เมื่อไม่มีโหลด / แสดงค่าจริงเมื่อต่อโหลด)
   - [ ] `ups.temperature` (25.0 °C) — อุณหภูมิ Fallback (ป้องกันหน้าเว็บขึ้น Alarm สีแดง)
-  - [ ] `ups.power.nominal` (2700 VA) / `ups.realpower.nominal` (2700 W)
-  - [ ] `device.mfr` (`PPC`) / `device.model` (`Offline UPS`)
-  - [ ] `device.serial` (`000000000`) — Serial Number จากโรงงาน
+  - [x] `ups.power.nominal` (2700 VA) / `ups.realpower.nominal` (2700 W)
+  - [x] `device.mfr` (`PPC`) / `device.model` (`Offline UPS`)
+  - [x] `device.serial` (`000000000`) — Serial Number จากโรงงาน
 
 ---
 
