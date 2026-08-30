@@ -24,7 +24,27 @@
   $ sudo ./uninstall.sh
 
 -----------------------------------------------------------------------------
-## 3. รายการ Path ในระบบที่เกี่ยวข้อง (System Paths & Actions)
+## 3. เซอร์วิสที่ทำงานในระบบหลังติดตั้ง (Running Services)
+-----------------------------------------------------------------------------
+เมื่อรันสคริปต์ install.sh เสร็จสมบูรณ์ จะมี 3 เซอร์วิสหลักที่ทำงานอยู่บน Linux:
+
+1. enerex-ups-bridge.service
+   - ประเภท : Background Daemon (Python Bridge)
+   - หน้าที่ : เชื่อมต่อ USB ดึงค่า Telemetry จาก UPS แปลงและเขียนลง /etc/nut/myups.dev
+   - คำสั่ง : sudo systemctl status enerex-ups-bridge
+
+2. nut-driver.service
+   - ประเภท : NUT Driver Daemon (dummy-ups / enerex)
+   - หน้าที่ : อ่านไฟล์สถานะ /etc/nut/myups.dev แบบ Real-time
+   - คำสั่ง : sudo systemctl status nut-driver
+
+3. nut-server.service
+   - ประเภท : NUT Data Server (upsd Daemon)
+   - หน้าที่ : ให้บริการข้อมูล Telemetry บน TCP Port 3493 แก่คำสั่ง upsc และระบบเครือข่าย
+   - คำสั่ง : sudo systemctl status nut-server
+
+-----------------------------------------------------------------------------
+## 4. รายการ Path ในระบบที่เกี่ยวข้อง (System Paths & Actions)
 -----------------------------------------------------------------------------
 
 * Systemd Service File:
@@ -63,7 +83,7 @@
   - uninstall : ถามยืนยัน [y/N] ก่อนสั่ง apt-get remove
 
 -----------------------------------------------------------------------------
-## 4. การตรวจสอบสถานะการทำงาน (Monitoring & Logs)
+## 5. การตรวจสอบสถานะการทำงาน (Monitoring & Logs)
 -----------------------------------------------------------------------------
 
 # ตรวจสอบข้อมูล Telemetry จาก NUT (ค่าแรงดัน, โหลด, แบตเตอรี่)
@@ -79,7 +99,7 @@ $ sudo journalctl -u enerex-ups-bridge -f
 $ sudo systemctl status nut-server
 
 -----------------------------------------------------------------------------
-## 5. สถาปัตยกรรมและคุณลักษณะทางเทคนิค (Technical Features)
+## 6. สถาปัตยกรรมและคุณลักษณะทางเทคนิค (Technical Features)
 -----------------------------------------------------------------------------
 Flow:
   [UPS Device] <--(USB)--> [enerex_ups_bridge.py] --(Atomic Write)--> [/etc/nut/myups.dev] --> [NUT dummy-ups] --> [upsd] --> [upsc / Clients]
