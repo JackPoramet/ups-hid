@@ -45,6 +45,30 @@ echo "--- 5. Initializing dummy device file ---"
 echo "ups.status: WAIT" > /etc/nut/myups.dev
 chmod 666 /etc/nut/myups.dev
 
+echo "--- 5.5 Installing upscmd wrapper to bridge web commands to hardware ---"
+cat << 'EOF' > /usr/local/bin/upscmd
+#!/bin/bash
+# Intercept instant commands for dummy-ups compatibility
+for arg in "$@"; do
+    case "$arg" in
+        *test.battery.start*|*test.battery.quick*)
+            pkill -SIGUSR1 -f enerex_ups_bridge.py
+            exit 0
+            ;;
+        *test.battery.stop*)
+            pkill -SIGUSR2 -f enerex_ups_bridge.py
+            exit 0
+            ;;
+    esac
+done
+
+if [ -x /usr/bin/upscmd ]; then
+    exec /usr/bin/upscmd "$@"
+fi
+exit 0
+EOF
+chmod +x /usr/local/bin/upscmd
+
 echo "--- 6. Setting up Systemd Service (Production Standards) ---"
 SERVICE_FILE="/etc/systemd/system/enerex-ups-bridge.service"
 cat << 'EOF' > "$SERVICE_FILE"

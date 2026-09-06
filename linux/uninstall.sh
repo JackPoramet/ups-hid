@@ -50,6 +50,10 @@ if [ -L "/lib/nut/enerex" ] || [ -f "/lib/nut/enerex" ]; then
     echo "  [OK] Removed /lib/nut/enerex symlink"
 fi
 
+echo "--- 5.5 Removing upscmd Wrapper ---"
+rm -f /usr/local/bin/upscmd
+echo "  [OK] Removed /usr/local/bin/upscmd"
+
 echo "--- 6. Cleaning State and Lock Files ---"
 rm -f /etc/nut/myups.dev
 rm -f /etc/nut/myups.dev.tmp

@@ -62,6 +62,11 @@
   - install   : สร้าง Symbolic Link ชี้ไปที่ /lib/nut/dummy-ups
   - uninstall : ลบ Symbolic Link ออก
 
+* upscmd Interceptor Wrapper:
+  - Path      : /usr/local/bin/upscmd
+  - install   : ดักจับคำสั่ง instant command จากเว็บ/ระบบแล้วส่ง Signal ควบคุมฮาร์ดแวร์จริง
+  - uninstall : ลบไฟล์ Wrapper ทิ้ง
+
 * State Pipe File (ท่อส่งข้อมูล):
   - Path      : /etc/nut/myups.dev
   - install   : สร้างไฟล์สำหรับส่งผ่านข้อมูล Telemetry แบบ Real-time
