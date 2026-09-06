@@ -116,7 +116,7 @@ Flow:
 
 คุณลักษณะสำคัญ:
 1. Atomic File Replacement : ใช้ os.rename ป้องกัน NUT อ่านข้อมูลไม่สมบูรณ์
-2. Disconnect & Auto-Recovery : ตรวจจับสายหลุดทันที และปรับสถานะเป็น DNC (Driver Not Connected) พร้อมรีสตาร์ต nut-driver/nut-server เพื่อล้างตัวแปรค้างในแคชทั้งหมด 100%
+2. Disconnect & Auto-Recovery : ตรวจจับสายหลุดทันที และปรับสถานะเป็น OFF พร้อมเคลียร์ค่าตัวเลขทางไฟฟ้าและแบตเตอรี่ทั้งหมดเป็น 0 ป้องกันค่าค้าง และกู้คืนการอ่านค่าสดทันทีเมื่อเสียบสายกลับโดยอัตโนมัติ
 3. Single Instance Lock    : ใช้ fcntl.flock ป้องกันการรันโปรเซสซ้อนทับ
 4. Graceful Shutdown       : รองรับ SIGTERM/SIGINT คืน Resource และปิด Handle สะอาด
 5. Multi-Model Resolution  : ตรวจสอบ profile ร่วมกับ VID:PID เพื่อแยกแยะรุ่น Unity, Basic G2, 2000D และ MEC0003 ได้ถูกต้อง

@@ -44,7 +44,7 @@ fi
 echo "--- 5. Initializing dummy device file and IPC queue ---"
 cat << 'EOF' > /etc/nut/myups.dev
 device.type: ups
-ups.status: DNC
+ups.status: OFF
 EOF
 chmod 666 /etc/nut/myups.dev
 
