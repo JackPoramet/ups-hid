@@ -84,7 +84,11 @@ def parse_q1_string(raw_str: str) -> dict:
     if not raw_str:
         return res
 
-    clean_str = raw_str.lstrip("#(").strip()
+    idx = raw_str.find("(")
+    if idx != -1:
+        clean_str = raw_str[idx + 1:].strip()
+    else:
+        clean_str = raw_str.lstrip("#(").strip()
     parts = clean_str.split()
 
     if len(parts) >= 8:

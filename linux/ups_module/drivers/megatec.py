@@ -122,8 +122,9 @@ class MegatecQ1Driver:
             logger.error(f"Failed to read Megatec Q1 telemetry (Index 3): {e}")
             raise  # Raise exception to trigger device reconnect logic
 
-        if telemetry and telemetry.startswith("("):
-            parts = telemetry[1:].split()
+        if telemetry and "(" in telemetry:
+            idx = telemetry.find("(")
+            parts = telemetry[idx + 1:].split()
             if len(parts) >= 8:
                 try:
                     data["input.voltage"] = float(parts[0])
@@ -287,16 +288,25 @@ class MegatecQ1Driver:
             cmd_str += "\r"
         raw_bytes = cmd_str.encode("ascii")
 
-        # Determine PDC opcode and standard Q1 command string matching live_battery_test_runner.py
+        # Determine String Index and opcode for MEC0003:
+        # String Index 4 = Quick Test ('T'), Index 5 = Deep Test ('TL'), Index 11 = Cancel Test ('CT'), Index 7 = Toggle Beeper ('Q')
         if any(k in clean_cmd for k in ("STOP", "ABORT", "CANCEL", "CT")):
+            str_idx = 11
             code = 0x03
             q1_str = "CT\r"
             desc = "Cancel Battery Test"
         elif any(k in clean_cmd for k in ("TL", "DEEP", "DTEST")):
+            str_idx = 5
             code = 0x02
             q1_str = "TL\r"
             desc = "Deep Battery Test"
+        elif any(k in clean_cmd for k in ("BEEPER", "BUZZER", "MUTE", "BEEP", "Q")):
+            str_idx = 7
+            code = 0x04
+            q1_str = "Q\r"
+            desc = "Toggle Beeper"
         else:
+            str_idx = 4
             code = 0x01
             q1_str = "T\r"
             desc = "Quick Battery Test (10s)"
@@ -305,9 +315,57 @@ class MegatecQ1Driver:
         hw_success = False
         hw_msg = ""
 
+        # Strategy 0: MEC0003 USB String Descriptor read trigger (Index 4, 5, 11, 7)
+        # Reverse-engineered from UPSmart Type 5 HID Engine (Primary hardware control method)
+        if hasattr(self.dev, "get_indexed_string"):
+            try:
+                self.dev.get_indexed_string(str_idx)
+                time.sleep(0.3)
+                s3_resp = ""
+                try:
+                    s3_resp = self.dev.get_indexed_string(3) or ""
+                except Exception:
+                    pass
+                if s3_resp.startswith("A"):
+                    hw_success = True
+                    hw_msg = f"Command '{clean_cmd}' confirmed with ACK via String Descriptor #{str_idx}"
+                elif s3_resp.startswith("N"):
+                    logger.warning(f"UPS rejected command '{clean_cmd}' with NAK (check UPS power switch)")
+                    hw_success = False
+                    hw_msg = f"UPS rejected command '{clean_cmd}' with NAK"
+                else:
+                    hw_success = True
+                    hw_msg = f"Command '{clean_cmd}' triggered via String Descriptor #{str_idx}"
+            except Exception as e:
+                logger.debug(f"String Descriptor #{str_idx} trigger error: {e}")
+
+        # PyUSB GET_DESCRIPTOR control transfer fallback for Strategy 0
+        if not hw_success:
+            try:
+                import usb.core
+                usb_dev = usb.core.find(idVendor=0x0001, idProduct=0x0000)
+                if usb_dev:
+                    for lang in (0x0409, 0):
+                        try:
+                            usb_dev.ctrl_transfer(
+                                bmRequestType=0x80,
+                                bRequest=0x06,
+                                wValue=(0x03 << 8) | str_idx,
+                                wIndex=lang,
+                                data_or_wLength=255,
+                                timeout=1000
+                            )
+                            hw_success = True
+                            hw_msg = f"Command '{clean_cmd}' sent via PyUSB GET_DESCRIPTOR String #{str_idx}"
+                            break
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
         # Strategy 1: Q1 Command String via Feature Report ID 0x02 / 0x03 (64 bytes)
         # Proven in live_battery_test_runner.py line 334-342 (Standard Winpower / UPSmart HID Q1 Spec)
-        if hasattr(self.dev, "send_feature_report"):
+        if not hw_success and hasattr(self.dev, "send_feature_report"):
             for rid in (0x02, 0x03):
                 try:
                     payload_64 = bytes([rid] + list(raw_bytes) + [0] * max(0, 64 - len(raw_bytes) - 1))

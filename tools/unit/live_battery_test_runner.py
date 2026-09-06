@@ -50,6 +50,35 @@ from core_hid_ups import (
 )
 from tray_service.database import DatabaseManager
 
+if sys.platform == "win32":
+    import ctypes
+    from ctypes import wintypes
+
+    GENERIC_READ = 0x80000000
+    GENERIC_WRITE = 0x40000000
+    FILE_SHARE_READ = 0x00000001
+    FILE_SHARE_WRITE = 0x00000002
+    OPEN_EXISTING = 3
+    INVALID_HANDLE_VALUE = -1
+
+    try:
+        hid_dll = ctypes.windll.hid
+        kernel32_dll = ctypes.windll.kernel32
+
+        CreateFileA = kernel32_dll.CreateFileA
+        CreateFileA.argtypes = [wintypes.LPCSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+        CreateFileA.restype = wintypes.HANDLE
+
+        CloseHandle = kernel32_dll.CloseHandle
+        CloseHandle.argtypes = [wintypes.HANDLE]
+        CloseHandle.restype = wintypes.BOOL
+
+        HidD_GetIndexedString = hid_dll.HidD_GetIndexedString
+        HidD_GetIndexedString.argtypes = [wintypes.HANDLE, wintypes.ULONG, wintypes.LPVOID, wintypes.ULONG]
+        HidD_GetIndexedString.restype = wintypes.BOOL
+    except Exception:
+        pass
+
 
 def poll_universal_ups_telemetry(h: Any, target: dict) -> dict:
     """อ่านและ decode ค่า Telemetry จากอุปกรณ์ UPS (รองรับทั้ง HID Standard และ MEC)"""
@@ -61,44 +90,19 @@ def poll_universal_ups_telemetry(h: Any, target: dict) -> dict:
     if vid_val in (1, 0x0001, "0x0001") or "mec" in prod_str or "ppc" in mfg_str:
         raw_status = ""
         try:
-            # 1. On Linux / non-Windows: Read directly via hidapi handle get_indexed_string(3)
-            if sys.platform != "win32":
-                if hasattr(h, "get_indexed_string"):
-                    try:
-                        raw_status = h.get_indexed_string(3)
-                    except Exception:
-                        pass
-            else:
-                # 2. On Windows: Read via Win32 HidD_GetIndexedString handle
-                import ctypes
-                from ctypes import wintypes
+            # 1. First try directly via hidapi handle get_indexed_string(3)
+            if hasattr(h, "get_indexed_string"):
                 try:
-                    from tools.unit.read_mec_ups import get_device_path, parse_q1_string
+                    raw_status = h.get_indexed_string(3)
+                except Exception:
+                    pass
+
+            # 2. On Windows fallback: Read via Win32 HidD_GetIndexedString handle
+            if not raw_status and sys.platform == "win32":
+                try:
+                    from tools.unit.read_mec_ups import get_device_path
                 except ImportError:
-                    from win32_hid_wrapper import parse_q1_string
                     def get_device_path(): return ""
-
-                GENERIC_READ = 0x80000000
-                GENERIC_WRITE = 0x40000000
-                FILE_SHARE_READ = 0x00000001
-                FILE_SHARE_WRITE = 0x00000002
-                OPEN_EXISTING = 3
-                INVALID_HANDLE_VALUE = -1
-
-                hid_dll = ctypes.windll.hid
-                kernel32_dll = ctypes.windll.kernel32
-
-                CreateFileA = kernel32_dll.CreateFileA
-                CreateFileA.argtypes = [wintypes.LPCSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
-                CreateFileA.restype = wintypes.HANDLE
-
-                CloseHandle = kernel32_dll.CloseHandle
-                CloseHandle.argtypes = [wintypes.HANDLE]
-                CloseHandle.restype = wintypes.BOOL
-
-                HidD_GetIndexedString = hid_dll.HidD_GetIndexedString
-                HidD_GetIndexedString.argtypes = [wintypes.HANDLE, wintypes.ULONG, wintypes.LPVOID, wintypes.ULONG]
-                HidD_GetIndexedString.restype = wintypes.BOOL
 
                 dev_path = target.get("path_str") or str(target.get("path") or "")
                 if not dev_path:
@@ -132,18 +136,29 @@ def poll_universal_ups_telemetry(h: Any, target: dict) -> dict:
                 if batt_pct >= 95.0:
                     batt_pct = 100.0
 
+                is_testing = bool(data.get("test_in_progress"))
+                if is_testing:
+                    mode_str = "Battery Test Mode (กำลังทดสอบ!)"
+                    status_str = "CAL"
+                elif not ac_on:
+                    mode_str = "Battery Mode (ไฟดับ!)"
+                    status_str = "OB"
+                else:
+                    mode_str = "Line Mode (ไฟปกติ)"
+                    status_str = "OL"
+
                 return {
                     "ac_present": ac_on,
-                    "discharging": not ac_on,
+                    "discharging": not ac_on or is_testing,
                     "battery_voltage_v": v_bat,
                     "battery.charge": batt_pct,
                     "battery_capacity_percent": batt_pct,
                     "input.voltage": v_in,
                     "output_voltage_v": v_out,
                     "percent_load": load,
-                    "ups.status": "OL" if ac_on else "OB",
-                    "ups_mode": f"{'Line Mode (ไฟปกติ)' if ac_on else 'Battery Mode (ไฟดับ!)'}",
-                    "battery_test_status": "running" if data.get("test_in_progress") else "idle",
+                    "ups.status": status_str,
+                    "ups_mode": mode_str,
+                    "battery_test_status": "running" if is_testing else "idle",
                     "status_good": not data.get("ups_failed", False),
                 }
         except Exception:
@@ -330,6 +345,57 @@ def send_universal_battery_test_command(h: Any, target: dict, cmd_type: str) -> 
     vid_val = target.get("vendor_id", 0x06DA)
     pid_val = target.get("product_id", 0xFFFF)
     serial_val = target.get("serial_number", "")
+    prod_val = (target.get("product_string") or "").lower()
+    mfr_val = (target.get("manufacturer_string") or "").lower()
+
+    # 0. กรณี MEC0003 (VID 0x0001, PID 0x0000 / Megatec HID Engine Type 5)
+    # อุปกรณ์ควบคุมผ่าน USB Indexed String Descriptor (ห้ามส่ง Feature Report 0x24 เพราะฮาร์ดแวร์ไม่รับ)
+    # Index 4 = Quick Test (T), Index 5 = Deep Test (TL), Index 11 = Cancel Test (CT)
+    if vid_val == 0x0001 or pid_val == 0x0000 or "mec" in prod_val or "mec" in mfr_val:
+        mec_str_map = {
+            "quick": 4,
+            "deep": 5,
+            "cancel": 11,
+        }
+        str_idx = mec_str_map.get(cmd_type, 4)
+
+        mec_sent = False
+        if hasattr(h, "get_indexed_string"):
+            try:
+                h.get_indexed_string(str_idx)
+                mec_sent = True
+            except Exception:
+                pass
+
+        if not mec_sent:
+            try:
+                dev_path = target.get("path_str") or str(target.get("path") or "")
+                if dev_path:
+                    path_bytes = dev_path.encode("ascii") if isinstance(dev_path, str) else dev_path
+                    h_dev = CreateFileA(path_bytes, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, None, OPEN_EXISTING, 0, None)
+                    if h_dev != INVALID_HANDLE_VALUE and h_dev != 0:
+                        try:
+                            buf = ctypes.create_unicode_buffer(256)
+                            if HidD_GetIndexedString(h_dev, str_idx, buf, ctypes.sizeof(buf)):
+                                mec_sent = True
+                        finally:
+                            CloseHandle(h_dev)
+            except Exception:
+                pass
+
+        if mec_sent:
+            time.sleep(0.3)
+            s3_val = ""
+            if hasattr(h, "get_indexed_string"):
+                try:
+                    s3_val = h.get_indexed_string(3) or ""
+                except Exception:
+                    pass
+            if s3_val.startswith("A"):
+                return True, f"ส่งคำสั่ง {desc} สำเร็จผ่าน MEC USB String Descriptor #{str_idx} (UPS ยืนยัน ACK สำเร็จ)"
+            elif s3_val.startswith("N"):
+                return False, f"UPS ปฏิเสธคำสั่ง {desc} (ได้ NAK จาก UPS - กรุณาเปิดสวิตช์หน้าเครื่อง UPS ให้ Output จ่ายไฟปกติ)"
+            return True, f"ส่งคำสั่ง {desc} สำเร็จผ่าน MEC USB String Descriptor #{str_idx}"
 
     # 1. ส่ง Feature Report ID 0x24 (Power Device > Test) ขนาด 8 บิต ผ่าน hidapi handle ก่อนเสมอ (ทำงาน 100% บน PPC 2000D)
     for rid in (0x24, 0x01, 0x03, 0x07):
