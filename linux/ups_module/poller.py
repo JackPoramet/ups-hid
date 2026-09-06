@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import logging
 import math
+import os
+import platform
 import re
 import threading
 import time
@@ -229,7 +231,7 @@ class UPSPoller(threading.Thread):
             raw, report_meta = read_all_feature_reports(
                 h,
                 report_ids=self._report_ids,
-                sizes=(8, 16, 32),
+                sizes=(64,),
                 retries=1,
                 include_zero=False,
             )
@@ -265,8 +267,6 @@ class UPSPoller(threading.Thread):
 
         try:
             import usb.core
-            import platform
-            import os
 
             system = platform.system().lower()
             # Never detach the kernel HID driver from a live UPS. The normal

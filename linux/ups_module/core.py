@@ -1269,16 +1269,6 @@ def print_monitor_snapshot(ups: dict) -> None:
         print(f"  {label:<30} {val}{suffix}")
 
 
-def stringify_device_info(info: dict) -> dict:
-    out = {}
-    for k, v in info.items():
-        if isinstance(v, (bytes, bytearray)):
-            out[k] = v.hex()
-        else:
-            out[k] = str(v) if v is not None else ""
-    return out
-
-
 def resolve_json_path(user_value: Optional[str]) -> Path:
     if user_value is None:
         return Path("ups_scan.json")

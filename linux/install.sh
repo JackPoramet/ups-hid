@@ -46,7 +46,8 @@ echo "ups.status: WAIT" > /etc/nut/myups.dev
 chmod 666 /etc/nut/myups.dev
 
 touch /run/enerex_ups_cmd /tmp/enerex_ups_cmd
-chmod 666 /run/enerex_ups_cmd /tmp/enerex_ups_cmd 2>/dev/null || true
+chown root:ups-hid /run/enerex_ups_cmd /tmp/enerex_ups_cmd 2>/dev/null || true
+chmod 660 /run/enerex_ups_cmd /tmp/enerex_ups_cmd 2>/dev/null || true
 
 echo "--- 5.5 Installing upscmd wrapper and enerex-test CLI tool ---"
 # Backup original binary if not already backed up
@@ -86,7 +87,8 @@ fi
 exit 0
 EOF
 chmod +x /usr/local/bin/upscmd
-cp /usr/local/bin/upscmd /usr/bin/upscmd
+# Note: /usr/local/bin has PATH priority over /usr/bin on Ubuntu,
+# so the wrapper is found first without replacing the system binary.
 
 cat << 'EOF' > /usr/local/bin/enerex-test
 #!/bin/bash
