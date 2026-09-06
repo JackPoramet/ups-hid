@@ -260,6 +260,13 @@ class MegatecQ1Driver:
         except Exception:
             pass
 
+        if "device.mfr" not in data and self.profile:
+            data["device.mfr"] = self.profile.manufacturer
+            data["ups.mfr"] = self.profile.manufacturer
+        if "device.model" not in data and self.profile:
+            data["device.model"] = self.profile.model
+            data["ups.model"] = self.profile.model
+
         return data
 
     def send_command(self, cmd_str: str) -> tuple:
@@ -309,7 +316,11 @@ class MegatecQ1Driver:
             logger.debug(f"Hardware write attempt failed: {e}")
 
         # 3. Handle Battery Test lifecycle
-        if clean_cmd in ("T", "TEST", "QTEST"):
+        if clean_cmd in (
+            "T", "TEST", "QTEST", "QUICK", "CMD_TEST_BATTERY_QUICK",
+            "TEST_BATTERY_QUICK", "TEST_QUICK", "TEST.BATTERY.START",
+            "TEST.BATTERY.START.QUICK", "TEST.BATTERY.QUICK"
+        ):
             self._test_active = True
             self._test_start_time = time.time()
             self._test_duration = 10.0
@@ -320,7 +331,11 @@ class MegatecQ1Driver:
             logger.info(f"Megatec battery test started: {msg}")
             return True, msg
 
-        elif clean_cmd in ("TL", "DTEST"):
+        elif clean_cmd in (
+            "TL", "DTEST", "DEEP", "CMD_TEST_BATTERY_START",
+            "TEST_BATTERY_START", "TEST_BATTERY_DEEP", "TEST_DEEP",
+            "TEST.BATTERY.START.DEEP", "TEST.BATTERY.DEEP"
+        ):
             self._test_active = True
             self._test_start_time = time.time()
             self._test_duration = 30.0
@@ -331,7 +346,10 @@ class MegatecQ1Driver:
             logger.info(f"Megatec deep battery test started: {msg}")
             return True, msg
 
-        elif clean_cmd in ("CT", "STOP", "CANCEL"):
+        elif clean_cmd in (
+            "CT", "STOP", "CANCEL", "ABORT", "CMD_TEST_BATTERY_STOP",
+            "TEST_BATTERY_STOP", "TEST_STOP", "TEST.BATTERY.STOP"
+        ):
             self._test_active = False
             self._test_duration = 0.0
             self._test_status = "aborted"

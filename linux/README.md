@@ -116,33 +116,45 @@ Flow:
 
 คุณลักษณะสำคัญ:
 1. Atomic File Replacement : ใช้ os.rename ป้องกัน NUT อ่านข้อมูลไม่สมบูรณ์
-2. Auto-Recovery           : ตรวจจับสายหลุด/เสียบใหม่ และปรับสถานะเป็น OFF อัตโนมัติ
+2. Disconnect & Auto-Recovery : ตรวจจับสายหลุดทันที และปรับสถานะเป็น DNC (Driver Not Connected) พร้อมรีสตาร์ต nut-driver/nut-server เพื่อล้างตัวแปรค้างในแคชทั้งหมด 100%
 3. Single Instance Lock    : ใช้ fcntl.flock ป้องกันการรันโปรเซสซ้อนทับ
 4. Graceful Shutdown       : รองรับ SIGTERM/SIGINT คืน Resource และปิด Handle สะอาด
-5. Multi-Model Resolution  : ตรวจสอบ product_string ร่วมกับ VID:PID เพื่อแยกแยะรุ่น Unity, Basic G2 และ 2000D ได้ถูกต้อง
-6. Battery Self-Test Bridge : ตรวจจับคำสั่งทดสอบแบตเตอรี่จาก Web/MariaDB, Signals หรือ upscmd แล้วส่งคำสั่งควบคุมฮาร์ดแวร์จริง พร้อมอัปเดตสถานะ CAL เข้า NUT อัตโนมัติ
+5. Multi-Model Resolution  : ตรวจสอบ profile ร่วมกับ VID:PID เพื่อแยกแยะรุ่น Unity, Basic G2, 2000D และ MEC0003 ได้ถูกต้อง
+6. Battery Self-Test Bridge : ตรวจจับคำสั่งทดสอบแบตเตอรี่จาก Web/MariaDB, Signals, File Queue หรือ upscmd แล้วส่งคำสั่งควบคุมฮาร์ดแวร์จริง พร้อมอัปเดตสถานะ CAL เข้า NUT อัตโนมัติ
 
 -----------------------------------------------------------------------------
 ## 7. คู่มือการสั่งทดสอบแบตเตอรี่ (Battery Self-Test Integration)
 -----------------------------------------------------------------------------
 
-ระบบรองรับการสั่งทดสอบแบตเตอรี่ (Battery Self-Test) และคำสั่งยกเลิก (Abort) ผ่าน 3 ช่องทางหลัก:
+ระบบรองรับการสั่งทดสอบแบตเตอรี่ (Battery Self-Test) และคำสั่งยกเลิก (Abort) ผ่าน 4 ช่องทางหลัก:
 
 ### 7.1 ช่องทางสั่งการ (Trigger Methods)
-1. **ผ่านหน้าเว็บ Web Dashboard**:
+1. **ผ่านคำสั่ง CLI สะดวกสุด (enerex-test)**:
+   - สั่งเริ่ม Quick Battery Test (10 วินาที):
+     $ enerex-test quick
+   - สั่งเริ่ม Deep Battery Test:
+     $ enerex-test deep
+   - สั่งยกเลิก Battery Test (Abort/Stop):
+     $ enerex-test stop
+
+2. **ผ่านหน้าเว็บ Web Dashboard**:
    - ไปที่เมนู `/pages/system/test/`
    - กดปุ่ม **Start Now** ในส่วน Quick Test หรือ Deep Test
    - ระบบเว็บจะบันทึกคำสั่งลงตาราง `system_command` ใน MariaDB (`run_python = 1`) ซึ่ง `enerex_ups_bridge.py` จะดักจับและสั่งงานฮาร์ดแวร์ทันที
-2. **ผ่าน Linux Signal (CLI)**:
+
+3. **ผ่านคำสั่ง NUT upscmd Wrapper**:
+   - สั่งเริ่ม Quick Test:
+     $ upscmd myups test.battery.start.quick
+   - สั่งเริ่ม Deep Test:
+     $ upscmd myups test.battery.start.deep
+   - สั่งยกเลิก:
+     $ upscmd myups test.battery.stop
+
+4. **ผ่าน Linux Signal**:
    - สั่งเริ่ม Quick Battery Test:
      $ pkill -SIGUSR1 -f enerex_ups_bridge.py
    - สั่งยกเลิก Battery Test (Abort):
      $ pkill -SIGUSR2 -f enerex_ups_bridge.py
-3. **ผ่านคำสั่ง NUT upscmd Wrapper**:
-   - สั่งเริ่มทดสอบ:
-     $ upscmd myups test.battery.start.quick
-   - สั่งยกเลิก:
-     $ upscmd myups test.battery.stop
 
 ### 7.2 สถานะและการเปลี่ยนแปลงของตัวแปร (Status Lifecycle)
 * **ก่อนสั่งทดสอบ (Baseline / Idle)**:

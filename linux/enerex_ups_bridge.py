@@ -96,10 +96,15 @@ except (ValueError, AttributeError):
     pass
 
 
+CMD_FILES = ["/run/enerex_ups_cmd", "/tmp/enerex_ups_cmd"]
+
+
 def check_and_execute_commands(client):
     """
-    Poll and execute pending commands from MariaDB system_command table or signals.
-    Supports cmd_test_battery_quick, cmd_test_battery_start, cmd_test_battery_stop.
+    Poll and execute pending commands from:
+    1. Signals (SIGUSR1, SIGUSR2)
+    2. File IPC queue (/run/enerex_ups_cmd or /tmp/enerex_ups_cmd)
+    3. MariaDB system_command table
     """
     global _pending_commands
     cmds = []
@@ -108,24 +113,42 @@ def check_and_execute_commands(client):
     while _pending_commands:
         cmds.append(_pending_commands.pop(0))
 
-    # 2. Check MariaDB system_command table
+    # 2. Check File IPC queue (allows any user / web / CLI to trigger tests)
+    for cmd_file in CMD_FILES:
+        if os.path.exists(cmd_file):
+            try:
+                with open(cmd_file, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                if content:
+                    cmds.append(content)
+                # Truncate file immediately
+                with open(cmd_file, "w", encoding="utf-8") as f:
+                    pass
+            except Exception as e:
+                logging.debug(f"Error reading command file {cmd_file}: {e}")
+
+    # 3. Check MariaDB system_command table
     try:
         conn = None
         try:
-            import mysql.connector
-            conn = mysql.connector.connect(**DB_CONFIG)
+            import pymysql
+            conn = pymysql.connect(**DB_CONFIG)
         except ImportError:
             try:
-                import pymysql
-                conn = pymysql.connect(**DB_CONFIG)
+                import mysql.connector
+                conn = mysql.connector.connect(**DB_CONFIG)
             except ImportError:
-                pass
+                try:
+                    import MySQLdb
+                    conn = MySQLdb.connect(**DB_CONFIG)
+                except ImportError:
+                    pass
 
         if conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT id, cmd_name FROM system_command WHERE run_python = 1 "
-                "AND cmd_name IN ('cmd_test_battery_quick', 'cmd_test_battery_start', 'cmd_test_battery_stop')"
+                "AND (cmd_name LIKE '%test%' OR cmd_name LIKE '%quick%' OR cmd_name LIKE '%deep%' OR cmd_name LIKE '%stop%')"
             )
             rows = cursor.fetchall()
             for row in rows:
@@ -138,50 +161,59 @@ def check_and_execute_commands(client):
     except Exception as e:
         logging.debug(f"DB command check encountered non-fatal error: {e}")
 
-    # 3. Execute detected commands via client
-    for cmd in cmds:
-        logging.info(f"Executing UPS command: {cmd}")
+    # 4. Execute detected commands via client
+    for raw_cmd in cmds:
+        cmd_clean = raw_cmd.strip().lower()
+        logging.info(f"Executing UPS command: '{raw_cmd}' (normalized: '{cmd_clean}')")
         success, msg = False, ""
         try:
-            if cmd in ("cmd_test_battery_quick", "test_quick"):
-                if hasattr(client, "test_battery_quick"):
-                    success, msg = client.test_battery_quick()
-                else:
-                    success, msg = client.run_self_test()
-            elif cmd in ("cmd_test_battery_start", "test_deep"):
-                if hasattr(client, "test_battery_deep"):
-                    success, msg = client.test_battery_deep()
-                else:
-                    success, msg = client.run_self_test()
-            elif cmd in ("cmd_test_battery_stop", "test_stop"):
+            if any(k in cmd_clean for k in ("stop", "abort", "cancel")):
                 if hasattr(client, "test_battery_stop"):
                     success, msg = client.test_battery_stop()
                 else:
                     success, msg = client.abort_self_test()
-            logging.info(f"Command '{cmd}' execution result: success={success}, msg='{msg}'")
+            elif any(k in cmd_clean for k in ("deep", "start_test", "dtest")):
+                if hasattr(client, "test_battery_deep"):
+                    success, msg = client.test_battery_deep()
+                else:
+                    success, msg = client.run_self_test()
+            elif any(k in cmd_clean for k in ("quick", "qtest", "start", "test", "cal")):
+                if hasattr(client, "test_battery_quick"):
+                    success, msg = client.test_battery_quick()
+                else:
+                    success, msg = client.run_self_test()
+            else:
+                logging.warning(f"Unrecognized UPS command: '{raw_cmd}'")
+                continue
+
+            logging.info(f"Command '{raw_cmd}' execution result: success={success}, msg='{msg}'")
         except Exception as e:
-            logging.error(f"Error executing command '{cmd}': {e}")
+            logging.error(f"Error executing command '{raw_cmd}': {e}")
 
 
-def enrich_nut_variables(data: dict, info: dict) -> dict:
+def enrich_nut_variables(data: dict, info: dict, profile=None) -> dict:
     """
     Enriches the live UPS data dictionary with missing standard NUT variables
     (conforming to usbhid-ups / MGE HID 1.40 / Power Device Class specification)
     while strictly preserving all existing live readings.
     """
     # 1. Device Identification & Serial
-    mfr = info.get("manufacturer_string") or data.get("device.mfr") or data.get("ups.mfr") or "PHOENIXTEC"
-    prod = info.get("product_string") or data.get("device.model") or data.get("ups.model") or "Innova Unity Tower 3K"
-    serial = info.get("serial_number") or data.get("device.serial") or data.get("ups.serial") or "CPLUR4709040011"
+    mfr = info.get("manufacturer") or info.get("manufacturer_string") or data.get("device.mfr") or data.get("ups.mfr") or (profile.manufacturer if profile else "Enerex")
+    prod = info.get("model") or info.get("product_string") or data.get("device.model") or data.get("ups.model") or (profile.model if profile else "UPS")
+    serial = info.get("serial") or info.get("serial_number") or data.get("device.serial") or data.get("ups.serial") or "0000000000"
 
-    data.setdefault("device.mfr", mfr)
-    data.setdefault("device.model", prod)
-    data.setdefault("device.serial", serial)
-    data.setdefault("device.type", "ups")
-    data.setdefault("ups.mfr", mfr)
-    data.setdefault("ups.model", prod)
-    data.setdefault("ups.serial", serial)
-    data.setdefault("ups.type", "online")
+    data["device.mfr"] = mfr
+    data["device.model"] = prod
+    data["device.serial"] = serial
+    data["device.type"] = "ups"
+    data["ups.mfr"] = mfr
+    data["ups.model"] = prod
+    data["ups.serial"] = serial
+    if "ups.type" not in data:
+        if profile and ("mec" in profile.id.lower() or "offline" in profile.id.lower()):
+            data["ups.type"] = "offline"
+        else:
+            data["ups.type"] = "online"
 
     # 2. Driver Metadata (MGE HID / usbhid-ups compatible)
     data.setdefault("driver.name", "usbhid-ups")
@@ -236,8 +268,11 @@ def enrich_nut_variables(data: dict, info: dict) -> dict:
     is_on_batt = "OB" in status_str or "DISCHRG" in status_str or (vin < 50.0 and "OL" not in status_str and status_str != "OFF")
     is_off = "OFF" in status_str or (vout < 50.0 and not is_on_batt)
 
+    b_test = str(data.get("battery.test.status", "")).lower()
+    is_testing = b_test in ("running", "in progress", "cal") or "CAL" in status_str
+
     if is_off:
-        data["ups.status"] = "OFF"
+        data["ups.status"] = "OFF CAL" if is_testing else "OFF"
         data["output.voltage"] = 0.0
         data["output.frequency"] = 0.0
         data["output.current"] = 0.0
@@ -292,7 +327,7 @@ def enrich_nut_variables(data: dict, info: dict) -> dict:
         data["ups.load"] = 0
 
     # 5. UPS Nominal Power & Real Power (Model-specific ratings)
-    model_str = (info.get("product_string") or data.get("device.model") or data.get("ups.model") or "").lower()
+    model_str = (info.get("model") or info.get("product_string") or data.get("device.model") or data.get("ups.model") or (profile.model if profile else "")).lower()
 
     if "2000" in model_str or "offline" in model_str:
         data.setdefault("ups.power.nominal", 2000)
@@ -359,9 +394,52 @@ def enrich_nut_variables(data: dict, info: dict) -> dict:
     return data
 
 
+_is_connected = False
+
+
+def set_disconnected_state():
+    """
+    Sets NUT state to DNC (Driver Not Connected) and immediately restarts
+    nut-driver and nut-server so dummy-ups and upsd purge all stale in-memory variables.
+    """
+    global _is_connected
+    if not _is_connected and os.path.exists(DUMMY_FILE):
+        try:
+            with open(DUMMY_FILE, "r", encoding="utf-8") as f:
+                content = f.read()
+            if "ups.status: DNC" in content and len(content.strip().splitlines()) <= 2:
+                return
+        except Exception:
+            pass
+
+    _is_connected = False
+    logging.warning("UPS disconnected or unavailable. Writing DNC state and flushing NUT cache...")
+
+    temp_file = DUMMY_FILE + ".tmp"
+    try:
+        with open(temp_file, "w", encoding="utf-8") as f:
+            f.write("device.type: ups\n")
+            f.write("ups.status: DNC\n")
+        os.rename(temp_file, DUMMY_FILE)
+        os.chmod(DUMMY_FILE, 0o666)
+    except Exception as e:
+        logging.error(f"Failed to write disconnected state file: {e}")
+
+    # Restart nut-driver and nut-server to clear all in-memory variables
+    try:
+        os.system("systemctl restart nut-driver nut-server 2>/dev/null || /sbin/upsdrvctl stop && /sbin/upsdrvctl start 2>/dev/null || true")
+    except Exception as e:
+        logging.error(f"Failed to restart nut services: {e}")
+
+
 def main():
+    global _is_connected
     acquire_single_instance_lock()
     logging.info("Starting Enerex UPS Bridge daemon...")
+
+    # Ensure clean DNC state on initial start if dummy file does not exist
+    if not os.path.exists(DUMMY_FILE):
+        set_disconnected_state()
 
     while _running:
         client = None
@@ -371,26 +449,29 @@ def main():
             client.connect()
 
             info = client.device_info
-            mfr = info.get("manufacturer_string", "PHOENIXTEC")
-            prod = info.get("product_string", "Innova Unity Tower 3K")
-            logging.info(f"Connected to UPS: Manufacturer='{mfr}', Product='{prod}'")
+            profile = getattr(client, "profile", None)
+            mfr = info.get("manufacturer") or info.get("manufacturer_string") or (profile.manufacturer if profile else "Enerex")
+            prod = info.get("model") or info.get("product_string") or (profile.model if profile else "UPS")
+            logging.info(f"Connected to UPS: Manufacturer='{mfr}', Product='{prod}' (Protocol: {getattr(profile, 'protocol', 'unknown')})")
+
+            _is_connected = True
 
             # Clear old data in dummy-ups memory and reconnect upsd
             logging.info("Restarting nut-driver and nut-server to clear stale variables...")
             os.system("systemctl restart nut-driver && systemctl restart nut-server")
-            time.sleep(2)
+            time.sleep(1.5)
 
             # Polling loop for the connected UPS
             while _running:
                 try:
-                    # 0. Check and execute pending commands (Battery Test from DB or Signals)
+                    # 0. Check and execute pending commands (Battery Test from DB, Signals, or File IPC)
                     check_and_execute_commands(client)
 
                     # 1. Read live UPS variables (existing logic preserved 100%)
                     data = client.get_vars()
 
-                    # 2. Enrich with missing usbhid-ups compatible variables (existing values untouched)
-                    data = enrich_nut_variables(data, info)
+                    # 2. Enrich with missing usbhid-ups compatible variables
+                    data = enrich_nut_variables(data, info, profile)
 
                     # 3. Write to temp file first to prevent NUT from reading an incomplete file
                     temp_file = DUMMY_FILE + ".tmp"
@@ -406,25 +487,8 @@ def main():
                     if not _running:
                         break
                     logging.error(f"Error reading UPS data (Device disconnected?): {e}")
-                    # Tell dummy-ups the device is disconnected and overwrite electrical metrics to prevent stale cache
-                    temp_file = DUMMY_FILE + ".tmp"
-                    with open(temp_file, "w", encoding="utf-8") as f:
-                        f.write("battery.charger.status: resting\n")
-                        f.write("device.type: ups\n")
-                        f.write("input.frequency: 0.0\n")
-                        f.write("input.voltage: 0.0\n")
-                        f.write("outlet.1.status: off\n")
-                        f.write("output.current: 0.0\n")
-                        f.write("output.frequency: 0.0\n")
-                        f.write("output.power: 0\n")
-                        f.write("output.power.apparent: 0\n")
-                        f.write("output.voltage: 0.0\n")
-                        f.write("ups.load: 0\n")
-                        f.write("ups.status: OFF\n")
-                    os.rename(temp_file, DUMMY_FILE)
-                    os.chmod(DUMMY_FILE, 0o666)
-
-                    # Break the inner loop to reconnect/auto-detect again
+                    # Tell dummy-ups the device is disconnected and purge stale cache
+                    set_disconnected_state()
                     break
 
                 time.sleep(POLL_INTERVAL)
@@ -432,6 +496,7 @@ def main():
         except Exception as e:
             if not _running:
                 break
+            set_disconnected_state()
             logging.warning(f"No UPS found or connect failed: {e}. Retrying in 5 seconds...")
             time.sleep(5)
         finally:

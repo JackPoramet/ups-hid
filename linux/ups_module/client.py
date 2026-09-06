@@ -237,9 +237,17 @@ class UPSClient:
             try:
                 from .drivers.megatec import MegatecQ1Driver
                 self._driver = MegatecQ1Driver(self._handle, self._profile)
-            except ImportError as e:
-                logger.error("Failed to load MegatecQ1Driver: %s", e)
-                self._driver = None
+            except (ImportError, ValueError):
+                try:
+                    from ups_module.drivers.megatec import MegatecQ1Driver
+                    self._driver = MegatecQ1Driver(self._handle, self._profile)
+                except ImportError:
+                    try:
+                        from drivers.megatec import MegatecQ1Driver
+                        self._driver = MegatecQ1Driver(self._handle, self._profile)
+                    except ImportError as e:
+                        logger.error("Failed to load MegatecQ1Driver: %s", e)
+                        self._driver = None
         else:
             self._driver = None
 
@@ -422,14 +430,25 @@ class UPSClient:
 
     def get_device_info(self) -> Dict[str, Any]:
         info = self._device_info
-        mfr = info.get("manufacturer_string") or info.get("manufacturer") or ""
-        model = info.get("product_string") or info.get("model") or ""
+        mfr = (
+            info.get("manufacturer_string")
+            or info.get("manufacturer")
+            or (self._profile.manufacturer if self._profile else "")
+        )
+        model = (
+            info.get("product_string")
+            or info.get("model")
+            or (self._profile.model if self._profile else "")
+        )
         serial = info.get("serial_number") or info.get("serial") or ""
         return {
-            "manufacturer": mfr,
-            "model":        model,
-            "serial":       serial,
-            "type":         "ups",
+            "manufacturer":        mfr,
+            "model":               model,
+            "serial":              serial,
+            "type":                "ups",
+            "manufacturer_string": mfr,
+            "product_string":      model,
+            "serial_number":       serial,
         }
 
     @property
@@ -438,9 +457,14 @@ class UPSClient:
         return self.get_device_info()
 
     @property
+    def profile(self) -> Optional[DeviceProfile]:
+        """Active DeviceProfile for this UPS client."""
+        return self._profile
+
+    @property
     def model(self) -> str:
         """Return the active model name or ID."""
-        return self._model or (self._profile.model if self._profile else "")
+        return getattr(self, "_model", None) or (self._profile.model if self._profile else "")
 
     # =========================================================================
     # Control commands

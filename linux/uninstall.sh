@@ -50,16 +50,28 @@ if [ -L "/lib/nut/enerex" ] || [ -f "/lib/nut/enerex" ]; then
     echo "  [OK] Removed /lib/nut/enerex symlink"
 fi
 
-echo "--- 5.5 Removing upscmd Wrapper ---"
+echo "--- 5.5 Removing upscmd Wrapper and enerex-test CLI ---"
 rm -f /usr/local/bin/upscmd
-echo "  [OK] Removed /usr/local/bin/upscmd"
+rm -f /usr/local/bin/enerex-test
+if [ -f "/usr/bin/upscmd.orig" ]; then
+    mv -f /usr/bin/upscmd.orig /usr/bin/upscmd
+    echo "  [OK] Restored original /usr/bin/upscmd"
+else
+    # If upscmd in /usr/bin was our wrapper script, remove it
+    if [ -f "/usr/bin/upscmd" ] && grep -q "enerex_ups_cmd" /usr/bin/upscmd 2>/dev/null; then
+        rm -f /usr/bin/upscmd
+    fi
+fi
+echo "  [OK] Removed /usr/local/bin/upscmd and /usr/local/bin/enerex-test"
 
-echo "--- 6. Cleaning State and Lock Files ---"
+echo "--- 6. Cleaning State, IPC and Lock Files ---"
 rm -f /etc/nut/myups.dev
 rm -f /etc/nut/myups.dev.tmp
+rm -f /run/enerex_ups_cmd
+rm -f /tmp/enerex_ups_cmd
 rm -f /run/enerex_ups_bridge.lock
 rm -f /tmp/enerex_ups_bridge.lock
-echo "  [OK] State and lock files removed"
+echo "  [OK] State, IPC and lock files removed"
 
 echo "--- 7. Reverting nut-driver.service patch (if applied) ---"
 if [ -f "/lib/systemd/system/nut-driver.service" ]; then
