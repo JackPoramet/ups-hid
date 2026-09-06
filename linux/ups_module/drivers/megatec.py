@@ -272,11 +272,12 @@ class MegatecQ1Driver:
     def send_command(self, cmd_str: str) -> tuple:
         """
         Send an ASCII command to Megatec UPS (e.g. 'T' for quick test, 'TL' for deep test, 'CT' to cancel).
-        Supports:
-        1. Exact 16-byte and 8-byte padded HID feature reports (matching USB descriptor size)
-        2. NUT blazer_usb/cypress standard USB Control Transfer (wValue=0x0200, 8-byte payload) via PyUSB
-        3. Standard Feature Report Control Transfer (wValue=0x0300 / 0x0324) via PyUSB
-        4. Complete Battery Test lifecycle state machine and telemetry synchronization
+        Faithfully replicates the proven multi-stage injection strategy from tools/unit/live_battery_test_runner.py:
+        1. 8-byte Feature Reports (RID 0x24, 0x01, 0x03, 0x07 - PDC Standard)
+        2. 64-byte Q1 ASCII Feature Reports (RID 0x02, 0x03 with ASCII payload)
+        3. Exact 17-byte and 16-byte Report ID 0 Feature Reports (Linux hidraw exact sizing)
+        4. Direct HID write (padded 16B/8B and raw)
+        5. PyUSB Control Transfer fallback (8B PDC, 64B Q1, 16B Q1, and Output Report 0x0200)
         """
         if not self.dev:
             return False, "No HID device handle"
@@ -286,46 +287,69 @@ class MegatecQ1Driver:
             cmd_str += "\r"
         raw_bytes = cmd_str.encode("ascii")
 
+        # Determine PDC opcode and standard Q1 command string matching live_battery_test_runner.py
+        if any(k in clean_cmd for k in ("STOP", "ABORT", "CANCEL", "CT")):
+            code = 0x03
+            q1_str = "CT\r"
+            desc = "Cancel Battery Test"
+        elif any(k in clean_cmd for k in ("TL", "DEEP", "DTEST")):
+            code = 0x02
+            q1_str = "TL\r"
+            desc = "Deep Battery Test"
+        else:
+            code = 0x01
+            q1_str = "T\r"
+            desc = "Quick Battery Test (10s)"
+
+        q1_bytes = q1_str.encode("ascii")
         hw_success = False
         hw_msg = ""
 
-        # Strategy 1: Direct HID Feature Reports with exact byte padding
+        # Strategy 1: Q1 Command String via Feature Report ID 0x02 / 0x03 (64 bytes)
+        # Proven in live_battery_test_runner.py line 334-342 (Standard Winpower / UPSmart HID Q1 Spec)
         if hasattr(self.dev, "send_feature_report"):
-            # 16-byte Report ID 0 (Exact descriptor FeatureReportByteLength for MEC0003)
-            payload_16 = [0x00] + list(raw_bytes)
-            payload_16 += [0x00] * max(0, 16 - len(payload_16))
-            payload_16 = payload_16[:16]
-
-            # 17-byte Report ID 0 (RID 0 + 16 data bytes for Linux hidraw)
-            payload_17 = [0x00] + list(raw_bytes)
-            payload_17 += [0x00] * max(0, 17 - len(payload_17))
-            payload_17 = payload_17[:17]
-
-            # 8-byte Report ID 0 (NUT standard 8-byte chunk)
-            payload_8 = [0x00] + list(raw_bytes)
-            payload_8 += [0x00] * max(0, 8 - len(payload_8))
-            payload_8 = payload_8[:8]
-
-            # 9-byte Report ID 0 (RID 0 + 8 data bytes)
-            payload_9 = [0x00] + list(raw_bytes)
-            payload_9 += [0x00] * max(0, 9 - len(payload_9))
-            payload_9 = payload_9[:9]
-
-            # Standard Power Device Report 0x24 (8 bytes)
-            code_24 = 0x01 if "TL" not in clean_cmd and any(k in clean_cmd for k in ("T", "TEST", "QUICK")) else (0x02 if "TL" in clean_cmd or "DEEP" in clean_cmd else 0x00)
-            payload_24 = [0x24, code_24, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-
-            for cand in (payload_16, payload_17, payload_8, payload_9, payload_24):
+            for rid in (0x02, 0x03):
                 try:
-                    written = self.dev.send_feature_report(cand)
+                    payload_64 = bytes([rid] + list(raw_bytes) + [0] * max(0, 64 - len(raw_bytes) - 1))
+                    written = self.dev.send_feature_report(payload_64)
                     if written and written > 0:
                         hw_success = True
-                        hw_msg = f"Command '{clean_cmd}' sent via Feature Report (len={len(cand)})"
+                        hw_msg = f"Command '{clean_cmd}' sent via Feature Report ID 0x{rid:02X} (64-byte Q1 Spec)"
                         break
                 except Exception:
                     pass
 
-        # Strategy 2: Direct HID write with padded buffers
+        # Strategy 2: Standard Power Device Class Feature Reports (8 bytes)
+        # Proven in live_battery_test_runner.py line 320-326 (RID 0x24, 0x01, 0x03, 0x07)
+        if not hw_success and hasattr(self.dev, "send_feature_report"):
+            for rid in (0x24, 0x01, 0x03, 0x07):
+                try:
+                    payload_8 = bytes([rid, code, 0, 0, 0, 0, 0, 0])
+                    written = self.dev.send_feature_report(payload_8)
+                    if written and written > 0:
+                        hw_success = True
+                        hw_msg = f"Command '{clean_cmd}' sent via HID Feature Report ID 0x{rid:02X} (8-byte PDC Spec)"
+                        break
+                except Exception:
+                    pass
+
+        # Strategy 3: Exact 17-byte and 16-byte Report ID 0 Feature Reports
+        # (Handling Linux hidraw byte-stripping for unnumbered reports)
+        if not hw_success and hasattr(self.dev, "send_feature_report"):
+            p17 = bytes([0x00] + list(raw_bytes) + [0] * max(0, 16 - len(raw_bytes)))
+            p16 = bytes([0x00] + list(raw_bytes) + [0] * max(0, 15 - len(raw_bytes)))
+            p8 = bytes([0x00] + list(raw_bytes) + [0] * max(0, 7 - len(raw_bytes)))
+            for cand in (p17, p16, p8):
+                try:
+                    written = self.dev.send_feature_report(cand)
+                    if written and written > 0:
+                        hw_success = True
+                        hw_msg = f"Command '{clean_cmd}' sent via Report ID 0 (len={len(cand)})"
+                        break
+                except Exception:
+                    pass
+
+        # Strategy 4: Direct HID write with padded buffers
         if not hw_success and hasattr(self.dev, "write"):
             for cand_w in (
                 b"\x00" + raw_bytes + b"\x00" * max(0, 15 - len(raw_bytes)),
@@ -342,27 +366,23 @@ class MegatecQ1Driver:
                 except Exception:
                     pass
 
-        # Strategy 3: PyUSB (usb.core) Direct USB Control Transfer (NUT blazer_usb / cypress standard)
+        # Strategy 5: PyUSB (usb.core) Direct USB Control Transfer
         if not hw_success:
             try:
                 import usb.core
                 usb_dev = usb.core.find(idVendor=0x0001, idProduct=0x0000)
                 if usb_dev:
-                    p8 = (raw_bytes + b"\x00" * 8)[:8]
-                    p16 = (raw_bytes + b"\x00" * 16)[:16]
-                    code_24 = 0x01 if "TL" not in clean_cmd and any(k in clean_cmd for k in ("T", "TEST", "QUICK")) else (0x02 if "TL" in clean_cmd or "DEEP" in clean_cmd else 0x00)
-                    p24 = bytes([0x24, code_24, 0, 0, 0, 0, 0, 0])
+                    p8_pdc = bytes([0x24, code, 0, 0, 0, 0, 0, 0])
+                    p64_q1 = bytes([0x02] + list(raw_bytes) + [0] * max(0, 64 - len(raw_bytes) - 1))
+                    p8_raw = (raw_bytes + b"\x00" * 8)[:8]
+                    p16_raw = (raw_bytes + b"\x00" * 16)[:16]
 
-                    # Transfer trials:
-                    # 1. Output Report wValue=0x0200 (NUT cypress_command standard formula)
-                    # 2. Feature Report wValue=0x0300 (16 bytes)
-                    # 3. Feature Report wValue=0x0300 (8 bytes)
-                    # 4. Feature Report wValue=0x0324 (Power Device Class spec)
                     trials = [
-                        (0x21, 0x09, 0x0200, 0, p8, "PyUSB Output Report 0x0200 (8B)"),
-                        (0x21, 0x09, 0x0300, 0, p16, "PyUSB Feature Report 0x0300 (16B)"),
-                        (0x21, 0x09, 0x0300, 0, p8, "PyUSB Feature Report 0x0300 (8B)"),
-                        (0x21, 0x09, 0x0324, 0, p24, "PyUSB Feature Report 0x0324 (8B)"),
+                        (0x21, 0x09, 0x0324, 0, p8_pdc, "PyUSB Feature Report 0x0324 (8B PDC)"),
+                        (0x21, 0x09, 0x0302, 0, p64_q1, "PyUSB Feature Report 0x0302 (64B Q1)"),
+                        (0x21, 0x09, 0x0303, 0, p64_q1, "PyUSB Feature Report 0x0303 (64B Q1)"),
+                        (0x21, 0x09, 0x0200, 0, p8_raw, "PyUSB Output Report 0x0200 (8B)"),
+                        (0x21, 0x09, 0x0300, 0, p16_raw, "PyUSB Feature Report 0x0300 (16B)"),
                     ]
                     for bm, req, wval, widx, p_data, label in trials:
                         try:

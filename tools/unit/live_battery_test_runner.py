@@ -59,78 +59,93 @@ def poll_universal_ups_telemetry(h: Any, target: dict) -> dict:
 
     # ── กรณี MEC / PPC Indexed String Device ────────────────────────────────
     if vid_val in (1, 0x0001, "0x0001") or "mec" in prod_str or "ppc" in mfg_str:
+        raw_status = ""
         try:
-            import ctypes
-            from ctypes import wintypes
-            try:
-                from tools.unit.read_mec_ups import get_device_path, parse_q1_string
-            except ImportError:
-                from win32_hid_wrapper import parse_q1_string
-                def get_device_path(): return ""
-
-            GENERIC_READ = 0x80000000
-            GENERIC_WRITE = 0x40000000
-            FILE_SHARE_READ = 0x00000001
-            FILE_SHARE_WRITE = 0x00000002
-            OPEN_EXISTING = 3
-            INVALID_HANDLE_VALUE = -1
-
-            hid_dll = ctypes.windll.hid
-            kernel32_dll = ctypes.windll.kernel32
-
-            CreateFileA = kernel32_dll.CreateFileA
-            CreateFileA.argtypes = [wintypes.LPCSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
-            CreateFileA.restype = wintypes.HANDLE
-
-            CloseHandle = kernel32_dll.CloseHandle
-            CloseHandle.argtypes = [wintypes.HANDLE]
-            CloseHandle.restype = wintypes.BOOL
-
-            HidD_GetIndexedString = hid_dll.HidD_GetIndexedString
-            HidD_GetIndexedString.argtypes = [wintypes.HANDLE, wintypes.ULONG, wintypes.LPVOID, wintypes.ULONG]
-            HidD_GetIndexedString.restype = wintypes.BOOL
-
-            dev_path = target.get("path_str") or str(target.get("path") or "")
-            if not dev_path:
-                dev_path = get_device_path()
-
-            if dev_path:
-                path_bytes = dev_path.encode("ascii") if isinstance(dev_path, str) else dev_path
-                h_dev = CreateFileA(path_bytes, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, None, OPEN_EXISTING, 0, None)
-                if h_dev != INVALID_HANDLE_VALUE and h_dev != 0:
+            # 1. On Linux / non-Windows: Read directly via hidapi handle get_indexed_string(3)
+            if sys.platform != "win32":
+                if hasattr(h, "get_indexed_string"):
                     try:
-                        buf = ctypes.create_unicode_buffer(256)
-                        raw_status = ""
-                        if HidD_GetIndexedString(h_dev, 3, buf, ctypes.sizeof(buf)):
-                            raw_status = buf.value.strip()
+                        raw_status = h.get_indexed_string(3)
+                    except Exception:
+                        pass
+            else:
+                # 2. On Windows: Read via Win32 HidD_GetIndexedString handle
+                import ctypes
+                from ctypes import wintypes
+                try:
+                    from tools.unit.read_mec_ups import get_device_path, parse_q1_string
+                except ImportError:
+                    from win32_hid_wrapper import parse_q1_string
+                    def get_device_path(): return ""
 
-                        data = parse_q1_string(raw_status)
-                        ac_on = data.get("utility_normal", True)
-                        v_bat = float(data["battery_voltage"]) if data.get("battery_voltage") else 12.0
-                        v_in = float(data["input_voltage"]) if data.get("input_voltage") else 220.0
-                        v_out = float(data["output_voltage"]) if data.get("output_voltage") else 220.0
-                        load = float(data["load_percent"]) if data.get("load_percent") else 0.0
+                GENERIC_READ = 0x80000000
+                GENERIC_WRITE = 0x40000000
+                FILE_SHARE_READ = 0x00000001
+                FILE_SHARE_WRITE = 0x00000002
+                OPEN_EXISTING = 3
+                INVALID_HANDLE_VALUE = -1
 
-                        batt_pct = round(max(0.0, min(100.0, (v_bat - 10.5) / (13.5 - 10.5) * 100.0)), 1)
-                        if batt_pct >= 95.0:
-                            batt_pct = 100.0
+                hid_dll = ctypes.windll.hid
+                kernel32_dll = ctypes.windll.kernel32
 
-                        return {
-                            "ac_present": ac_on,
-                            "discharging": not ac_on,
-                            "battery_voltage_v": v_bat,
-                            "battery.charge": batt_pct,
-                            "battery_capacity_percent": batt_pct,
-                            "input.voltage": v_in,
-                            "output_voltage_v": v_out,
-                            "percent_load": load,
-                            "ups.status": "OL" if ac_on else "OB",
-                            "ups_mode": f"{'Line Mode (ไฟปกติ)' if ac_on else 'Battery Mode (ไฟดับ!)'}",
-                            "battery_test_status": "running" if data.get("test_in_progress") else "idle",
-                            "status_good": not data.get("ups_failed", False),
-                        }
-                    finally:
-                        CloseHandle(h_dev)
+                CreateFileA = kernel32_dll.CreateFileA
+                CreateFileA.argtypes = [wintypes.LPCSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+                CreateFileA.restype = wintypes.HANDLE
+
+                CloseHandle = kernel32_dll.CloseHandle
+                CloseHandle.argtypes = [wintypes.HANDLE]
+                CloseHandle.restype = wintypes.BOOL
+
+                HidD_GetIndexedString = hid_dll.HidD_GetIndexedString
+                HidD_GetIndexedString.argtypes = [wintypes.HANDLE, wintypes.ULONG, wintypes.LPVOID, wintypes.ULONG]
+                HidD_GetIndexedString.restype = wintypes.BOOL
+
+                dev_path = target.get("path_str") or str(target.get("path") or "")
+                if not dev_path:
+                    dev_path = get_device_path()
+
+                if dev_path:
+                    path_bytes = dev_path.encode("ascii") if isinstance(dev_path, str) else dev_path
+                    h_dev = CreateFileA(path_bytes, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, None, OPEN_EXISTING, 0, None)
+                    if h_dev != INVALID_HANDLE_VALUE and h_dev != 0:
+                        try:
+                            buf = ctypes.create_unicode_buffer(256)
+                            if HidD_GetIndexedString(h_dev, 3, buf, ctypes.sizeof(buf)):
+                                raw_status = buf.value.strip()
+                        finally:
+                            CloseHandle(h_dev)
+
+            if raw_status:
+                try:
+                    from tools.unit.read_mec_ups import parse_q1_string
+                except ImportError:
+                    from win32_hid_wrapper import parse_q1_string
+
+                data = parse_q1_string(raw_status)
+                ac_on = data.get("utility_normal", True)
+                v_bat = float(data["battery_voltage"]) if data.get("battery_voltage") else 12.0
+                v_in = float(data["input_voltage"]) if data.get("input_voltage") else 220.0
+                v_out = float(data["output_voltage"]) if data.get("output_voltage") else 220.0
+                load = float(data["load_percent"]) if data.get("load_percent") else 0.0
+
+                batt_pct = round(max(0.0, min(100.0, (v_bat - 10.5) / (13.5 - 10.5) * 100.0)), 1)
+                if batt_pct >= 95.0:
+                    batt_pct = 100.0
+
+                return {
+                    "ac_present": ac_on,
+                    "discharging": not ac_on,
+                    "battery_voltage_v": v_bat,
+                    "battery.charge": batt_pct,
+                    "battery_capacity_percent": batt_pct,
+                    "input.voltage": v_in,
+                    "output_voltage_v": v_out,
+                    "percent_load": load,
+                    "ups.status": "OL" if ac_on else "OB",
+                    "ups_mode": f"{'Line Mode (ไฟปกติ)' if ac_on else 'Battery Mode (ไฟดับ!)'}",
+                    "battery_test_status": "running" if data.get("test_in_progress") else "idle",
+                    "status_good": not data.get("ups_failed", False),
+                }
         except Exception:
             pass
 
