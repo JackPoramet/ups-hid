@@ -218,6 +218,11 @@ def _ordered_device_candidates(devices: Sequence[dict]) -> List[dict]:
 def open_ups_device(vid: int = VID, pid: int = PID, verbose: bool = False):
     devices = hid.enumerate(vid, pid)
     if not devices:
+        try:
+            devices = [d for d in hid.enumerate() if d.get('vendor_id') == vid and d.get('product_id') == pid]
+        except Exception:
+            pass
+    if not devices:
         if verbose:
             print(f"ไม่พบ VID={vid:04X} PID={pid:04X}")
         return None, None
@@ -263,6 +268,15 @@ def open_ups_device(vid: int = VID, pid: int = PID, verbose: bool = False):
                 if data and any(b != 0 for b in data):
                     probe_ok = True
                     break
+            except Exception:
+                pass
+
+        # Also probe indexed string 3 for Megatec Q1 devices (e.g. MEC0003)
+        if not probe_ok:
+            try:
+                s = candidate_h.get_indexed_string(3)
+                if s and s.startswith("("):
+                    probe_ok = True
             except Exception:
                 pass
 

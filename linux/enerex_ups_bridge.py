@@ -454,12 +454,38 @@ def main():
             prod = info.get("model") or info.get("product_string") or (profile.model if profile else "UPS")
             logging.info(f"Connected to UPS: Manufacturer='{mfr}', Product='{prod}' (Protocol: {getattr(profile, 'protocol', 'unknown')})")
 
+            # Settle delay for USB stack after device connect
+            time.sleep(1.0)
+
+            # Initial read with retries to confirm device is responsive
+            initial_data = None
+            for attempt in range(5):
+                try:
+                    initial_data = client.get_vars()
+                    if initial_data and any(k in initial_data for k in ("ups.status", "battery.voltage", "output.voltage")):
+                        break
+                except Exception as ex:
+                    logging.debug(f"Device settling (attempt {attempt+1}/5): {ex}")
+                    time.sleep(0.5)
+
+            if not initial_data:
+                raise RuntimeError("Device connected but not responding to initial queries. Will retry...")
+
+            # Enrich and write LIVE data to /etc/nut/myups.dev FIRST
+            initial_data = enrich_nut_variables(initial_data, info, profile)
+            temp_file = DUMMY_FILE + ".tmp"
+            with open(temp_file, "w", encoding="utf-8") as f:
+                for key, value in sorted(initial_data.items()):
+                    f.write(f"{key}: {value}\n")
+            os.rename(temp_file, DUMMY_FILE)
+            os.chmod(DUMMY_FILE, 0o666)
+
+            # Now restart nut-driver and nut-server so it loads the LIVE data immediately
+            logging.info("Publishing initial live data and restarting nut-driver and nut-server...")
+            os.system("systemctl restart nut-driver nut-server 2>/dev/null || /sbin/upsdrvctl stop && /sbin/upsdrvctl start 2>/dev/null || true")
             _is_connected = True
 
-            # Clear old data in dummy-ups memory and reconnect upsd
-            logging.info("Restarting nut-driver and nut-server to clear stale variables...")
-            os.system("systemctl restart nut-driver && systemctl restart nut-server")
-            time.sleep(1.5)
+            consecutive_errors = 0
 
             # Polling loop for the connected UPS
             while _running:
@@ -483,13 +509,17 @@ def main():
                     os.rename(temp_file, DUMMY_FILE)
                     os.chmod(DUMMY_FILE, 0o666)
 
+                    consecutive_errors = 0
+
                 except Exception as e:
                     if not _running:
                         break
-                    logging.error(f"Error reading UPS data (Device disconnected?): {e}")
-                    # Tell dummy-ups the device is disconnected and purge stale cache
-                    set_disconnected_state()
-                    break
+                    consecutive_errors += 1
+                    logging.warning(f"Error reading UPS data ({consecutive_errors}/3): {e}")
+                    if consecutive_errors >= 3:
+                        logging.error("Lost communication with UPS (3 consecutive read failures). Setting DNC state...")
+                        set_disconnected_state()
+                        break
 
                 time.sleep(POLL_INTERVAL)
 
@@ -497,8 +527,8 @@ def main():
             if not _running:
                 break
             set_disconnected_state()
-            logging.warning(f"No UPS found or connect failed: {e}. Retrying in 5 seconds...")
-            time.sleep(5)
+            logging.warning(f"No UPS found or connect failed: {e}. Retrying in 2 seconds...")
+            time.sleep(2)
         finally:
             if client and getattr(client, "is_connected", False):
                 try:
