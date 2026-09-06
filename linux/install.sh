@@ -59,19 +59,22 @@ cat << 'EOF' > /usr/local/bin/upscmd
 # Intercept instant commands for dummy-ups compatibility
 for arg in "$@"; do
     case "$arg" in
-        *test.battery.start*|*test.battery.quick*)
-            echo "cmd_test_battery_quick" > /run/enerex_ups_cmd 2>/dev/null || echo "cmd_test_battery_quick" > /tmp/enerex_ups_cmd 2>/dev/null || true
-            pkill -SIGUSR1 -f enerex_ups_bridge.py 2>/dev/null || true
-            exit 0
-            ;;
-        *test.battery.deep*|*test.battery.start.deep*)
+        *deep*|*test.battery.deep*|*test.battery.start.deep*)
             echo "cmd_test_battery_deep" > /run/enerex_ups_cmd 2>/dev/null || echo "cmd_test_battery_deep" > /tmp/enerex_ups_cmd 2>/dev/null || true
             pkill -SIGUSR1 -f enerex_ups_bridge.py 2>/dev/null || true
+            echo "OK: Deep battery test initiated"
             exit 0
             ;;
-        *test.battery.stop*)
+        *stop*|*test.battery.stop*|*abort*|*cancel*)
             echo "cmd_test_battery_stop" > /run/enerex_ups_cmd 2>/dev/null || echo "cmd_test_battery_stop" > /tmp/enerex_ups_cmd 2>/dev/null || true
             pkill -SIGUSR2 -f enerex_ups_bridge.py 2>/dev/null || true
+            echo "OK: Battery test stopped"
+            exit 0
+            ;;
+        *quick*|*test.battery.start*|*test.battery.quick*|*test.battery.start.quick*)
+            echo "cmd_test_battery_quick" > /run/enerex_ups_cmd 2>/dev/null || echo "cmd_test_battery_quick" > /tmp/enerex_ups_cmd 2>/dev/null || true
+            pkill -SIGUSR1 -f enerex_ups_bridge.py 2>/dev/null || true
+            echo "OK: Quick battery test (10s) initiated"
             exit 0
             ;;
     esac

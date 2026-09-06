@@ -182,5 +182,5 @@ Flow:
 | **Innova Unity** | Phoenixtec HID | Feature Report `0x24 [0x01]` | Feature Report `0x24 [0x02]` | Feature Report `0x24 [0x00]` | ~10 วินาที |
 | **Innova Basic G2** | Phoenixtec HID | Feature Report `0x24 [0x01]` | Feature Report `0x24 [0x02]` | Feature Report `0x24 [0x00]` | ~3 - 10 วินาที |
 | **Offline UPS 2000D** | Phoenixtec HID | Feature Report `0x24 [0x01]` | Feature Report `0x24 [0x02]` | Feature Report `0x24 [0x03]` | ~10 วินาที (สลับ Relay อินเวอร์เตอร์ 215V) |
-| **MEC0003** | Megatec Q1 | ASCII Command `'T'` | ASCII Command `'TL'` | ASCII Command `'CT'` | ~10 วินาที (State Machine Index 3/13) |
+| **MEC0003** | Megatec Q1 | ASCII Command `'T'` (HID Feature 16B / PyUSB Output 0x0200 8B) | ASCII Command `'TL'` (Deep Test) | ASCII Command `'CT'` (Cancel) | ~10 วินาที (สลับ Relay อินเวอร์เตอร์ / Bit 5 Telemetry) |
 

@@ -375,6 +375,12 @@ def enrich_nut_variables(data: dict, info: dict, profile=None) -> dict:
     data.setdefault("ups.beeper.status", "enabled")
     data.setdefault("ups.date", datetime.datetime.now().strftime("%Y/%m/%d"))
 
+    # Instant commands support for NUT dummy-ups
+    data.setdefault("cmd.test.battery.start", 1)
+    data.setdefault("cmd.test.battery.start.quick", 1)
+    data.setdefault("cmd.test.battery.start.deep", 1)
+    data.setdefault("cmd.test.battery.stop", 1)
+
     # Synchronize CAL status and NUT test result with active battery test state
     b_test = str(data.get("battery.test.status", "")).lower()
     if b_test in ("running", "in progress", "cal"):

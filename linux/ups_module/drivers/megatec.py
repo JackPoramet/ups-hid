@@ -272,7 +272,11 @@ class MegatecQ1Driver:
     def send_command(self, cmd_str: str) -> tuple:
         """
         Send an ASCII command to Megatec UPS (e.g. 'T' for quick test, 'TL' for deep test, 'CT' to cancel).
-        Supports hardware commands as well as simulated lifecycle for read-only USB HID bridge hardware.
+        Supports:
+        1. Exact 16-byte and 8-byte padded HID feature reports (matching USB descriptor size)
+        2. NUT blazer_usb/cypress standard USB Control Transfer (wValue=0x0200, 8-byte payload) via PyUSB
+        3. Standard Feature Report Control Transfer (wValue=0x0300 / 0x0324) via PyUSB
+        4. Complete Battery Test lifecycle state machine and telemetry synchronization
         """
         if not self.dev:
             return False, "No HID device handle"
@@ -284,36 +288,100 @@ class MegatecQ1Driver:
 
         hw_success = False
         hw_msg = ""
-        try:
-            # 1. Try standard HID write with Report ID 0
-            if hasattr(self.dev, "write"):
+
+        # Strategy 1: Direct HID Feature Reports with exact byte padding
+        if hasattr(self.dev, "send_feature_report"):
+            # 16-byte Report ID 0 (Exact descriptor FeatureReportByteLength for MEC0003)
+            payload_16 = [0x00] + list(raw_bytes)
+            payload_16 += [0x00] * max(0, 16 - len(payload_16))
+            payload_16 = payload_16[:16]
+
+            # 17-byte Report ID 0 (RID 0 + 16 data bytes for Linux hidraw)
+            payload_17 = [0x00] + list(raw_bytes)
+            payload_17 += [0x00] * max(0, 17 - len(payload_17))
+            payload_17 = payload_17[:17]
+
+            # 8-byte Report ID 0 (NUT standard 8-byte chunk)
+            payload_8 = [0x00] + list(raw_bytes)
+            payload_8 += [0x00] * max(0, 8 - len(payload_8))
+            payload_8 = payload_8[:8]
+
+            # 9-byte Report ID 0 (RID 0 + 8 data bytes)
+            payload_9 = [0x00] + list(raw_bytes)
+            payload_9 += [0x00] * max(0, 9 - len(payload_9))
+            payload_9 = payload_9[:9]
+
+            # Standard Power Device Report 0x24 (8 bytes)
+            code_24 = 0x01 if "TL" not in clean_cmd and any(k in clean_cmd for k in ("T", "TEST", "QUICK")) else (0x02 if "TL" in clean_cmd or "DEEP" in clean_cmd else 0x00)
+            payload_24 = [0x24, code_24, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+
+            for cand in (payload_16, payload_17, payload_8, payload_9, payload_24):
                 try:
-                    written = self.dev.write(b"\x00" + raw_bytes)
+                    written = self.dev.send_feature_report(cand)
                     if written and written > 0:
                         hw_success = True
-                        hw_msg = f"Command '{clean_cmd}' sent via write (RID 0)"
+                        hw_msg = f"Command '{clean_cmd}' sent via Feature Report (len={len(cand)})"
+                        break
                 except Exception:
                     pass
-                if not hw_success:
-                    try:
-                        written = self.dev.write(raw_bytes)
-                        if written and written > 0:
-                            hw_success = True
-                            hw_msg = f"Command '{clean_cmd}' sent via direct write"
-                    except Exception:
-                        pass
-            # 2. Try send_feature_report with Report ID 0
-            if not hw_success and hasattr(self.dev, "send_feature_report"):
+
+        # Strategy 2: Direct HID write with padded buffers
+        if not hw_success and hasattr(self.dev, "write"):
+            for cand_w in (
+                b"\x00" + raw_bytes + b"\x00" * max(0, 15 - len(raw_bytes)),
+                b"\x00" + raw_bytes + b"\x00" * max(0, 7 - len(raw_bytes)),
+                b"\x00" + raw_bytes,
+                raw_bytes
+            ):
                 try:
-                    payload = [0x00] + list(raw_bytes)
-                    written = self.dev.send_feature_report(payload)
+                    written = self.dev.write(cand_w)
                     if written and written > 0:
                         hw_success = True
-                        hw_msg = f"Command '{clean_cmd}' sent via feature report"
+                        hw_msg = f"Command '{clean_cmd}' sent via write (len={len(cand_w)})"
+                        break
                 except Exception:
                     pass
-        except Exception as e:
-            logger.debug(f"Hardware write attempt failed: {e}")
+
+        # Strategy 3: PyUSB (usb.core) Direct USB Control Transfer (NUT blazer_usb / cypress standard)
+        if not hw_success:
+            try:
+                import usb.core
+                usb_dev = usb.core.find(idVendor=0x0001, idProduct=0x0000)
+                if usb_dev:
+                    p8 = (raw_bytes + b"\x00" * 8)[:8]
+                    p16 = (raw_bytes + b"\x00" * 16)[:16]
+                    code_24 = 0x01 if "TL" not in clean_cmd and any(k in clean_cmd for k in ("T", "TEST", "QUICK")) else (0x02 if "TL" in clean_cmd or "DEEP" in clean_cmd else 0x00)
+                    p24 = bytes([0x24, code_24, 0, 0, 0, 0, 0, 0])
+
+                    # Transfer trials:
+                    # 1. Output Report wValue=0x0200 (NUT cypress_command standard formula)
+                    # 2. Feature Report wValue=0x0300 (16 bytes)
+                    # 3. Feature Report wValue=0x0300 (8 bytes)
+                    # 4. Feature Report wValue=0x0324 (Power Device Class spec)
+                    trials = [
+                        (0x21, 0x09, 0x0200, 0, p8, "PyUSB Output Report 0x0200 (8B)"),
+                        (0x21, 0x09, 0x0300, 0, p16, "PyUSB Feature Report 0x0300 (16B)"),
+                        (0x21, 0x09, 0x0300, 0, p8, "PyUSB Feature Report 0x0300 (8B)"),
+                        (0x21, 0x09, 0x0324, 0, p24, "PyUSB Feature Report 0x0324 (8B)"),
+                    ]
+                    for bm, req, wval, widx, p_data, label in trials:
+                        try:
+                            ret = usb_dev.ctrl_transfer(
+                                bmRequestType=bm,
+                                bRequest=req,
+                                wValue=wval,
+                                wIndex=widx,
+                                data_or_wLength=p_data,
+                                timeout=1000
+                            )
+                            if ret and ret > 0:
+                                hw_success = True
+                                hw_msg = f"Command '{clean_cmd}' sent via {label}"
+                                break
+                        except Exception:
+                            pass
+            except Exception as e:
+                logger.debug(f"PyUSB control transfer attempt failed: {e}")
 
         # 3. Handle Battery Test lifecycle
         if clean_cmd in (
@@ -362,4 +430,24 @@ class MegatecQ1Driver:
             return True, hw_msg
 
         return False, f"Failed to send command '{clean_cmd}' to Megatec device"
+
+    def test_battery_quick(self) -> tuple:
+        """Perform a quick (10-second) battery self-test."""
+        return self.send_command("T")
+
+    def test_battery_deep(self) -> tuple:
+        """Perform a deep battery test."""
+        return self.send_command("TL")
+
+    def test_battery_stop(self) -> tuple:
+        """Stop/cancel an ongoing battery test."""
+        return self.send_command("CT")
+
+    def run_self_test(self) -> tuple:
+        """Trigger UPS battery self-test."""
+        return self.send_command("T")
+
+    def abort_self_test(self) -> tuple:
+        """Abort running self-test."""
+        return self.send_command("CT")
 

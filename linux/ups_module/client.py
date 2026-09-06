@@ -389,7 +389,13 @@ class UPSClient:
 
         Each call performs a live HID read.
         """
-        return ups_data_from_raw(self._read_raw()).to_nut_dict()
+        raw = self._read_raw()
+        nut_dict = ups_data_from_raw(raw).to_nut_dict()
+        if getattr(self, "_driver", None) is not None and isinstance(raw, dict):
+            for k, v in raw.items():
+                if k not in nut_dict and v is not None:
+                    nut_dict[k] = v
+        return nut_dict
 
     def get_var(self, varname: str) -> Optional[Any]:
         """
@@ -505,26 +511,40 @@ class UPSClient:
 
     def run_self_test(self) -> tuple[bool, str]:
         """Trigger UPS battery self-test (10-second quick test)."""
-        if getattr(self, "_driver", None) is not None and hasattr(self._driver, "send_command"):
-            return self._driver.send_command("T")
+        if getattr(self, "_driver", None) is not None:
+            if hasattr(self._driver, "run_self_test"):
+                return self._driver.run_self_test()
+            elif hasattr(self._driver, "send_command"):
+                return self._driver.send_command("T")
         return self._send_feature(0x24, [0x01])
 
     def abort_self_test(self) -> tuple[bool, str]:
         """Abort a running self-test."""
-        if getattr(self, "_driver", None) is not None and hasattr(self._driver, "send_command"):
-            return self._driver.send_command("CT")
+        if getattr(self, "_driver", None) is not None:
+            if hasattr(self._driver, "abort_self_test"):
+                return self._driver.abort_self_test()
+            elif hasattr(self._driver, "send_command"):
+                return self._driver.send_command("CT")
         if (getattr(self, "_profile", None) and "2000" in self._profile.id.lower()) or "2000" in (getattr(self, "_model", "") or "").lower():
             return self._send_feature(0x24, [0x03])
         return self._send_feature(0x24, [0x00])
 
     def test_battery_quick(self) -> tuple[bool, str]:
         """Perform a quick (10-second) battery self-test."""
+        if getattr(self, "_driver", None) is not None:
+            if hasattr(self._driver, "test_battery_quick"):
+                return self._driver.test_battery_quick()
+            elif hasattr(self._driver, "send_command"):
+                return self._driver.send_command("T")
         return self.run_self_test()
 
     def test_battery_deep(self) -> tuple[bool, str]:
         """Perform a deep battery test (until low battery threshold)."""
-        if getattr(self, "_driver", None) is not None and hasattr(self._driver, "send_command"):
-            return self._driver.send_command("TL")
+        if getattr(self, "_driver", None) is not None:
+            if hasattr(self._driver, "test_battery_deep"):
+                return self._driver.test_battery_deep()
+            elif hasattr(self._driver, "send_command"):
+                return self._driver.send_command("TL")
         # For HID devices that support deep test mode
         res, msg = self._send_feature(0x24, [0x02])
         if not res:
@@ -534,6 +554,11 @@ class UPSClient:
 
     def test_battery_stop(self) -> tuple[bool, str]:
         """Stop/cancel an ongoing battery test."""
+        if getattr(self, "_driver", None) is not None:
+            if hasattr(self._driver, "test_battery_stop"):
+                return self._driver.test_battery_stop()
+            elif hasattr(self._driver, "send_command"):
+                return self._driver.send_command("CT")
         return self.abort_self_test()
 
     def schedule_shutdown(self, delay_seconds: int) -> tuple[bool, str]:
