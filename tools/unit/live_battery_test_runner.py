@@ -80,6 +80,47 @@ if sys.platform == "win32":
         pass
 
 
+def parse_mec_q1_telemetry(raw_str: str) -> dict:
+    """ถอดรหัส Megatec Q1 telemetry format: (232.1 000.0 232.0 000 50.1 13.7 --.- 00001000"""
+    res = {
+        "raw_string": raw_str,
+        "input_voltage": "0.0",
+        "output_voltage": "0.0",
+        "load_percent": "0",
+        "frequency": "0.0",
+        "battery_voltage": "0.0",
+        "utility_normal": True,
+        "battery_low": False,
+        "test_in_progress": False,
+        "ups_failed": False,
+    }
+    if not raw_str:
+        return res
+
+    idx = raw_str.find("(")
+    if idx != -1:
+        clean_str = raw_str[idx + 1:].strip()
+    else:
+        clean_str = raw_str.lstrip("#(").strip()
+
+    parts = clean_str.split()
+    if len(parts) >= 8:
+        res["input_voltage"] = parts[0]
+        res["output_voltage"] = parts[2]
+        res["load_percent"] = parts[3]
+        res["frequency"] = parts[4]
+        res["battery_voltage"] = parts[5]
+
+        status_bits = parts[7]
+        if len(status_bits) >= 8:
+            res["utility_normal"] = (status_bits[0] == '0')
+            res["battery_low"] = (status_bits[1] == '1')
+            res["test_in_progress"] = (status_bits[5] == '1')
+            res["ups_failed"] = (status_bits[3] == '1')
+
+    return res
+
+
 def poll_universal_ups_telemetry(h: Any, target: dict) -> dict:
     """อ่านและ decode ค่า Telemetry จากอุปกรณ์ UPS (รองรับทั้ง HID Standard และ MEC)"""
     vid_val = target.get("vendor_id")
@@ -97,7 +138,26 @@ def poll_universal_ups_telemetry(h: Any, target: dict) -> dict:
                 except Exception:
                     pass
 
-            # 2. On Windows fallback: Read via Win32 HidD_GetIndexedString handle
+            # 2. PyUSB fallback (Linux / Orange Pi)
+            if not raw_status and sys.platform != "win32":
+                try:
+                    import usb.core
+                    usb_dev = usb.core.find(idVendor=0x0001, idProduct=0x0000)
+                    if usb_dev:
+                        for lang in (0, 0x0409):
+                            try:
+                                ret = usb_dev.ctrl_transfer(0x80, 0x06, (0x03 << 8) | 3, lang, 255, 1000)
+                                if ret and len(ret) > 2:
+                                    s = bytes(ret)[2:].decode("utf-16-le", errors="replace").strip()
+                                    if "(" in s:
+                                        raw_status = s
+                                        break
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+            # 3. On Windows fallback: Read via Win32 HidD_GetIndexedString handle
             if not raw_status and sys.platform == "win32":
                 try:
                     from tools.unit.read_mec_ups import get_device_path
@@ -120,12 +180,7 @@ def poll_universal_ups_telemetry(h: Any, target: dict) -> dict:
                             CloseHandle(h_dev)
 
             if raw_status:
-                try:
-                    from tools.unit.read_mec_ups import parse_q1_string
-                except ImportError:
-                    from win32_hid_wrapper import parse_q1_string
-
-                data = parse_q1_string(raw_status)
+                data = parse_mec_q1_telemetry(raw_status)
                 ac_on = data.get("utility_normal", True)
                 v_bat = float(data["battery_voltage"]) if data.get("battery_voltage") else 12.0
                 v_in = float(data["input_voltage"]) if data.get("input_voltage") else 220.0
@@ -383,6 +438,28 @@ def send_universal_battery_test_command(h: Any, target: dict, cmd_type: str) -> 
             except Exception:
                 pass
 
+        if not mec_sent:
+            try:
+                import usb.core
+                usb_dev = usb.core.find(idVendor=0x0001, idProduct=0x0000)
+                if usb_dev:
+                    for lang in (0x0409, 0):
+                        try:
+                            usb_dev.ctrl_transfer(
+                                bmRequestType=0x80,
+                                bRequest=0x06,
+                                wValue=(0x03 << 8) | str_idx,
+                                wIndex=lang,
+                                data_or_wLength=255,
+                                timeout=1000
+                            )
+                            mec_sent = True
+                            break
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
         if mec_sent:
             time.sleep(0.3)
             s3_val = ""
@@ -603,12 +680,21 @@ def run_live_battery_test(
         print(f"  • Battery Charge   : {level_start} % ➔ {level_latest} %")
         print(f"  • UPS Load Level   : {load_start} % ➔ {load_latest} %")
         print("=" * 78)
+        try:
+            sys.stdout.flush()
+        except Exception:
+            pass
 
     except Exception as exc:
         print(f"\n❌ เกิดข้อผิดพลาดขณะรันสคริปต์: {exc}")
     finally:
         try:
-            h.close()
+            if hasattr(h, "set_nonblocking"):
+                h.set_nonblocking(True)
+            import threading
+            t = threading.Thread(target=h.close, daemon=True)
+            t.start()
+            t.join(timeout=0.2)
         except Exception:
             pass
 
@@ -658,13 +744,35 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if args.list:
-        print_device_list()
-    elif args.deep:
-        run_live_battery_test("deep", max_timeout_s=3600, device_index=args.device, target_serial=args.serial)
-    else:
-        run_live_battery_test("quick", max_timeout_s=60, device_index=args.device, target_serial=args.serial)
+    try:
+        if args.list:
+            print_device_list()
+        elif args.deep:
+            run_live_battery_test("deep", max_timeout_s=3600, device_index=args.device, target_serial=args.serial)
+        else:
+            run_live_battery_test("quick", max_timeout_s=60, device_index=args.device, target_serial=args.serial)
+    except KeyboardInterrupt:
+        print("\n\n⚠️ การทำงานถูกยกเลิกโดยผู้ใช้ (Ctrl+C)")
+        try:
+            sys.stdout.flush()
+            sys.stderr.flush()
+        except Exception:
+            pass
+        import os
+        os._exit(130)
+
+    try:
+        sys.stdout.flush()
+        sys.stderr.flush()
+    except Exception:
+        pass
+    import os
+    os._exit(0)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        import os
+        os._exit(130)
