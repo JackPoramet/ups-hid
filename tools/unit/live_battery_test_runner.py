@@ -142,16 +142,23 @@ def poll_universal_ups_telemetry(h: Any, target: dict) -> dict:
             if not raw_status and sys.platform != "win32":
                 try:
                     import usb.core
+                    import usb.util
                     usb_dev = usb.core.find(idVendor=0x0001, idProduct=0x0000)
                     if usb_dev:
-                        for lang in (0, 0x0409):
+                        try:
+                            for lang in (0, 0x0409):
+                                try:
+                                    ret = usb_dev.ctrl_transfer(0x80, 0x06, (0x03 << 8) | 3, lang, 255, 1000)
+                                    if ret and len(ret) > 2:
+                                        s = bytes(ret)[2:].decode("utf-16-le", errors="replace").strip()
+                                        if "(" in s:
+                                            raw_status = s
+                                            break
+                                except Exception:
+                                    pass
+                        finally:
                             try:
-                                ret = usb_dev.ctrl_transfer(0x80, 0x06, (0x03 << 8) | 3, lang, 255, 1000)
-                                if ret and len(ret) > 2:
-                                    s = bytes(ret)[2:].decode("utf-16-le", errors="replace").strip()
-                                    if "(" in s:
-                                        raw_status = s
-                                        break
+                                usb.util.dispose_resources(usb_dev)
                             except Exception:
                                 pass
                 except Exception:
@@ -441,20 +448,27 @@ def send_universal_battery_test_command(h: Any, target: dict, cmd_type: str) -> 
         if not mec_sent:
             try:
                 import usb.core
+                import usb.util
                 usb_dev = usb.core.find(idVendor=0x0001, idProduct=0x0000)
                 if usb_dev:
-                    for lang in (0x0409, 0):
+                    try:
+                        for lang in (0x0409, 0):
+                            try:
+                                usb_dev.ctrl_transfer(
+                                    bmRequestType=0x80,
+                                    bRequest=0x06,
+                                    wValue=(0x03 << 8) | str_idx,
+                                    wIndex=lang,
+                                    data_or_wLength=255,
+                                    timeout=1000
+                                )
+                                mec_sent = True
+                                break
+                            except Exception:
+                                pass
+                    finally:
                         try:
-                            usb_dev.ctrl_transfer(
-                                bmRequestType=0x80,
-                                bRequest=0x06,
-                                wValue=(0x03 << 8) | str_idx,
-                                wIndex=lang,
-                                data_or_wLength=255,
-                                timeout=1000
-                            )
-                            mec_sent = True
-                            break
+                            usb.util.dispose_resources(usb_dev)
                         except Exception:
                             pass
             except Exception:
@@ -688,15 +702,14 @@ def run_live_battery_test(
     except Exception as exc:
         print(f"\n❌ เกิดข้อผิดพลาดขณะรันสคริปต์: {exc}")
     finally:
-        try:
-            if hasattr(h, "set_nonblocking"):
-                h.set_nonblocking(True)
-            import threading
-            t = threading.Thread(target=h.close, daemon=True)
-            t.start()
-            t.join(timeout=0.2)
-        except Exception:
-            pass
+        # บน Windows ปิด handle ได้ปกติ
+        # บน Linux ห้ามเรียก h.close() เพราะ C hidapi close() ถือ GIL และติด D-state lock ในเคอร์เนล Linux
+        # ปล่อยให้ระบบปฏิบัติการ (Kernel) ปิด fd ให้โดยตรงผ่าน os._exit() รวดเร็วและปลอดภัย 100%
+        if sys.platform == "win32":
+            try:
+                h.close()
+            except Exception:
+                pass
 
 
 def print_device_list() -> None:
@@ -753,21 +766,14 @@ def main() -> None:
             run_live_battery_test("quick", max_timeout_s=60, device_index=args.device, target_serial=args.serial)
     except KeyboardInterrupt:
         print("\n\n⚠️ การทำงานถูกยกเลิกโดยผู้ใช้ (Ctrl+C)")
+    finally:
         try:
             sys.stdout.flush()
             sys.stderr.flush()
         except Exception:
             pass
         import os
-        os._exit(130)
-
-    try:
-        sys.stdout.flush()
-        sys.stderr.flush()
-    except Exception:
-        pass
-    import os
-    os._exit(0)
+        os._exit(0)
 
 
 if __name__ == "__main__":
