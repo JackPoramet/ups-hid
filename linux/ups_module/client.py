@@ -171,11 +171,20 @@ class UPSClient:
         for dev_info in hid.enumerate():
             vid = dev_info['vendor_id']
             pid = dev_info['product_id']
-            # Find in registry
-            for profile in _registry.devices:
-                if profile.vid == vid and profile.pid == pid:
-                    logger.info("Auto-detected UPS: %s %s (VID=0x%04X, PID=0x%04X)", profile.manufacturer, profile.model, vid, pid)
-                    return cls(model=profile.id, name=name)
+            prod = (dev_info.get('product_string') or '').lower().replace(' ', '')
+            candidates = [p for p in _registry.devices if p.vid == vid and p.pid == pid]
+            if candidates:
+                matched_profile = None
+                for p in candidates:
+                    p_model_norm = p.model.lower().replace(' ', '')
+                    p_id_norm = p.id.lower().replace('_', '').replace('-', '')
+                    if p_model_norm in prod or prod in p_model_norm or p_id_norm in prod:
+                        matched_profile = p
+                        break
+                if not matched_profile:
+                    matched_profile = candidates[0]
+                logger.info("Auto-detected UPS: %s %s (VID=0x%04X, PID=0x%04X)", matched_profile.manufacturer, matched_profile.model, vid, pid)
+                return cls(model=matched_profile.id, name=name)
                     
         raise RuntimeError("No supported Enerex/Phoenixtec/Megatec UPS found.")
 
@@ -315,6 +324,26 @@ class UPSClient:
             )
         decoded = decode_feature_reports(raw_reports, device_info=self._device_info)
         decoded.update(infer_tentative_live_values(raw_reports, decoded))
+
+        # Windows fallback for Report 0x31: Windows HID blocks Feature Report 0x31,
+        # so we read it via libusb0 direct control transfer (mandatory rule for Phoenixtec).
+        if "input.voltage" not in decoded or decoded["input.voltage"] is None:
+            try:
+                import platform
+                if platform.system().lower() == "windows":
+                    import sys
+                    win_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "windows"))
+                    if win_path not in sys.path and os.path.exists(win_path):
+                        sys.path.insert(0, win_path)
+                    from core_hid_ups import read_winpower_libusb_report_31
+                    v_in, f_in = read_winpower_libusb_report_31()
+                    if v_in is not None and v_in > 0:
+                        decoded["input.voltage"] = v_in
+                    if f_in is not None and f_in > 0 and ("input.frequency" not in decoded or not decoded["input.frequency"]):
+                        decoded["input.frequency"] = f_in
+            except Exception:
+                pass
+
         return decoded
 
 
@@ -403,6 +432,16 @@ class UPSClient:
             "type":         "ups",
         }
 
+    @property
+    def device_info(self) -> Dict[str, Any]:
+        """Convenience property matching get_device_info()."""
+        return self.get_device_info()
+
+    @property
+    def model(self) -> str:
+        """Return the active model name or ID."""
+        return self._model or (self._profile.model if self._profile else "")
+
     # =========================================================================
     # Control commands
     # =========================================================================
@@ -450,6 +489,8 @@ class UPSClient:
         """Abort a running self-test."""
         if getattr(self, "_driver", None) is not None and hasattr(self._driver, "send_command"):
             return self._driver.send_command("CT")
+        if (getattr(self, "_profile", None) and "2000" in self._profile.id.lower()) or "2000" in (getattr(self, "_model", "") or "").lower():
+            return self._send_feature(0x24, [0x03])
         return self._send_feature(0x24, [0x00])
 
     def test_battery_quick(self) -> tuple[bool, str]:

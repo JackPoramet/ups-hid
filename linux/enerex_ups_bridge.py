@@ -336,12 +336,11 @@ def enrich_nut_variables(data: dict, info: dict) -> dict:
     data.setdefault("ups.delay.start", 30)
     data.setdefault("ups.timer.shutdown", -1)
     data.setdefault("ups.timer.start", -1)
-    data.setdefault("ups.test.result", "Done and passed")
     data.setdefault("battery.test.status", "passed")
     data.setdefault("ups.beeper.status", "enabled")
     data.setdefault("ups.date", datetime.datetime.now().strftime("%Y/%m/%d"))
 
-    # Synchronize CAL status if battery test is currently active
+    # Synchronize CAL status and NUT test result with active battery test state
     b_test = str(data.get("battery.test.status", "")).lower()
     if b_test in ("running", "in progress", "cal"):
         cur_status = str(data.get("ups.status", ""))
@@ -349,6 +348,13 @@ def enrich_nut_variables(data: dict, info: dict) -> dict:
             parts = cur_status.split() if cur_status else ["OL"]
             parts.append("CAL")
             data["ups.status"] = " ".join(parts)
+        data["ups.test.result"] = "In progress"
+    elif b_test in ("abort", "aborted"):
+        data["ups.test.result"] = "Aborted"
+    elif b_test in ("failed", "error"):
+        data["ups.test.result"] = "Done and error"
+    else:
+        data.setdefault("ups.test.result", "Done and passed")
 
     return data
 

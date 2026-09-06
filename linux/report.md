@@ -12,6 +12,7 @@
   - [x] `ups.status: OL BYPASS` / `BYPASS` — สถานะเมื่อเปิดใช้งานโหมดบายพาส (ข้อมูลจริง)
   - [x] `ups.status: OB DISCHRG` — สถานะเมื่อถอดปลั๊กหรือไฟดับ (ข้อมูลจริง)
   - [x] `ups.status: OB DISCHRG LB` — สถานะเตือนแบตเตอรี่เหลือน้อยระดับวิกฤต (ข้อมูลจริง และ Fallback ตรวจสอบเกณฑ์แบตเตอรี่)
+  - [x] `ups.status: OL CAL` — สถานะเมื่อกำลังทดสอบแบตเตอรี่ Self-Test (ข้อมูลจริง จาก Report 0x24 / Report 0x27)
 * **ระบบไฟฟ้าขาเข้า (Input Power):**
   - [x] `input.voltage` (~213.5 - 230.0 V) — แรงดันไฟฟ้าขาเข้าจริง (ข้อมูลจริง จาก USB Control Transfer Report 0x31)
   - [x] `input.voltage.nominal` (230 V) — แรงดันไฟเข้าพิกัด (ข้อมูลจริง)
@@ -34,7 +35,8 @@
   - [x] `battery.runtime.low` (180 วินาที) — เกณฑ์เตือนเวลาสำรองไฟใกล้หมด (Fallback ตามมาตรฐาน NUT)
   - [x] `battery.charger.status` (`resting` / `floating` / `charging` / `discharging`) — สถานะการชาร์จ (ข้อมูลจริง ประเมินตามสภาวะการทำงาน)
   - [x] `battery.type` (`PbAc`) — ชนิดแบตเตอรี่ตะกั่ว-กรด (Fallback ตามมาตรฐาน NUT)
-  - [x] `battery.test.status` (`passed` / `failed`) — ผลการทดสอบแบตเตอรี่ (ข้อมูลจริง)
+  - [x] `battery.test.status` (`passed` / `in progress` / `failed`) — ผลการทดสอบแบตเตอรี่ (ข้อมูลจริง จาก Report 0x24)
+  - [x] `ups.test.result` (`Done and passed` / `In progress`) — ผลการทดสอบแบตเตอรี่ตามมาตรฐาน NUT
 * **ข้อมูลตัวเครื่องและระบบ (Device & System Info):**
   - [x] `ups.load` (13 %) — ภาระโหลดเทียบกับพิกัด (ข้อมูลจริง)
   - [x] `ups.temperature` (31.9 °C) — อุณหภูมิภายในตัวเครื่อง (ข้อมูลจริง จากเซนเซอร์ฮาร์ดแวร์)
@@ -49,16 +51,17 @@
 ### 2. **InnovaBasicG2** (Line-Interactive / Basic G2 3kVA)
 * **สถานะการทำงาน (Operating Status):**
   - [x] `ups.status: OL` — สถานะไฟหลวงปกติ จ่ายไฟตรง (ข้อมูลจริง)
+  - [x] `ups.status: OL CAL` — สถานะเมื่อกำลังทดสอบแบตเตอรี่ Self-Test (ข้อมูลจริง จาก Report 0x24 [0x01] / [0x02])
   - [x] `ups.status: OB DISCHRG` — สถานะเมื่อถอดปลั๊กหรือไฟดับ (ข้อมูลจริง)
   - [x] `ups.status: OL BYPASS` — สถานะเมื่อเปิดใช้งานโหมดบายพาส (ข้อมูลจริง จาก Report 0x07)
   - [x] `ups.status: OB DISCHRG LB` — สถานะเตือนแบตเตอรี่เหลือน้อย (ข้อมูลจริง และ Fallback ตรวจสอบเกณฑ์แบตเตอรี่)
 * **ระบบไฟฟ้าขาเข้า (Input Power):**
-  - [x] `input.voltage` (~229.1 - 230.0 V) — แรงดันไฟฟ้าขาเข้าจริง (ข้อมูลจริง จาก USB Control Transfer Report 0x31)
+  - [x] `input.voltage` (~228.5 - 230.0 V) — แรงดันไฟฟ้าขาเข้าจริง (ข้อมูลจริง จาก USB Control Transfer Report 0x31)
   - [x] `input.voltage.nominal` (230 V) — แรงดันไฟเข้าพิกัด (ข้อมูลจริง)
   - [x] `input.frequency` (49.9 - 50.0 Hz) — ความถี่ไฟฟ้าขาเข้า (ข้อมูลจริง)
   - [x] `input.frequency.nominal` (50 Hz) — ความถี่ไฟเข้าพิกัด (ข้อมูลจริง)
 * **ระบบไฟฟ้าขาออก (Output Power):**
-  - [x] `output.voltage` (~228.0 - 231.2 V) — แรงดันไฟฟ้าขาออก (ข้อมูลจริง)
+  - [x] `output.voltage` (~228.0 - 230.5 V) — แรงดันไฟฟ้าขาออก (ข้อมูลจริง)
   - [x] `output.voltage.nominal` (220 V) — แรงดันไฟออกพิกัด (ข้อมูลจริง)
   - [x] `output.frequency` (49.9 - 50.0 Hz) — ความถี่ไฟฟ้าขาออก (ข้อมูลจริง)
   - [x] `output.frequency.nominal` (50 Hz) — ความถี่ไฟออกพิกัด (ข้อมูลจริง)
@@ -67,16 +70,17 @@
   - [x] `output.power.apparent` (0 - 50 VA) — กำลังไฟฟ้าปรากฏ (ข้อมูลจริง จากมิเตอร์ฮาร์ดแวร์)
   - [x] `outlet.1.status` (`on` / `off`) — สถานะเต้ารับจ่ายไฟ (ข้อมูลจริง)
 * **ระบบแบตเตอรี่ (Battery Subsystem):**
-  - [x] `battery.charge` (100 %) — เปอร์เซ็นต์แบตเตอรี่ (ข้อมูลจริง)
-  - [x] `battery.voltage` (~27.0 - 30.2 V) — แรงดันแบตเตอรี่ (ข้อมูลจริง)
+  - [x] `battery.charge` (99 - 100 %) — เปอร์เซ็นต์แบตเตอรี่ (ข้อมูลจริง)
+  - [x] `battery.voltage` (~26.4 - 27.5 V) — แรงดันแบตเตอรี่ (ข้อมูลจริง ดึงโหลดจริงช่วงทดสอบเหลือ ~26.5V และประจุเต็ม ~27.1V)
   - [x] `battery.runtime` (~15146 - 59940 วินาที) — เวลาสำรองไฟที่เหลือ (ข้อมูลจริง)
   - [x] `battery.charger.status` (`resting` / `floating` / `charging` / `discharging`) — สถานะการชาร์จ (ข้อมูลจริง ประเมินตามสภาวะการทำงาน)
   - [x] `battery.type` (`PbAc`) — ชนิดแบตเตอรี่ (Fallback ตามมาตรฐาน NUT)
-  - [x] `battery.test.status` (`passed`) — ผลการทดสอบแบตเตอรี่ (ข้อมูลจริง)
+  - [x] `battery.test.status` (`passed` / `in progress` / `failed`) — ผลการทดสอบแบตเตอรี่ (ข้อมูลจริง จาก Report 0x24)
+  - [x] `ups.test.result` (`Done and passed` / `In progress`) — ผลการทดสอบแบตเตอรี่ตามมาตรฐาน NUT
 * **ข้อมูลตัวเครื่องและระบบ (Device & System Info):**
-  - [x] `ups.load` (ตรงกับหน้าจอเครื่องจริง เช่น 4%, 9%) — ภาระโหลด (ข้อมูลจริง จาก Report 0x07)
-  - [x] `ups.temperature` (28.9 °C) — อุณหภูมิเครื่อง (ข้อมูลจริง จากเซนเซอร์ฮาร์ดแวร์)
-  - [x] `ups.power.nominal` (2700 VA) / `ups.realpower.nominal` (2700 W) — พิกัดกำลังไฟฟ้า (ข้อมูลจริง จาก Report 0x74)
+  - [x] `ups.load` (0 %) — ภาระโหลด (ข้อมูลจริง)
+  - [x] `ups.temperature` (27.9 °C) — อุณหภูมิเครื่อง (ข้อมูลจริง จากเซนเซอร์ฮาร์ดแวร์)
+  - [x] `ups.apparent.power.nominal` (900 VA) / `ups.power.nominal` (2700 VA) — พิกัดกำลังไฟฟ้า (ข้อมูลจริง จาก Report 0x74)
   - [x] `device.mfr` (`PHOENIXTEC`) / `device.model` (`InnovaBasicG2`) — ข้อมูลผู้ผลิตและรุ่น (ข้อมูลจริง จาก USB Descriptors)
   - [x] `device.serial` (`CPLUV1279190013`) — หมายเลขซีเรียล (ข้อมูลจริง จาก USB Descriptors)
   - [x] `ups.beeper.status` (`enabled`) — สถานะเสียงเตือน (ข้อมูลจริง)
@@ -87,18 +91,19 @@
 * **สถานะการทำงาน (Operating Status):**
   - [x] `ups.status: OFF` — ปิดสวิตช์ UPS (ข้อมูลจริง)
   - [x] `ups.status: OL` — สถานะไฟหลวงปกติ (ข้อมูลจริง)
+  - [x] `ups.status: OL CAL` — สถานะเมื่อกำลังทดสอบแบตเตอรี่ Self-Test (ข้อมูลจริง จาก Report 0x24 [0x01] / [0x02])
   - [x] `ups.status: OB DISCHRG` — สถานะเมื่อไฟดับหรือสลับเข้าแบตเตอรี่ (ข้อมูลจริง)
   - [x] `ups.status: OB DISCHRG LB` — สถานะแบตเตอรี่เหลือน้อย (ข้อมูลจริง และ Fallback ตรวจสอบเกณฑ์แบตเตอรี่)
   - [-] `ups.status: BYPASS` — สถานะบายพาส (ไม่มีในฮาร์ดแวร์จริง เนื่องจากเครื่องประเภท Offline ไม่มีวงจรบายพาส)
 * **ระบบไฟฟ้าขาเข้า (Input Power):**
-  - [x] `input.voltage` (231.0 V) — แรงดันไฟฟ้าขาเข้า (ข้อมูลจริง จาก Report 0x31)
+  - [x] `input.voltage` (230.0 - 231.0 V) — แรงดันไฟฟ้าขาเข้า (ข้อมูลจริง จาก Report 0x31)
   - [x] `input.voltage.nominal` (220 V) — แรงดันไฟเข้าพิกัด (ข้อมูลจริง)
   - [x] `input.frequency` (50.0 Hz) — ความถี่ไฟฟ้าขาเข้า (Fallback จำลองจากความถี่พิกัด เนื่องจากฮาร์ดแวร์ไม่มีมิเตอร์วัดความถี่ขาเข้า)
   - [x] `input.frequency.nominal` (50 Hz) — ความถี่ไฟเข้าพิกัด (ข้อมูลจริง)
 * **ระบบไฟฟ้าขาออก (Output Power):**
-  - [x] `output.voltage` (231.0 V) — แรงดันไฟฟ้าขาออก (ข้อมูลจริง จาก Report 0x42)
+  - [x] `output.voltage` (215.0 V ขณะสลับอินเวอร์เตอร์ทดสอบแบตเตอรี่ / 231.0 V ไฟหลวงปกติ) — แรงดันไฟฟ้าขาออก (ข้อมูลจริง จาก Report 0x42)
   - [x] `output.voltage.nominal` (220 V) — แรงดันไฟออกพิกัด (ข้อมูลจริง)
-  - [x] `output.frequency` (50.2 Hz) — ความถี่ไฟฟ้าขาออก (ข้อมูลจริง จาก Report 0x42)
+  - [x] `output.frequency` (50.0 - 50.2 Hz) — ความถี่ไฟฟ้าขาออก (ข้อมูลจริง จาก Report 0x42)
   - [x] `output.frequency.nominal` (50 Hz) — ความถี่ไฟออกพิกัด (ข้อมูลจริง)
   - [x] `output.current` — กระแสไฟฟ้าขาออก (คำนวณตามมาตรฐาน NUT จากค่าภาระโหลดและแรงดันขาออก)
   - [x] `output.power` — กำลังไฟฟ้าจริง (คำนวณตามมาตรฐาน NUT จาก Load % x 1200 W)
@@ -106,11 +111,12 @@
   - [x] `outlet.1.status` (`on` / `off`) — สถานะเต้ารับจ่ายไฟ (ข้อมูลจริง)
 * **ระบบแบตเตอรี่ (Battery Subsystem):**
   - [x] `battery.charge` (100 %) — เปอร์เซ็นต์แบตเตอรี่ (ข้อมูลจริง จาก Report 0x06)
-  - [x] `battery.voltage` (27.7 V) — แรงดันไฟฟ้าแบตเตอรี่ (ข้อมูลจริง จาก Report 0x07)
+  - [x] `battery.voltage` (~26.3 - 27.8 V) — แรงดันไฟฟ้าแบตเตอรี่ (ข้อมูลจริง ดึงโหลดจริงช่วงทดสอบเหลือ 26.3 V และประจุเต็ม 27.8 V)
   - [x] `battery.runtime` (~3359 วินาที) — เวลาสำรองไฟที่เหลือ (ข้อมูลจริง จาก Report 0x06)
   - [x] `battery.charger.status` (`resting` / `floating` / `charging` / `discharging`) — สถานะการชาร์จ (ข้อมูลจริง ประเมินตามสภาวะการทำงาน)
   - [x] `battery.type` (`PbAc`) — ชนิดแบตเตอรี่ (Fallback ตามมาตรฐาน NUT)
-  - [x] `battery.test.status` (`passed`) — ผลการทดสอบแบตเตอรี่ (ข้อมูลจริง)
+  - [x] `battery.test.status` (`passed` / `in progress` / `failed`) — ผลการทดสอบแบตเตอรี่ (ข้อมูลจริง จาก Report 0x24)
+  - [x] `ups.test.result` (`Done and passed` / `In progress`) — ผลการทดสอบแบตเตอรี่ตามมาตรฐาน NUT
 * **ข้อมูลตัวเครื่องและระบบ (Device & System Info):**
   - [x] `ups.load` (0 % เมื่อไม่มีโหลด / แสดงค่าจริงเมื่อต่อโหลด) — ภาระโหลด (ข้อมูลจริง จาก Report 0x07)
   - [x] `ups.temperature` (25.0 °C) — อุณหภูมิเครื่อง (Fallback จำลองค่าคงที่ เนื่องจากฮาร์ดแวร์ไม่มีเซนเซอร์วัดอุณหภูมิ)
@@ -126,6 +132,7 @@
   - [x] `ups.status: OL` — สถานะไฟหลวงปกติ (ข้อมูลจริง จาก Megatec Q1 Index 3)
   - [x] `ups.status: OB` — สถานะเมื่อไฟดับหรือสลับเข้าแบตเตอรี่ (ข้อมูลจริง จาก Megatec Q1 Index 3)
   - [x] `ups.status: OB LB` — สถานะแบตเตอรี่เหลือน้อย (ข้อมูลจริง จาก Megatec Q1 Index 3 และ Fallback ตรวจสอบแรงดันแบตเตอรี่)
+  - [x] `ups.status: CAL` / `OFF CAL` — สถานะเมื่อกำลังทดสอบแบตเตอรี่ Self-Test (ควบคุมผ่าน State Machine และ Bit 5 ของ Index 3)
   - [-] `ups.status: BYPASS` — สถานะบายพาส (ไม่มีในฮาร์ดแวร์จริง เนื่องจากเครื่องประเภท Offline ไม่มีวงจรบายพาส)
 * **ระบบไฟฟ้าขาเข้า (Input Power):**
   - [x] `input.voltage` (230.8 V) — แรงดันไฟฟ้าขาเข้า (ข้อมูลจริง จาก Megatec Q1 Index 3)
@@ -148,7 +155,9 @@
   - [x] `battery.charger.status` (`resting` / `floating` / `charging` / `discharging`) — สถานะการชาร์จ (ข้อมูลจริง ประเมินตามสภาวะการทำงานและแรงดัน Vbat)
   - [x] `battery.type` (`PbAc`) — ชนิดแบตเตอรี่ (Fallback ตามมาตรฐาน NUT)
   - [-] `battery.runtime` — เวลาสำรองไฟที่เหลือ (ไม่มีในฮาร์ดแวร์จริง เนื่องจากโปรโตคอล Megatec Q1 ไม่มีฟังก์ชันคำนวณ Runtime)
-  - [x] `battery.test.status` (`passed`) — ผลการทดสอบแบตเตอรี่ (ข้อมูลจริง จาก Megatec Q1 Index 3)
+  - [x] `battery.test.status` (`in progress` / `passed` / `failed` / `aborted`) — สถานะการทดสอบแบตเตอรี่ (ข้อมูลจริง และ State Machine)
+  - [x] `ups.test.result` (`In progress` / `Done and passed` / `Done and error` / `Aborted`) — ผลการทดสอบแบตเตอรี่ตามมาตรฐาน NUT
+  - [x] `ups.test.date` — วันและเวลาที่สั่งทดสอบแบตเตอรี่ล่าสุด
 * **ข้อมูลตัวเครื่องและระบบ (Device & System Info):**
   - [x] `ups.load` (แสดงค่าโหลด % จาก Megatec Q1 Index 3) — ภาระโหลด (ข้อมูลจริง จาก Megatec Q1 Index 3)
   - [x] `ups.temperature` (25.0 °C) — อุณหภูมิเครื่อง (Fallback จำลองค่าคงที่ เนื่องจากฮาร์ดแวร์ไม่มีเซนเซอร์วัดอุณหภูมิ)

@@ -91,8 +91,13 @@
 ## 5. การตรวจสอบสถานะการทำงาน (Monitoring & Logs)
 -----------------------------------------------------------------------------
 
-# ตรวจสอบข้อมูล Telemetry จาก NUT (ค่าแรงดัน, โหลด, แบตเตอรี่)
+# ตรวจสอบข้อมูล Telemetry ทั้งหมดจาก NUT (แรงดัน, โหลด, แบตเตอรี่, ผลการทดสอบ)
 $ upsc myups
+
+# ตรวจสอบผลการทดสอบแบตเตอรี่และสถานะเฉพาะจุด
+$ upsc myups battery.test.status
+$ upsc myups ups.test.result
+$ upsc myups ups.status
 
 # ตรวจสอบสถานะการทำงานของ Bridge Service
 $ sudo systemctl status enerex-ups-bridge
@@ -114,4 +119,56 @@ Flow:
 2. Auto-Recovery           : ตรวจจับสายหลุด/เสียบใหม่ และปรับสถานะเป็น OFF อัตโนมัติ
 3. Single Instance Lock    : ใช้ fcntl.flock ป้องกันการรันโปรเซสซ้อนทับ
 4. Graceful Shutdown       : รองรับ SIGTERM/SIGINT คืน Resource และปิด Handle สะอาด
-5. Battery Self-Test Bridge : ตรวจจับคำสั่งทดสอบแบตเตอรี่จาก MariaDB (system_command) หรือ Signal (SIGUSR1/SIGUSR2) แล้วส่ง Feature Report 0x24 (Phoenixtec) หรือ ASCII 'T' (Megatec) เข้าฮาร์ดแวร์จริง พร้อมอัปเดตสถานะ CAL เข้า NUT อัตโนมัติ
+5. Multi-Model Resolution  : ตรวจสอบ product_string ร่วมกับ VID:PID เพื่อแยกแยะรุ่น Unity, Basic G2 และ 2000D ได้ถูกต้อง
+6. Battery Self-Test Bridge : ตรวจจับคำสั่งทดสอบแบตเตอรี่จาก Web/MariaDB, Signals หรือ upscmd แล้วส่งคำสั่งควบคุมฮาร์ดแวร์จริง พร้อมอัปเดตสถานะ CAL เข้า NUT อัตโนมัติ
+
+-----------------------------------------------------------------------------
+## 7. คู่มือการสั่งทดสอบแบตเตอรี่ (Battery Self-Test Integration)
+-----------------------------------------------------------------------------
+
+ระบบรองรับการสั่งทดสอบแบตเตอรี่ (Battery Self-Test) และคำสั่งยกเลิก (Abort) ผ่าน 3 ช่องทางหลัก:
+
+### 7.1 ช่องทางสั่งการ (Trigger Methods)
+1. **ผ่านหน้าเว็บ Web Dashboard**:
+   - ไปที่เมนู `/pages/system/test/`
+   - กดปุ่ม **Start Now** ในส่วน Quick Test หรือ Deep Test
+   - ระบบเว็บจะบันทึกคำสั่งลงตาราง `system_command` ใน MariaDB (`run_python = 1`) ซึ่ง `enerex_ups_bridge.py` จะดักจับและสั่งงานฮาร์ดแวร์ทันที
+2. **ผ่าน Linux Signal (CLI)**:
+   - สั่งเริ่ม Quick Battery Test:
+     $ pkill -SIGUSR1 -f enerex_ups_bridge.py
+   - สั่งยกเลิก Battery Test (Abort):
+     $ pkill -SIGUSR2 -f enerex_ups_bridge.py
+3. **ผ่านคำสั่ง NUT upscmd Wrapper**:
+   - สั่งเริ่มทดสอบ:
+     $ upscmd myups test.battery.start.quick
+   - สั่งยกเลิก:
+     $ upscmd myups test.battery.stop
+
+### 7.2 สถานะและการเปลี่ยนแปลงของตัวแปร (Status Lifecycle)
+* **ก่อนสั่งทดสอบ (Baseline / Idle)**:
+  - `ups.status`          : `OL` (หรือ `OFF` หากปิดสวิตช์เครื่อง)
+  - `battery.test.status` : `passed`
+  - `ups.test.result`     : `Done and passed`
+* **ระหว่างการทดสอบ (In Progress ~ 10 วินาที)**:
+  - `ups.status`          : `OL CAL` (มีแฟล็ก `CAL` กำกับ)
+  - `battery.test.status` : `in progress`
+  - `ups.test.result`     : `In progress`
+  - ตัวเครื่องดึงโหลดลงแบตเตอรี่จริง แรงดันแบตเตอรี่และแรงดันขาออกจะลดลงตามพฤติกรรมอินเวอร์เตอร์
+* **หลังการทดสอบเสร็จสิ้น (Completed)**:
+  - `ups.status`          : `OL` (แฟล็ก `CAL` ปลดออกอัตโนมัติ)
+  - `battery.test.status` : `passed`
+  - `ups.test.result`     : `Done and passed`
+* **กรณียกเลิกการทดสอบกลางคัน (Aborted)**:
+  - `ups.status`          : `OL`
+  - `battery.test.status` : `abort`
+  - `ups.test.result`     : `Aborted`
+
+### 7.3 ตารางคำสั่งฮาร์ดแวร์จริงแยกรายรุ่น (Hardware Command Matrix)
+
+| รุ่น UPS | โปรโตคอล | คำสั่ง Quick Test | คำสั่ง Deep Test | คำสั่ง Abort/Stop | ระยะเวลาทดสอบจริง |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Innova Unity** | Phoenixtec HID | Feature Report `0x24 [0x01]` | Feature Report `0x24 [0x02]` | Feature Report `0x24 [0x00]` | ~10 วินาที |
+| **Innova Basic G2** | Phoenixtec HID | Feature Report `0x24 [0x01]` | Feature Report `0x24 [0x02]` | Feature Report `0x24 [0x00]` | ~3 - 10 วินาที |
+| **Offline UPS 2000D** | Phoenixtec HID | Feature Report `0x24 [0x01]` | Feature Report `0x24 [0x02]` | Feature Report `0x24 [0x03]` | ~10 วินาที (สลับ Relay อินเวอร์เตอร์ 215V) |
+| **MEC0003** | Megatec Q1 | ASCII Command `'T'` | ASCII Command `'TL'` | ASCII Command `'CT'` | ~10 วินาที (State Machine Index 3/13) |
+

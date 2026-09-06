@@ -923,6 +923,9 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
             status_parts.append("LB")
         if overload:
             status_parts.append("OVER")
+        if ups.get("battery_test_status") in ("running", "in progress") or ups.get("test_discharge_active"):
+            if "CAL" not in status_parts:
+                status_parts.append("CAL")
         ups["ups.status"] = " ".join(status_parts)
 
         # Synchronize electrical metrics with operating status to prevent stale values

@@ -184,6 +184,8 @@ class UPSData:
     # -- Self-test -----------------------------------------------------------
     battery_test_status: Optional[str] = None
     """Self-test result: "idle", "running", "passed", "failed", etc."""
+    ups_test_result: Optional[str] = None
+    """NUT test result: "Done and passed", "In progress", "Done and error", etc."""
 
     # -- Scan metadata -------------------------------------------------------
     scan_report_count: Optional[int] = None
@@ -226,7 +228,8 @@ class UPSData:
             "battery.voltage":              self.battery_voltage,
             "battery.temperature":          self.battery_temperature,
             "battery.type":                 self.battery_type,
-            "battery.test.status":          self.battery_test_status,
+            "battery.test.status":          "in progress" if self.battery_test_status == "running" else ("passed" if self.battery_test_status in ("idle", "passed") else self.battery_test_status),
+            "ups.test.result":              self.ups_test_result or ("In progress" if self.battery_test_status == "running" else ("Done and passed" if self.battery_test_status in ("idle", "passed") else ("Done and error" if self.battery_test_status == "failed" else ("Aborted" if self.battery_test_status == "abort" else self.battery_test_status)))),
             "input.voltage":                self.input_voltage,
             "input.voltage.nominal":        self.input_voltage_nominal,
             "input.frequency":              self.input_frequency,
@@ -320,7 +323,8 @@ def ups_data_from_raw(raw: Dict[str, Any]) -> UPSData:
         battery_charge_high=_get("battery.charge.high"),
         battery_runtime=_get("battery.runtime"),
         battery_voltage=_first_present("battery.voltage", "battery_voltage_v"),
-        battery_test_status=_get("battery_test_status"),
+        battery_test_status=_first_present("battery.test.status", "battery_test_status"),
+        ups_test_result=_first_present("ups.test.result", "ups_test_result"),
 
         # Input
         input_voltage=_get("input.voltage"),

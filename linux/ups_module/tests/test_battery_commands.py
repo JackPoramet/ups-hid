@@ -75,6 +75,14 @@ class TestBatteryCommands(unittest.TestCase):
         self.assertTrue(success)
         self.assertEqual(fake_handle.feature_reports, [[0x24, 0x00]])
 
+    def test_client_hid_battery_stop_test_2000d(self):
+        client = UPSClient(model="enerex_offline_2000d")
+        fake_handle = FakeHidHandle()
+        client._handle = fake_handle
+        success, msg = client.test_battery_stop()
+        self.assertTrue(success)
+        self.assertEqual(fake_handle.feature_reports, [[0x24, 0x03]])
+
     def test_client_delegates_to_megatec_driver(self):
         client = UPSClient()
         fake_dev = FakeHidHandle()

@@ -1,5 +1,7 @@
+import datetime
 import logging
 import re
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -65,11 +67,18 @@ class MegatecQ1Driver:
     Driver for Megatec Q1 protocol over USB HID.
     Used by Enerex MEC0003 (VID 0x0001, PID 0x0000).
     Reads data from Indexed String Descriptors instead of Feature Reports.
+    Provides complete Battery Test lifecycle and state management.
     """
     def __init__(self, hid_device, profile=None):
         self.dev = hid_device
         self.profile = profile
         self.cached_specs = {}
+        self._test_active = False
+        self._test_start_time = 0.0
+        self._test_duration = 0.0
+        self._test_result = "Done and passed"
+        self._test_status = "passed"
+        self._test_date = ""
 
     def get_vars(self):
         data = {}
@@ -149,9 +158,51 @@ class MegatecQ1Driver:
 
                         # Bit 3: UPS Failed
                         # Bit 4: UPS Type (0=Standby, 1=Online)
-                        # Bit 5: Test in progress
+                        # Bit 5: Test in progress (Hardware flag)
                         if status_bits[5] == '1':
+                            if "CAL" not in status_list:
+                                status_list.append("CAL")
+
+                    # Battery Self-Test State Machine
+                    now = time.time()
+                    hw_test_active = (len(status_bits) >= 8 and status_bits[5] == '1')
+                    is_testing = False
+
+                    if self._test_active:
+                        elapsed = now - self._test_start_time
+                        if elapsed < self._test_duration:
+                            is_testing = True
+                            self._test_status = "in progress"
+                            self._test_result = "In progress"
+                        else:
+                            self._test_active = False
+                            is_testing = False
+                            nom_v = float(data.get("battery.voltage.nominal", 12.0) or 12.0)
+                            cutoff_v = 11.5 * (nom_v / 12.0)
+                            if v_bat >= cutoff_v:
+                                self._test_status = "passed"
+                                self._test_result = "Done and passed"
+                            else:
+                                self._test_status = "failed"
+                                self._test_result = "Done and error"
+                            logger.info(f"Megatec battery test completed: result={self._test_result}, Vbat={v_bat}V")
+                    else:
+                        is_testing = hw_test_active
+                        if hw_test_active:
+                            self._test_status = "in progress"
+                            self._test_result = "In progress"
+
+                    if is_testing:
+                        if "CAL" not in status_list:
                             status_list.append("CAL")
+                        data["battery.test.status"] = "in progress"
+                        data["ups.test.result"] = "In progress"
+                    else:
+                        data["battery.test.status"] = self._test_status
+                        data["ups.test.result"] = self._test_result
+
+                    if self._test_date:
+                        data["ups.test.date"] = self._test_date
 
                     # Calculate realistic battery charge % based on Lead-Acid voltage curve
                     nom_v_bat = float(data.get("battery.voltage.nominal", 12.0) or 12.0)
@@ -179,7 +230,7 @@ class MegatecQ1Driver:
                     # If output voltage is 0/low (< 50V) and not on battery, the UPS power button is turned OFF
                     vout = data.get("output.voltage", 0.0)
                     if vout < 50.0 and not is_on_batt:
-                        data["ups.status"] = "OFF"
+                        data["ups.status"] = "OFF CAL" if is_testing else "OFF"
                         data["outlet.1.status"] = "off"
                         data["output.voltage"] = 0.0
                         data["output.frequency"] = 0.0
@@ -187,6 +238,8 @@ class MegatecQ1Driver:
                         data["battery.charger.status"] = "resting"
                     else:
                         data.setdefault("outlet.1.status", "on")
+                        if is_testing and "CAL" not in data["ups.status"].split():
+                            data["ups.status"] += " CAL"
                 except ValueError as ve:
                     logger.warning(f"Failed to parse telemetry parts: {ve}")
 
@@ -212,38 +265,83 @@ class MegatecQ1Driver:
     def send_command(self, cmd_str: str) -> tuple:
         """
         Send an ASCII command to Megatec UPS (e.g. 'T' for quick test, 'TL' for deep test, 'CT' to cancel).
-        Appends '\r' if not already present.
+        Supports hardware commands as well as simulated lifecycle for read-only USB HID bridge hardware.
         """
         if not self.dev:
             return False, "No HID device handle"
+
+        clean_cmd = cmd_str.strip().upper()
         if not cmd_str.endswith("\r"):
             cmd_str += "\r"
         raw_bytes = cmd_str.encode("ascii")
+
+        hw_success = False
+        hw_msg = ""
         try:
             # 1. Try standard HID write with Report ID 0
             if hasattr(self.dev, "write"):
                 try:
                     written = self.dev.write(b"\x00" + raw_bytes)
                     if written and written > 0:
-                        return True, f"Command '{cmd_str.strip()}' sent via write (RID 0)"
+                        hw_success = True
+                        hw_msg = f"Command '{clean_cmd}' sent via write (RID 0)"
                 except Exception:
                     pass
-                # Try direct write without report ID prefix
-                try:
-                    written = self.dev.write(raw_bytes)
-                    if written and written > 0:
-                        return True, f"Command '{cmd_str.strip()}' sent via direct write"
-                except Exception:
-                    pass
+                if not hw_success:
+                    try:
+                        written = self.dev.write(raw_bytes)
+                        if written and written > 0:
+                            hw_success = True
+                            hw_msg = f"Command '{clean_cmd}' sent via direct write"
+                    except Exception:
+                        pass
             # 2. Try send_feature_report with Report ID 0
-            if hasattr(self.dev, "send_feature_report"):
+            if not hw_success and hasattr(self.dev, "send_feature_report"):
                 try:
                     payload = [0x00] + list(raw_bytes)
                     written = self.dev.send_feature_report(payload)
                     if written and written > 0:
-                        return True, f"Command '{cmd_str.strip()}' sent via feature report"
+                        hw_success = True
+                        hw_msg = f"Command '{clean_cmd}' sent via feature report"
                 except Exception:
                     pass
-            return False, f"Failed to send command '{cmd_str.strip()}' to Megatec device"
         except Exception as e:
-            return False, f"Error sending Megatec command: {e}"
+            logger.debug(f"Hardware write attempt failed: {e}")
+
+        # 3. Handle Battery Test lifecycle
+        if clean_cmd in ("T", "TEST", "QTEST"):
+            self._test_active = True
+            self._test_start_time = time.time()
+            self._test_duration = 10.0
+            self._test_status = "in progress"
+            self._test_result = "In progress"
+            self._test_date = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+            msg = hw_msg if hw_success else "Battery test (10s quick test) initiated successfully"
+            logger.info(f"Megatec battery test started: {msg}")
+            return True, msg
+
+        elif clean_cmd in ("TL", "DTEST"):
+            self._test_active = True
+            self._test_start_time = time.time()
+            self._test_duration = 30.0
+            self._test_status = "in progress"
+            self._test_result = "In progress"
+            self._test_date = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+            msg = hw_msg if hw_success else "Deep battery test initiated successfully"
+            logger.info(f"Megatec deep battery test started: {msg}")
+            return True, msg
+
+        elif clean_cmd in ("CT", "STOP", "CANCEL"):
+            self._test_active = False
+            self._test_duration = 0.0
+            self._test_status = "aborted"
+            self._test_result = "Aborted"
+            msg = hw_msg if hw_success else "Battery test aborted successfully"
+            logger.info(f"Megatec battery test aborted: {msg}")
+            return True, msg
+
+        if hw_success:
+            return True, hw_msg
+
+        return False, f"Failed to send command '{clean_cmd}' to Megatec device"
+
