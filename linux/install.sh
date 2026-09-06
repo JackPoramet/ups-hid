@@ -42,10 +42,7 @@ if [ -f "/lib/nut/dummy-ups" ]; then
 fi
 
 echo "--- 5. Initializing dummy device file and IPC queue ---"
-cat << 'EOF' > /etc/nut/myups.dev
-device.type: ups
-ups.status: OFF
-EOF
+echo "ups.status: WAIT" > /etc/nut/myups.dev
 chmod 666 /etc/nut/myups.dev
 
 touch /run/enerex_ups_cmd /tmp/enerex_ups_cmd

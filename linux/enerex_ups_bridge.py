@@ -398,16 +398,6 @@ def main():
     acquire_single_instance_lock()
     logging.info("Starting Enerex UPS Bridge daemon...")
 
-    # Ensure clean neutral state on initial start if dummy file does not exist
-    if not os.path.exists(DUMMY_FILE):
-        try:
-            with open(DUMMY_FILE, "w", encoding="utf-8") as f:
-                f.write("device.type: ups\n")
-                f.write("ups.status: OFF\n")
-            os.chmod(DUMMY_FILE, 0o666)
-        except Exception:
-            pass
-
     while _running:
         client = None
         try:
@@ -421,7 +411,7 @@ def main():
             prod = info.get("model") or info.get("product_string") or (profile.model if profile else "UPS")
             logging.info(f"Connected to UPS: Manufacturer='{mfr}', Product='{prod}' (Protocol: {getattr(profile, 'protocol', 'unknown')})")
 
-            # Clear old data in dummy-ups memory and reconnect upsd (stable bbd1e02 sequence)
+            # Clear old data in dummy-ups memory and reconnect upsd
             logging.info("Restarting nut-driver and nut-server to clear stale variables...")
             os.system("systemctl restart nut-driver && systemctl restart nut-server")
             time.sleep(2)
@@ -452,49 +442,25 @@ def main():
                     if not _running:
                         break
                     logging.error(f"Error reading UPS data (Device disconnected?): {e}")
-                    # Tell dummy-ups the device is disconnected and overwrite metrics to prevent stale cache
+                    # Tell dummy-ups the device is disconnected and overwrite electrical metrics to prevent stale cache
                     temp_file = DUMMY_FILE + ".tmp"
                     with open(temp_file, "w", encoding="utf-8") as f:
-                        f.write("battery.capacity: 0.00\n")
-                        f.write("battery.charge: 0\n")
                         f.write("battery.charger.status: resting\n")
-                        f.write("battery.protection: yes\n")
-                        f.write("battery.runtime: 0\n")
-                        f.write("battery.runtime.low: 180\n")
-                        f.write("battery.type: PbAc\n")
-                        f.write("battery.voltage: 0.0\n")
                         f.write("device.type: ups\n")
-                        if info:
-                            mfr_str = info.get("manufacturer") or info.get("manufacturer_string") or ""
-                            prod_str = info.get("model") or info.get("product_string") or ""
-                            serial_str = info.get("serial") or info.get("serial_number") or ""
-                            if mfr_str:
-                                f.write(f"device.mfr: {mfr_str}\n")
-                                f.write(f"ups.mfr: {mfr_str}\n")
-                            if prod_str:
-                                f.write(f"device.model: {prod_str}\n")
-                                f.write(f"ups.model: {prod_str}\n")
-                            if serial_str:
-                                f.write(f"device.serial: {serial_str}\n")
-                                f.write(f"ups.serial: {serial_str}\n")
                         f.write("input.frequency: 0.0\n")
-                        f.write("input.frequency.nominal: 50.0\n")
                         f.write("input.voltage: 0.0\n")
-                        f.write("input.voltage.nominal: 220.0\n")
                         f.write("outlet.1.status: off\n")
                         f.write("output.current: 0.0\n")
                         f.write("output.frequency: 0.0\n")
-                        f.write("output.frequency.nominal: 50\n")
                         f.write("output.power: 0\n")
                         f.write("output.power.apparent: 0\n")
                         f.write("output.voltage: 0.0\n")
-                        f.write("output.voltage.nominal: 220\n")
                         f.write("ups.load: 0\n")
                         f.write("ups.status: OFF\n")
                     os.rename(temp_file, DUMMY_FILE)
                     os.chmod(DUMMY_FILE, 0o666)
 
-                    # Break the inner loop immediately to reconnect/auto-detect again
+                    # Break the inner loop to reconnect/auto-detect again
                     break
 
                 time.sleep(POLL_INTERVAL)
@@ -502,8 +468,8 @@ def main():
         except Exception as e:
             if not _running:
                 break
-            logging.warning(f"No UPS found or connect failed: {e}. Retrying in 3 seconds...")
-            time.sleep(3)
+            logging.warning(f"No UPS found or connect failed: {e}. Retrying in 5 seconds...")
+            time.sleep(5)
         finally:
             if client and getattr(client, "is_connected", False):
                 try:
