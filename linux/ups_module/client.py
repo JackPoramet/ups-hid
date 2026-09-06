@@ -441,12 +441,35 @@ class UPSClient:
         return self._send_feature(rid, [(value >> (i * 8)) & 0xFF for i in range(2)])
 
     def run_self_test(self) -> tuple[bool, str]:
-        """Trigger UPS battery self-test."""
+        """Trigger UPS battery self-test (10-second quick test)."""
+        if getattr(self, "_driver", None) is not None and hasattr(self._driver, "send_command"):
+            return self._driver.send_command("T")
         return self._send_feature(0x24, [0x01])
 
     def abort_self_test(self) -> tuple[bool, str]:
         """Abort a running self-test."""
+        if getattr(self, "_driver", None) is not None and hasattr(self._driver, "send_command"):
+            return self._driver.send_command("CT")
         return self._send_feature(0x24, [0x00])
+
+    def test_battery_quick(self) -> tuple[bool, str]:
+        """Perform a quick (10-second) battery self-test."""
+        return self.run_self_test()
+
+    def test_battery_deep(self) -> tuple[bool, str]:
+        """Perform a deep battery test (until low battery threshold)."""
+        if getattr(self, "_driver", None) is not None and hasattr(self._driver, "send_command"):
+            return self._driver.send_command("TL")
+        # For HID devices that support deep test mode
+        res, msg = self._send_feature(0x24, [0x02])
+        if not res:
+            # Fallback to standard self-test if report 0x02 is rejected
+            return self.run_self_test()
+        return res, msg
+
+    def test_battery_stop(self) -> tuple[bool, str]:
+        """Stop/cancel an ongoing battery test."""
+        return self.abort_self_test()
 
     def schedule_shutdown(self, delay_seconds: int) -> tuple[bool, str]:
         """Schedule UPS output shutdown after *delay_seconds*."""

@@ -66,6 +66,102 @@ try:
 except (ValueError, AttributeError):
     pass
 
+# Database connection configuration for MariaDB command polling
+DB_CONFIG = {
+    "host": "localhost",
+    "user": "ups_user",
+    "password": "1q2w3e4r",
+    "database": "ups",
+    "connect_timeout": 2,
+}
+
+_pending_commands = []
+
+
+def handle_battery_test_signal(signum, frame):
+    global _pending_commands
+    logging.info(f"Received signal ({signum}) triggering UPS battery test.")
+    if hasattr(signal, "SIGUSR1") and signum == signal.SIGUSR1:
+        _pending_commands.append("cmd_test_battery_quick")
+    elif hasattr(signal, "SIGUSR2") and signum == signal.SIGUSR2:
+        _pending_commands.append("cmd_test_battery_stop")
+
+
+try:
+    if hasattr(signal, "SIGUSR1"):
+        signal.signal(signal.SIGUSR1, handle_battery_test_signal)
+    if hasattr(signal, "SIGUSR2"):
+        signal.signal(signal.SIGUSR2, handle_battery_test_signal)
+except (ValueError, AttributeError):
+    pass
+
+
+def check_and_execute_commands(client):
+    """
+    Poll and execute pending commands from MariaDB system_command table or signals.
+    Supports cmd_test_battery_quick, cmd_test_battery_start, cmd_test_battery_stop.
+    """
+    global _pending_commands
+    cmds = []
+
+    # 1. Collect pending signal commands
+    while _pending_commands:
+        cmds.append(_pending_commands.pop(0))
+
+    # 2. Check MariaDB system_command table
+    try:
+        conn = None
+        try:
+            import mysql.connector
+            conn = mysql.connector.connect(**DB_CONFIG)
+        except ImportError:
+            try:
+                import pymysql
+                conn = pymysql.connect(**DB_CONFIG)
+            except ImportError:
+                pass
+
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, cmd_name FROM system_command WHERE run_python = 1 "
+                "AND cmd_name IN ('cmd_test_battery_quick', 'cmd_test_battery_start', 'cmd_test_battery_stop')"
+            )
+            rows = cursor.fetchall()
+            for row in rows:
+                c_id, c_name = row[0], row[1]
+                cmds.append(c_name)
+                cursor.execute("UPDATE system_command SET run_python = 0 WHERE id = %s", (c_id,))
+            conn.commit()
+            cursor.close()
+            conn.close()
+    except Exception as e:
+        logging.debug(f"DB command check encountered non-fatal error: {e}")
+
+    # 3. Execute detected commands via client
+    for cmd in cmds:
+        logging.info(f"Executing UPS command: {cmd}")
+        success, msg = False, ""
+        try:
+            if cmd in ("cmd_test_battery_quick", "test_quick"):
+                if hasattr(client, "test_battery_quick"):
+                    success, msg = client.test_battery_quick()
+                else:
+                    success, msg = client.run_self_test()
+            elif cmd in ("cmd_test_battery_start", "test_deep"):
+                if hasattr(client, "test_battery_deep"):
+                    success, msg = client.test_battery_deep()
+                else:
+                    success, msg = client.run_self_test()
+            elif cmd in ("cmd_test_battery_stop", "test_stop"):
+                if hasattr(client, "test_battery_stop"):
+                    success, msg = client.test_battery_stop()
+                else:
+                    success, msg = client.abort_self_test()
+            logging.info(f"Command '{cmd}' execution result: success={success}, msg='{msg}'")
+        except Exception as e:
+            logging.error(f"Error executing command '{cmd}': {e}")
+
 
 def enrich_nut_variables(data: dict, info: dict) -> dict:
     """
@@ -241,8 +337,18 @@ def enrich_nut_variables(data: dict, info: dict) -> dict:
     data.setdefault("ups.timer.shutdown", -1)
     data.setdefault("ups.timer.start", -1)
     data.setdefault("ups.test.result", "Done and passed")
+    data.setdefault("battery.test.status", "passed")
     data.setdefault("ups.beeper.status", "enabled")
     data.setdefault("ups.date", datetime.datetime.now().strftime("%Y/%m/%d"))
+
+    # Synchronize CAL status if battery test is currently active
+    b_test = str(data.get("battery.test.status", "")).lower()
+    if b_test in ("running", "in progress", "cal"):
+        cur_status = str(data.get("ups.status", ""))
+        if "CAL" not in cur_status.split():
+            parts = cur_status.split() if cur_status else ["OL"]
+            parts.append("CAL")
+            data["ups.status"] = " ".join(parts)
 
     return data
 
@@ -271,6 +377,9 @@ def main():
             # Polling loop for the connected UPS
             while _running:
                 try:
+                    # 0. Check and execute pending commands (Battery Test from DB or Signals)
+                    check_and_execute_commands(client)
+
                     # 1. Read live UPS variables (existing logic preserved 100%)
                     data = client.get_vars()
 

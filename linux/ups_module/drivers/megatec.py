@@ -208,3 +208,42 @@ class MegatecQ1Driver:
             pass
 
         return data
+
+    def send_command(self, cmd_str: str) -> tuple:
+        """
+        Send an ASCII command to Megatec UPS (e.g. 'T' for quick test, 'TL' for deep test, 'CT' to cancel).
+        Appends '\r' if not already present.
+        """
+        if not self.dev:
+            return False, "No HID device handle"
+        if not cmd_str.endswith("\r"):
+            cmd_str += "\r"
+        raw_bytes = cmd_str.encode("ascii")
+        try:
+            # 1. Try standard HID write with Report ID 0
+            if hasattr(self.dev, "write"):
+                try:
+                    written = self.dev.write(b"\x00" + raw_bytes)
+                    if written and written > 0:
+                        return True, f"Command '{cmd_str.strip()}' sent via write (RID 0)"
+                except Exception:
+                    pass
+                # Try direct write without report ID prefix
+                try:
+                    written = self.dev.write(raw_bytes)
+                    if written and written > 0:
+                        return True, f"Command '{cmd_str.strip()}' sent via direct write"
+                except Exception:
+                    pass
+            # 2. Try send_feature_report with Report ID 0
+            if hasattr(self.dev, "send_feature_report"):
+                try:
+                    payload = [0x00] + list(raw_bytes)
+                    written = self.dev.send_feature_report(payload)
+                    if written and written > 0:
+                        return True, f"Command '{cmd_str.strip()}' sent via feature report"
+                except Exception:
+                    pass
+            return False, f"Failed to send command '{cmd_str.strip()}' to Megatec device"
+        except Exception as e:
+            return False, f"Error sending Megatec command: {e}"

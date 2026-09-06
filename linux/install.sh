@@ -12,7 +12,7 @@ fi
 
 echo "--- 1. Installing required dependencies ---"
 apt-get update
-apt-get install -y python3-hid python3-usb
+apt-get install -y python3-hid python3-usb python3-mysql.connector 2>/dev/null || apt-get install -y python3-hid python3-usb
 
 echo "--- 2. Stopping existing NUT services and old bridge processes ---"
 systemctl stop nut-server.service || true

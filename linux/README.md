@@ -109,3 +109,4 @@ Flow:
 2. Auto-Recovery           : ตรวจจับสายหลุด/เสียบใหม่ และปรับสถานะเป็น OFF อัตโนมัติ
 3. Single Instance Lock    : ใช้ fcntl.flock ป้องกันการรันโปรเซสซ้อนทับ
 4. Graceful Shutdown       : รองรับ SIGTERM/SIGINT คืน Resource และปิด Handle สะอาด
+5. Battery Self-Test Bridge : ตรวจจับคำสั่งทดสอบแบตเตอรี่จาก MariaDB (system_command) หรือ Signal (SIGUSR1/SIGUSR2) แล้วส่ง Feature Report 0x24 (Phoenixtec) หรือ ASCII 'T' (Megatec) เข้าฮาร์ดแวร์จริง พร้อมอัปเดตสถานะ CAL เข้า NUT อัตโนมัติ

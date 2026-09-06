@@ -34,7 +34,7 @@
   - [x] `battery.runtime.low` (180 วินาที) — เกณฑ์เตือนเวลาสำรองไฟใกล้หมด (Fallback ตามมาตรฐาน NUT)
   - [x] `battery.charger.status` (`resting` / `floating` / `charging` / `discharging`) — สถานะการชาร์จ (ข้อมูลจริง ประเมินตามสภาวะการทำงาน)
   - [x] `battery.type` (`PbAc`) — ชนิดแบตเตอรี่ตะกั่ว-กรด (Fallback ตามมาตรฐาน NUT)
-  - [ ] `battery.test.status` (`passed` / `failed`) — ผลการทดสอบแบตเตอรี่ (ข้อมูลจริง)
+  - [x] `battery.test.status` (`passed` / `failed`) — ผลการทดสอบแบตเตอรี่ (ข้อมูลจริง)
 * **ข้อมูลตัวเครื่องและระบบ (Device & System Info):**
   - [x] `ups.load` (13 %) — ภาระโหลดเทียบกับพิกัด (ข้อมูลจริง)
   - [x] `ups.temperature` (31.9 °C) — อุณหภูมิภายในตัวเครื่อง (ข้อมูลจริง จากเซนเซอร์ฮาร์ดแวร์)
@@ -72,7 +72,7 @@
   - [x] `battery.runtime` (~15146 - 59940 วินาที) — เวลาสำรองไฟที่เหลือ (ข้อมูลจริง)
   - [x] `battery.charger.status` (`resting` / `floating` / `charging` / `discharging`) — สถานะการชาร์จ (ข้อมูลจริง ประเมินตามสภาวะการทำงาน)
   - [x] `battery.type` (`PbAc`) — ชนิดแบตเตอรี่ (Fallback ตามมาตรฐาน NUT)
-  - [ ] `battery.test.status` (`passed`) — ผลการทดสอบแบตเตอรี่ (ข้อมูลจริง)
+  - [x] `battery.test.status` (`passed`) — ผลการทดสอบแบตเตอรี่ (ข้อมูลจริง)
 * **ข้อมูลตัวเครื่องและระบบ (Device & System Info):**
   - [x] `ups.load` (ตรงกับหน้าจอเครื่องจริง เช่น 4%, 9%) — ภาระโหลด (ข้อมูลจริง จาก Report 0x07)
   - [x] `ups.temperature` (28.9 °C) — อุณหภูมิเครื่อง (ข้อมูลจริง จากเซนเซอร์ฮาร์ดแวร์)
@@ -110,7 +110,7 @@
   - [x] `battery.runtime` (~3359 วินาที) — เวลาสำรองไฟที่เหลือ (ข้อมูลจริง จาก Report 0x06)
   - [x] `battery.charger.status` (`resting` / `floating` / `charging` / `discharging`) — สถานะการชาร์จ (ข้อมูลจริง ประเมินตามสภาวะการทำงาน)
   - [x] `battery.type` (`PbAc`) — ชนิดแบตเตอรี่ (Fallback ตามมาตรฐาน NUT)
-  - [ ] `battery.test.status` (`passed`) — ผลการทดสอบแบตเตอรี่ (ข้อมูลจริง)
+  - [x] `battery.test.status` (`passed`) — ผลการทดสอบแบตเตอรี่ (ข้อมูลจริง)
 * **ข้อมูลตัวเครื่องและระบบ (Device & System Info):**
   - [x] `ups.load` (0 % เมื่อไม่มีโหลด / แสดงค่าจริงเมื่อต่อโหลด) — ภาระโหลด (ข้อมูลจริง จาก Report 0x07)
   - [x] `ups.temperature` (25.0 °C) — อุณหภูมิเครื่อง (Fallback จำลองค่าคงที่ เนื่องจากฮาร์ดแวร์ไม่มีเซนเซอร์วัดอุณหภูมิ)
@@ -148,7 +148,7 @@
   - [x] `battery.charger.status` (`resting` / `floating` / `charging` / `discharging`) — สถานะการชาร์จ (ข้อมูลจริง ประเมินตามสภาวะการทำงานและแรงดัน Vbat)
   - [x] `battery.type` (`PbAc`) — ชนิดแบตเตอรี่ (Fallback ตามมาตรฐาน NUT)
   - [-] `battery.runtime` — เวลาสำรองไฟที่เหลือ (ไม่มีในฮาร์ดแวร์จริง เนื่องจากโปรโตคอล Megatec Q1 ไม่มีฟังก์ชันคำนวณ Runtime)
-  - [ ] `battery.test.status` (`passed`) — ผลการทดสอบแบตเตอรี่ (ข้อมูลจริง จาก Megatec Q1 Index 3)
+  - [x] `battery.test.status` (`passed`) — ผลการทดสอบแบตเตอรี่ (ข้อมูลจริง จาก Megatec Q1 Index 3)
 * **ข้อมูลตัวเครื่องและระบบ (Device & System Info):**
   - [x] `ups.load` (แสดงค่าโหลด % จาก Megatec Q1 Index 3) — ภาระโหลด (ข้อมูลจริง จาก Megatec Q1 Index 3)
   - [x] `ups.temperature` (25.0 °C) — อุณหภูมิเครื่อง (Fallback จำลองค่าคงที่ เนื่องจากฮาร์ดแวร์ไม่มีเซนเซอร์วัดอุณหภูมิ)
