@@ -417,9 +417,9 @@ def main():
             prod = info.get("model") or info.get("product_string") or (profile.model if profile else "UPS")
             logging.info(f"Connected to UPS: Manufacturer='{mfr}', Product='{prod}' (Protocol: {getattr(profile, 'protocol', 'unknown')})")
 
-            # Reload NUT services only if they are not already running to avoid
-            # unnecessary downtime for NUT clients (upsmon) during brief USB
-            # reconnect events (e.g. loose cable).
+            # Ensure NUT services are running (start only if inactive).
+            # Do NOT reload or restart already active services: restarting nut-driver
+            # destroys dummy-ups domain sockets, causing nut-server (upsd) to crash.
             import subprocess
             for svc in ("nut-driver", "nut-server"):
                 try:
@@ -429,14 +429,12 @@ def main():
                     )
                     if result.returncode != 0:
                         logging.info("Service %s is not active, starting...", svc)
-                        os.system(f"systemctl restart {svc}")
+                        os.system(f"systemctl start {svc}")
+                        time.sleep(1)  # Allow socket creation before starting next service
                     else:
-                        logging.info("Service %s already active, sending reload.", svc)
-                        os.system(f"systemctl reload-or-restart {svc}")
+                        logging.debug("Service %s is already active.", svc)
                 except Exception as exc:
-                    logging.warning("Failed to check service %s: %s — restarting anyway", svc, exc)
-                    os.system(f"systemctl restart {svc}")
-            time.sleep(1)
+                    logging.warning("Failed to check/start service %s: %s", svc, exc)
 
             # Polling loop for the connected UPS
             while _running:

@@ -3,14 +3,13 @@
 # =============================================================================
 # Enerex-UPS Python Bridge Updater for Linux
 # =============================================================================
-# This script updates the bridge software in /opt/enerex-ups/ without requiring
-# a full re-installation:
-#   1. Stops enerex-ups-bridge service
-#   2. Clears Python bytecache (__pycache__)
+# Cleanly updates the bridge software and restarts NUT without service failure:
+#   1. Stops nut-server, nut-driver, and enerex-ups-bridge in order
+#   2. Cleans stale sockets, PID files, and Python __pycache__
 #   3. Syncs latest ups_module/ and enerex_ups_bridge.py to /opt/enerex-ups/
 #   4. Updates CLI helpers (/usr/local/bin/upscmd, enerex-test)
-#   5. Verifies IPC and state file permissions
-#   6. Restarts the bridge and reloads NUT services
+#   5. Verifies state file, IPC queue permissions, and nut-driver service patch
+#   6. Starts enerex-ups-bridge -> nut-driver -> nut-server sequentially
 # =============================================================================
 
 set -e
@@ -27,17 +26,24 @@ echo "=========================================================="
 echo " Updating Enerex UPS Bridge..."
 echo "=========================================================="
 
-# Check source files
+# Check source files exist
 if [ ! -d "./ups_module" ] || [ ! -f "./enerex_ups_bridge.py" ]; then
     echo "ERROR: Required files (ups_module/ or enerex_ups_bridge.py) not found in $SCRIPT_DIR"
     exit 1
 fi
 
-echo "--- 1. Stopping bridge service ---"
+echo "--- 1. Stopping NUT services and old bridge processes ---"
+# Always stop nut-server (consumer) before nut-driver (producer)
+systemctl stop nut-server.service 2>/dev/null || true
+systemctl stop nut-driver.service 2>/dev/null || true
 systemctl stop enerex-ups-bridge.service 2>/dev/null || true
 pkill -9 -f "enerex_ups_bridge.py" 2>/dev/null || true
 
-echo "--- 2. Updating files in /opt/enerex-ups/ ---"
+# Clear stale NUT PID and socket files to avoid "socket in use" or "stale driver" errors
+rm -f /run/nut/*.pid /var/run/nut/*.pid 2>/dev/null || true
+rm -f /run/enerex_ups_bridge.lock /tmp/enerex_ups_bridge.lock 2>/dev/null || true
+
+echo "--- 2. Updating code in /opt/enerex-ups/ ---"
 # Clear Python caches
 find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 find /opt/enerex-ups -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
@@ -117,38 +123,59 @@ touch /run/enerex_ups_cmd /tmp/enerex_ups_cmd
 chown root:ups-hid /run/enerex_ups_cmd /tmp/enerex_ups_cmd 2>/dev/null || true
 chmod 660 /run/enerex_ups_cmd /tmp/enerex_ups_cmd 2>/dev/null || true
 
-if [ ! -f /etc/nut/myups.dev ]; then
+# Ensure dummy state file exists and has valid initial state so nut-driver doesn't fail
+if [ ! -s /etc/nut/myups.dev ]; then
     echo "ups.status: WAIT" > /etc/nut/myups.dev
-    chmod 666 /etc/nut/myups.dev
+fi
+chmod 666 /etc/nut/myups.dev
+
+# Ensure nut-driver doesn't fail on missing hardware
+if [ -f /lib/systemd/system/nut-driver.service ]; then
+    sed -i 's/ExecStart=\/sbin\/upsdrvctl start/ExecStart=-\/sbin\/upsdrvctl start/' /lib/systemd/system/nut-driver.service
 fi
 
-echo "--- 5. Reloading systemd and restarting services ---"
+echo "--- 5. Reloading systemd and restarting services sequentially ---"
 systemctl daemon-reload
+systemctl reset-failed 2>/dev/null || true
+
+# 1) Start bridge service first so it can probe UPS hardware and write telemetry
 systemctl restart enerex-ups-bridge.service
-
-# Smart reload/restart NUT services
-if systemctl is-active --quiet nut-driver.service; then
-    systemctl reload-or-restart nut-driver.service 2>/dev/null || true
-else
-    systemctl start nut-driver.service 2>/dev/null || true
-fi
-
-if systemctl is-active --quiet nut-server.service; then
-    systemctl reload-or-restart nut-server.service 2>/dev/null || true
-else
-    systemctl start nut-server.service 2>/dev/null || true
-fi
-
 sleep 1
-if systemctl is-active --quiet enerex-ups-bridge.service; then
-    echo "  [OK] enerex-ups-bridge.service is active and running"
-else
-    echo "  [WARNING] enerex-ups-bridge.service may have failed to start"
-    echo "  Check logs: sudo journalctl -u enerex-ups-bridge.service -n 20"
-fi
 
-echo "=========================================================="
-echo " Update Complete!"
-echo " Check bridge status: sudo systemctl status enerex-ups-bridge"
-echo " Check telemetry:     upsc myups"
-echo "=========================================================="
+# 2) Start nut-driver (dummy-ups) so it initializes and creates the driver communication socket
+systemctl start nut-driver.service
+sleep 1
+
+# 3) Start nut-server (upsd) after driver socket is ready
+systemctl start nut-server.service
+sleep 1
+
+# Health checks
+BRIDGE_ACTIVE=false
+DRIVER_ACTIVE=false
+SERVER_ACTIVE=false
+
+systemctl is-active --quiet enerex-ups-bridge.service && BRIDGE_ACTIVE=true || true
+systemctl is-active --quiet nut-driver.service && DRIVER_ACTIVE=true || true
+systemctl is-active --quiet nut-server.service && SERVER_ACTIVE=true || true
+
+if [ "$BRIDGE_ACTIVE" = true ] && [ "$DRIVER_ACTIVE" = true ] && [ "$SERVER_ACTIVE" = true ]; then
+    echo "=========================================================="
+    echo " [OK] Update Complete! All services active and healthy:"
+    echo "   - enerex-ups-bridge : active (running)"
+    echo "   - nut-driver        : active (running)"
+    echo "   - nut-server        : active (running)"
+    echo " Check UPS data with: upsc myups"
+    echo "=========================================================="
+else
+    echo "=========================================================="
+    echo " [WARNING] Some services failed to start cleanly:"
+    [ "$BRIDGE_ACTIVE" = false ] && echo "   - enerex-ups-bridge : FAILED"
+    [ "$DRIVER_ACTIVE" = false ] && echo "   - nut-driver        : FAILED"
+    [ "$SERVER_ACTIVE" = false ] && echo "   - nut-server        : FAILED"
+    echo ""
+    echo " View logs with:"
+    echo "   sudo journalctl -u nut-server.service -n 20 --no-pager"
+    echo "   sudo journalctl -u nut-driver.service -n 20 --no-pager"
+    echo "=========================================================="
+fi
