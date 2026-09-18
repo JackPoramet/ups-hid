@@ -152,3 +152,29 @@ pkill -SIGUSR2 -f enerex_ups_bridge.py  # Abort test
 | Unity / Basic G2 | 0x24 [0x01] | 0x24 [0x02] | 0x24 [0x00] |
 | Offline 2000D    | 0x24 [0x01] | 0x24 [0x02] | 0x24 [0x03] |
 | MEC0003 (800E)   | ASCII "T"   | ASCII "TL"  | ASCII "CT"  |
+
+---
+
+## Driver Switching (Enerex <-> usbhid-ups)
+
+---
+
+ระบบรองรับการสลับระหว่าง `driver = enerex` และ `driver = usbhid-ups` ใน `/etc/nut/ups.conf` ได้โดยตรง:
+
+- **เมื่อตั้งเป็น `driver = enerex`**:
+  `enerex_ups_bridge` จะทำงานเต็มรูปแบบ ดึงค่า $V_{in}$ จริงผ่าน Direct USB Control Transfer (Report 0x31) และส่งคำสั่ง Battery Test ผ่าน IPC
+- **เมื่อตั้งเป็น `driver = usbhid-ups`**:
+  `enerex_ups_bridge` จะเข้าโหมด Standby และปล่อยพอร์ต USB ให้ `usbhid-ups` ทันที คำสั่ง `upscmd` และระบบเดิมจะถูกส่งต่อเข้า Native NUT โดยอัตโนมัติ
+
+**วิธีสลับ Driver**:
+1. แก้ไข `/etc/nut/ups.conf`:
+   ```text
+   [myups]
+       driver = usbhid-ups   # หรือ enerex
+       port = auto           # หรือ /etc/nut/myups.dev
+   ```
+2. รีสตาร์ท service:
+   ```bash
+   sudo systemctl restart nut-driver nut-server
+   ```
+

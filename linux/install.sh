@@ -57,31 +57,39 @@ fi
 
 cat << 'EOF' > /usr/local/bin/upscmd
 #!/bin/bash
-# Intercept instant commands for dummy-ups compatibility
-for arg in "$@"; do
-    case "$arg" in
-        *deep*|*test.battery.deep*|*test.battery.start.deep*)
-            echo "cmd_test_battery_deep" > /run/enerex_ups_cmd 2>/dev/null || echo "cmd_test_battery_deep" > /tmp/enerex_ups_cmd 2>/dev/null || true
-            pkill -SIGUSR1 -f enerex_ups_bridge.py 2>/dev/null || true
-            echo "OK: Deep battery test initiated"
-            exit 0
-            ;;
-        *stop*|*test.battery.stop*|*abort*|*cancel*)
-            echo "cmd_test_battery_stop" > /run/enerex_ups_cmd 2>/dev/null || echo "cmd_test_battery_stop" > /tmp/enerex_ups_cmd 2>/dev/null || true
-            pkill -SIGUSR2 -f enerex_ups_bridge.py 2>/dev/null || true
-            echo "OK: Battery test stopped"
-            exit 0
-            ;;
-        *quick*|*test.battery.start*|*test.battery.quick*|*test.battery.start.quick*)
-            echo "cmd_test_battery_quick" > /run/enerex_ups_cmd 2>/dev/null || echo "cmd_test_battery_quick" > /tmp/enerex_ups_cmd 2>/dev/null || true
-            pkill -SIGUSR1 -f enerex_ups_bridge.py 2>/dev/null || true
-            echo "OK: Quick battery test (10s) initiated"
-            exit 0
-            ;;
-    esac
-done
+# Smart upscmd router: detects active driver in ups.conf
+DRIVER=$(grep -E '^[[:space:]]*driver[[:space:]]*=' /etc/nut/ups.conf 2>/dev/null | grep -v '^[[:space:]]*#' | head -n 1 | cut -d'=' -f2 | tr -d ' \t\r\n')
 
-if [ -x /usr/bin/upscmd.orig ]; then
+# If driver is enerex, route commands to enerex-ups-bridge
+if [ "$DRIVER" = "enerex" ]; then
+    for arg in "$@"; do
+        case "$arg" in
+            *deep*|*test.battery.deep*|*test.battery.start.deep*)
+                echo "cmd_test_battery_deep" > /run/enerex_ups_cmd 2>/dev/null || echo "cmd_test_battery_deep" > /tmp/enerex_ups_cmd 2>/dev/null || true
+                pkill -SIGUSR1 -f enerex_ups_bridge.py 2>/dev/null || true
+                echo "OK: Deep battery test initiated"
+                exit 0
+                ;;
+            *stop*|*test.battery.stop*|*abort*|*cancel*)
+                echo "cmd_test_battery_stop" > /run/enerex_ups_cmd 2>/dev/null || echo "cmd_test_battery_stop" > /tmp/enerex_ups_cmd 2>/dev/null || true
+                pkill -SIGUSR2 -f enerex_ups_bridge.py 2>/dev/null || true
+                echo "OK: Battery test stopped"
+                exit 0
+                ;;
+            *quick*|*test.battery.start*|*test.battery.quick*|*test.battery.start.quick*)
+                echo "cmd_test_battery_quick" > /run/enerex_ups_cmd 2>/dev/null || echo "cmd_test_battery_quick" > /tmp/enerex_ups_cmd 2>/dev/null || true
+                pkill -SIGUSR1 -f enerex_ups_bridge.py 2>/dev/null || true
+                echo "OK: Quick battery test (10s) initiated"
+                exit 0
+                ;;
+        esac
+    done
+fi
+
+# Otherwise (e.g. usbhid-ups, blazer_usb), pass to native NUT binary
+if [ -x /usr/bin/upscmd ]; then
+    exec /usr/bin/upscmd "$@"
+elif [ -x /usr/bin/upscmd.orig ]; then
     exec /usr/bin/upscmd.orig "$@"
 fi
 exit 0

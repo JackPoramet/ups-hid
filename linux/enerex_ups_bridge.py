@@ -4,6 +4,7 @@ import os
 import sys
 import logging
 import datetime
+from pathlib import Path
 
 # Path to the deployed ups_module directory
 INSTALL_DIR = "/opt/enerex-ups"
@@ -400,11 +401,36 @@ def enrich_nut_variables(data: dict, info: dict, profile=None) -> dict:
     return data
 
 
+def is_enerex_driver_active() -> bool:
+    """Check whether /etc/nut/ups.conf is configured to use the enerex driver."""
+    conf_path = Path("/etc/nut/ups.conf")
+    if not conf_path.exists():
+        return True
+    try:
+        for line in conf_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("driver"):
+                parts = line.split("=", 1)
+                if len(parts) == 2:
+                    drv = parts[1].strip().lower()
+                    return drv in ("enerex", "dummy-ups")
+    except Exception as exc:
+        logging.debug(f"Error checking driver in {conf_path}: {exc}")
+    return True
+
+
 def main():
     acquire_single_instance_lock()
     logging.info("Starting Enerex UPS Bridge daemon...")
 
     while _running:
+        if not is_enerex_driver_active():
+            logging.info("Native driver configured in /etc/nut/ups.conf (e.g. usbhid-ups). Bridge in standby...")
+            time.sleep(5)
+            continue
+
         client = None
         try:
             logging.info("Scanning for Enerex/Phoenixtec/Megatec UPS...")
