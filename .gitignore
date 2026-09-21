@@ -43,9 +43,9 @@ $RECYCLE.BIN/
 
 .gemini/
 .agents/
-OrangePiZero/etc/
-OrangePiZero/var/
+OrangePiZero/
 windows/
+ups_module/drivers/windows/
 *.rar
 
 linux/datapoll.txt
