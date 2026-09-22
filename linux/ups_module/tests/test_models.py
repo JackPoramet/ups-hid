@@ -405,6 +405,29 @@ class TestZeroAndStaleHandling(unittest.TestCase):
         self.assertEqual(enriched.get("ups.power.nominal"), 880)
         self.assertEqual(enriched.get("ups.realpower.nominal"), 528)
 
+    def test_innova_basic_g2_no_false_lb_when_charge_is_high(self):
+        from ups_module.core import decode_feature_reports
+        from enerex_ups_bridge import enrich_nut_variables
+
+        # 1000OLG2 reports: 0x01 (OB), 0x06 (99% batt, 59940s runtime), 0x0C (d[2]=100% capacity)
+        raw_reports = {
+            0x01: [0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01],
+            0x06: [0x06, 0x63, 0x24, 0xEA, 0x00, 0x00],
+            0x0C: [0x0C, 0x01, 0x02, 0x64, 0x64],
+            0x42: [0x42, 0x30, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF4, 0x01, 0x00, 0x01, 0x09, 0xFD, 0x00],
+        }
+        device_info = {"product_string": "InnovaBasicG2", "vendor_id": 0x06DA, "product_id": 0xFFFF}
+        decoded = decode_feature_reports(raw_reports, device_info=device_info)
+
+        # Ensure LB is NOT present in decoded status despite 0x0C reporting 100
+        self.assertNotIn("LB", decoded.get("ups.status", "").split())
+        self.assertIn("OB", decoded.get("ups.status", "").split())
+
+        # Also test bridge enrich_nut_variables
+        enriched = enrich_nut_variables(decoded, device_info)
+        self.assertNotIn("LB", enriched.get("ups.status", "").split())
+        self.assertIn("OB", enriched.get("ups.status", "").split())
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

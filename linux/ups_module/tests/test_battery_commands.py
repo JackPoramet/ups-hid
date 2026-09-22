@@ -142,6 +142,7 @@ class TestBatteryCommands(unittest.TestCase):
     def test_megatec_pyusb_fallback(self):
         # When HID handle fails, PyUSB fallback is attempted
         fail_dev = MagicMock()
+        fail_dev.get_indexed_string.side_effect = RuntimeError("HID write failed")
         fail_dev.send_feature_report.side_effect = RuntimeError("HID write failed")
         fail_dev.write.side_effect = RuntimeError("HID write failed")
 

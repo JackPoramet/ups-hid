@@ -925,6 +925,9 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
 
         b_low = ups.get("battery.charge.low", ups.get("low_batt_alert_limit_percent"))
         batt_charge_low = float(b_low) if b_low is not None else 20.0
+        # Clamp: some models report 0x0C d[2]=100 (meaning "always low") — ignore.
+        if batt_charge_low >= 100.0:
+            batt_charge_low = 20.0
 
         b_rt = ups.get("battery.runtime", ups.get("runtime_remaining_sec"))
         batt_runtime = float(b_rt) if b_rt is not None else 9999.0
