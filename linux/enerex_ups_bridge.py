@@ -256,6 +256,16 @@ def enrich_nut_variables(data: dict, info: dict, profile=None) -> dict:
     data.setdefault("output.voltage.nominal", 220)
     data.setdefault("output.frequency.nominal", 50)
 
+    # Sanitize battery.charge.low: must be a realistic percentage threshold (< 100%, default 20)
+    b_low = data.get("battery.charge.low")
+    try:
+        b_low_val = float(b_low) if b_low is not None else 20.0
+    except (ValueError, TypeError):
+        b_low_val = 20.0
+    if b_low_val >= 100.0 or b_low_val <= 0.0:
+        b_low_val = 20.0
+    data["battery.charge.low"] = int(b_low_val)
+
     # 4.1 State-driven synchronization to prevent stale variables
     status_str = str(data.get("ups.status", "")).upper()
     vin = float(data.get("input.voltage", 0.0) or 0.0)

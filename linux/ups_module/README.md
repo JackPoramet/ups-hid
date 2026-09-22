@@ -228,8 +228,8 @@ with UPSClient() as client:
 | `0x05` | 1 | Byte 0 | Boolean | `switchable` |
 | `0x06` | 5 | Byte 0<br>Byte 1–4 | Unsigned Int 8-bit<br>Unsigned Int 32-bit (Little-Endian) | `battery.charge` / `battery_capacity_percent`<br>`runtime_remaining_sec` / `battery.runtime` |
 | `0x07` | 11 | Byte 0<br>Byte 1<br>Byte 3–4<br>Byte 9–10 | Enum (1=Standby, 2=Bypass, 3=Line, 4=OnBattery, 5=Test)<br>Unsigned Int 8-bit (% Load)<br>Unsigned Int 16-bit (Little-Endian, Kelvin) - 273.15<br>Unsigned Int 16-bit (Little-Endian) / 10.0 | `work_mode_code`<br>`percent_load`<br>`temperature_c` / `ups.temperature`<br>`battery_voltage_v` |
-| `0x08` | 1 | Byte 0 | Unsigned Int 8-bit (%) | `low_batt_alert_limit_percent` |
-| `0x0C` | 4 | Byte 2<br>Byte 3 | Unsigned Int 8-bit<br>Unsigned Int 8-bit | `battery.charge.low`<br>`battery.charge.high` |
+| `0x08` | 1 | Byte 0 | Unsigned Int 8-bit (%) | `low_batt_alert_limit_percent` / `battery.charge.low` (default 20%) |
+| `0x0C` | 4 | Byte 2<br>Byte 3 | Unsigned Int 8-bit<br>Unsigned Int 8-bit | `DesignCapacity` (`battery.charge.low` if < 100)<br>`battery.charge.high` |
 | `0x0D` | 1 | Byte 0 | Unsigned Int 8-bit (Hz) | `input.frequency` |
 | `0x10` | 64 | Byte 0–N | List of non-zero Report ID bytes | `supported_reports` |
 | `0x14` | 2 | Byte 0<br>Byte 1 | Unsigned Int 8-bit (Hz)<br>Unsigned Int 8-bit (V) | `input.frequency.nominal`<br>`input.voltage.nominal` |

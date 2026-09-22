@@ -142,10 +142,12 @@ graph TD
     * `Byte 3–4`: `temperature_c` / `ups.temperature` (`float` 16-bit Little-Endian, Kelvin) — แปลงเป็นองศาเซลเซียสด้วยสูตร `(K - 273.15)`
     * `Byte 9–10`: `battery_voltage_v` (`float` 16-bit Little-Endian) — หารด้วย `10.0` (โวลต์)
   * **Report 0x08** (1 Byte):
-    * `Byte 0`: `low_batt_alert_limit_percent` (`int`) — ขีดจำกัดแจ้งเตือนแบตเตอรี่ต่ำ (%)
-  * **Report 0x0C** (4 Bytes):
-    * `Byte 2`: `battery.charge.low` (`int`) — ขีดจำกัดแบตเตอรี่ต่ำ (%)
-    * `Byte 3`: `battery.charge.high` (`int`) — ขีดจำกัดแบตเตอรี่เต็ม (%)
+    * `Byte 0`: `low_batt_alert_limit_percent` / `battery.charge.low` (`int`) — ขีดจำกัดแจ้งเตือนแบตเตอรี่ต่ำ (RemainingCapacityLimit, default 20%)
+  * **Report 0x0C** (4 Bytes, USB PDC v1.1):
+    * `Byte 0`: `CapacityGranularity1`
+    * `Byte 1`: `CapacityMode`
+    * `Byte 2`: `DesignCapacity` (`int`) — ความจุออกแบบ (100% — หาก < 100 จึงใช้เป็น `battery.charge.low`)
+    * `Byte 3`: `battery.charge.high` / `FullChargeCapacity` (`int`) — ขีดจำกัดแบตเตอรี่เต็ม (100%)
   * **Report 0x0D** (1 Byte):
     * `Byte 0`: `input.frequency` (`int`) — ความถี่ไฟเข้า (Hz)
   * **Report 0x10**:
