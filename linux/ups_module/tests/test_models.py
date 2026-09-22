@@ -422,11 +422,13 @@ class TestZeroAndStaleHandling(unittest.TestCase):
         # Ensure LB is NOT present in decoded status despite 0x0C reporting 100
         self.assertNotIn("LB", decoded.get("ups.status", "").split())
         self.assertIn("OB", decoded.get("ups.status", "").split())
+        self.assertEqual(decoded.get("battery.charge.low"), 20)
 
         # Also test bridge enrich_nut_variables
         enriched = enrich_nut_variables(decoded, device_info)
         self.assertNotIn("LB", enriched.get("ups.status", "").split())
         self.assertIn("OB", enriched.get("ups.status", "").split())
+        self.assertEqual(enriched.get("battery.charge.low"), 20)
 
 
 if __name__ == "__main__":

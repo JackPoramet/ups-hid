@@ -712,11 +712,21 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
     d = payload(0x08)
     if d and len(d) >= 1:
         ups["low_batt_alert_limit_percent"] = d[0]
+        if 0 < d[0] < 100:
+            ups["battery.charge.low"] = d[0]
 
     d = payload(0x0C)
     if d and len(d) >= 4:
-        ups["battery.charge.low"] = d[2]
+        # Per USB PDC v1.1 HID Descriptor (Usage Page 0x85):
+        # Byte 0: CapacityGranularity1 (Usage 0x8D)
+        # Byte 1: CapacityMode (Usage 0x2C)
+        # Byte 2: DesignCapacity (Usage 0x83) - Typically 100 (%)
+        # Byte 3: FullChargeCapacity (Usage 0x67) - Typically 100 (%)
         ups["battery.charge.high"] = d[3]
+        if 0 < d[2] < 100:
+            ups["battery.charge.low"] = d[2]
+        else:
+            ups.setdefault("battery.charge.low", 20)
 
     d = payload(0x0D)
     if d and len(d) >= 1:
