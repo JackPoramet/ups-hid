@@ -362,9 +362,15 @@ def enrich_nut_variables(data: dict, info: dict, profile=None) -> dict:
             in_freq = float(data.get("input.frequency", 0.0) or 0.0)
             data["output.frequency"] = in_freq if in_freq > 0.0 else float(data.get("output.frequency.nominal", 50.0))
 
-    # Smart fallback for ups.temperature if hardware lacks internal temp sensor (e.g. Offline 2000D / MEC0003)
-    if "ups.temperature" not in data or float(data.get("ups.temperature", 0.0) or 0.0) <= 0.0:
-        data["ups.temperature"] = 25.0
+    # If hardware lacks internal temp sensor or returns <= 0.0 / invalid (e.g. Offline 2000D / MEC0003),
+    # omit ups.temperature so that database records NULL and Web Dashboard / Log displays N/A.
+    if "ups.temperature" in data:
+        try:
+            val = float(data.get("ups.temperature", 0.0) or 0.0)
+            if val <= 0.0:
+                data.pop("ups.temperature", None)
+        except (ValueError, TypeError):
+            data.pop("ups.temperature", None)
 
     # Smart fallback for ups.load if not provided
     if "ups.load" not in data:

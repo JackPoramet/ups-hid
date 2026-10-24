@@ -430,6 +430,24 @@ class TestZeroAndStaleHandling(unittest.TestCase):
         self.assertIn("OB", enriched.get("ups.status", "").split())
         self.assertEqual(enriched.get("battery.charge.low"), 20)
 
+    def test_temperature_omitted_when_no_sensor_or_zero(self):
+        from enerex_ups_bridge import enrich_nut_variables
+
+        # Case 1: ups.temperature is not in data
+        data_no_temp = {"input.voltage": 220.0, "output.voltage": 220.0, "ups.status": "OL"}
+        enriched = enrich_nut_variables(data_no_temp, {"product_string": "MEC0003"})
+        self.assertNotIn("ups.temperature", enriched)
+
+        # Case 2: ups.temperature is 0.0 or <= 0
+        data_zero_temp = {"input.voltage": 220.0, "output.voltage": 220.0, "ups.status": "OL", "ups.temperature": 0.0}
+        enriched_zero = enrich_nut_variables(data_zero_temp, {"product_string": "MEC0003"})
+        self.assertNotIn("ups.temperature", enriched_zero)
+
+        # Case 3: ups.temperature has valid sensor reading (> 0)
+        data_valid_temp = {"input.voltage": 220.0, "output.voltage": 220.0, "ups.status": "OL", "ups.temperature": 32.5}
+        enriched_valid = enrich_nut_variables(data_valid_temp, {"product_string": "InnovaUnity"})
+        self.assertEqual(enriched_valid.get("ups.temperature"), 32.5)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
