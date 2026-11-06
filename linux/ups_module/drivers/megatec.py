@@ -1,5 +1,6 @@
 import datetime
 import logging
+import math
 import re
 import time
 
@@ -76,8 +77,8 @@ class MegatecQ1Driver:
         self._test_active = False
         self._test_start_time = 0.0
         self._test_duration = 0.0
-        self._test_result = "Done and passed"
-        self._test_status = "passed"
+        self._test_result = "Unknown"
+        self._test_status = "unknown"
         self._test_date = ""
 
     def get_vars(self):
@@ -121,6 +122,21 @@ class MegatecQ1Driver:
         except Exception as e:
             logger.error(f"Failed to read Megatec Q1 telemetry (Index 3): {e}")
             raise  # Raise exception to trigger device reconnect logic
+
+        if not isinstance(telemetry, str) or "(" not in telemetry:
+            raise RuntimeError("Invalid Megatec Q1 telemetry response")
+        parts = telemetry.split("(", 1)[1].strip().rstrip(")").split()
+        if len(parts) < 8 or len(parts[7]) != 8 or set(parts[7]) - {"0", "1"}:
+            raise RuntimeError("Incomplete Megatec Q1 telemetry/status bits")
+        try:
+            numeric = [float(parts[i]) for i in (0, 1, 2, 3, 4, 5)]
+            if parts[6] != "--.-":
+                numeric.append(float(parts[6]))
+            if not all(math.isfinite(value) for value in numeric):
+                raise ValueError("non-finite measurement")
+        except (ValueError, TypeError) as exc:
+            raise RuntimeError(f"Invalid Megatec Q1 measurement: {exc}") from exc
+        telemetry = "(" + " ".join(parts)
 
         if telemetry and "(" in telemetry:
             idx = telemetry.find("(")
@@ -178,20 +194,19 @@ class MegatecQ1Driver:
                         else:
                             self._test_active = False
                             is_testing = False
-                            nom_v = float(data.get("battery.voltage.nominal", 12.0) or 12.0)
-                            cutoff_v = 11.5 * (nom_v / 12.0)
-                            if v_bat >= cutoff_v:
-                                self._test_status = "passed"
-                                self._test_result = "Done and passed"
-                            else:
-                                self._test_status = "failed"
-                                self._test_result = "Done and error"
-                            logger.info(f"Megatec battery test completed: result={self._test_result}, Vbat={v_bat}V")
+                            # Q1 exposes an active flag, not a definitive pass result.
+                            # Elapsed time plus healthy voltage cannot prove a test passed.
+                            is_testing = hw_test_active
+                            self._test_status = "in progress" if hw_test_active else "unknown"
+                            self._test_result = "In progress" if hw_test_active else "Unknown"
                     else:
                         is_testing = hw_test_active
                         if hw_test_active:
                             self._test_status = "in progress"
                             self._test_result = "In progress"
+                        elif self._test_status == "in progress":
+                            self._test_status = "unknown"
+                            self._test_result = "Unknown"
 
                     if is_testing:
                         if "CAL" not in status_list:
@@ -284,34 +299,23 @@ class MegatecQ1Driver:
             return False, "No HID device handle"
 
         clean_cmd = cmd_str.strip().upper()
-        if not cmd_str.endswith("\r"):
-            cmd_str += "\r"
-        raw_bytes = cmd_str.encode("ascii")
+        aliases = {
+            "T": ("T", "TEST", "QTEST", "QUICK", "CMD_TEST_BATTERY_QUICK",
+                  "TEST_BATTERY_QUICK", "TEST_QUICK", "TEST.BATTERY.START",
+                  "TEST.BATTERY.START.QUICK", "TEST.BATTERY.QUICK"),
+            "TL": ("TL", "DEEP", "DTEST", "START_TEST", "CMD_TEST_BATTERY_DEEP",
+                   "TEST_BATTERY_DEEP", "TEST_DEEP", "TEST.BATTERY.START.DEEP", "TEST.BATTERY.DEEP"),
+            "CT": ("CT", "STOP", "ABORT", "CANCEL", "CMD_TEST_BATTERY_STOP",
+                   "TEST_BATTERY_STOP", "TEST_STOP", "TEST.BATTERY.STOP", "TEST.BATTERY.ABORT"),
+            "Q": ("Q", "BEEPER", "BUZZER", "MUTE", "BEEP", "BEEPER.TOGGLE"),
+        }
+        canonical = next((key for key, values in aliases.items() if clean_cmd in values), None)
+        if canonical is None:
+            return False, f"Unsupported Megatec command: {clean_cmd}"
+        clean_cmd = canonical
+        str_idx, code = {"T": (4, 1), "TL": (5, 2), "CT": (11, 3), "Q": (7, 4)}[canonical]
+        raw_bytes = (canonical + "\r").encode("ascii")
 
-        # Determine String Index and opcode for MEC0003:
-        # String Index 4 = Quick Test ('T'), Index 5 = Deep Test ('TL'), Index 11 = Cancel Test ('CT'), Index 7 = Toggle Beeper ('Q')
-        if any(k in clean_cmd for k in ("STOP", "ABORT", "CANCEL", "CT")):
-            str_idx = 11
-            code = 0x03
-            q1_str = "CT\r"
-            desc = "Cancel Battery Test"
-        elif any(k in clean_cmd for k in ("TL", "DEEP", "DTEST")):
-            str_idx = 5
-            code = 0x02
-            q1_str = "TL\r"
-            desc = "Deep Battery Test"
-        elif any(k in clean_cmd for k in ("BEEPER", "BUZZER", "MUTE", "BEEP", "Q")):
-            str_idx = 7
-            code = 0x04
-            q1_str = "Q\r"
-            desc = "Toggle Beeper"
-        else:
-            str_idx = 4
-            code = 0x01
-            q1_str = "T\r"
-            desc = "Quick Battery Test (10s)"
-
-        q1_bytes = q1_str.encode("ascii")
         hw_success = False
         hw_msg = ""
 
@@ -331,8 +335,7 @@ class MegatecQ1Driver:
                     hw_msg = f"Command '{clean_cmd}' confirmed with ACK via String Descriptor #{str_idx}"
                 elif s3_resp.startswith("N"):
                     logger.warning(f"UPS rejected command '{clean_cmd}' with NAK (check UPS power switch)")
-                    hw_success = False
-                    hw_msg = f"UPS rejected command '{clean_cmd}' with NAK"
+                    return False, f"UPS rejected command '{clean_cmd}' with NAK"
                 else:
                     hw_success = True
                     hw_msg = f"Command '{clean_cmd}' triggered via String Descriptor #{str_idx}"
@@ -347,7 +350,7 @@ class MegatecQ1Driver:
                 if usb_dev:
                     for lang in (0x0409, 0):
                         try:
-                            usb_dev.ctrl_transfer(
+                            response = usb_dev.ctrl_transfer(
                                 bmRequestType=0x80,
                                 bRequest=0x06,
                                 wValue=(0x03 << 8) | str_idx,
@@ -355,6 +358,11 @@ class MegatecQ1Driver:
                                 data_or_wLength=255,
                                 timeout=1000
                             )
+                            if (isinstance(response, int) or len(response) < 2
+                                    or response[1] != 3 or response[0] < 2
+                                    or response[0] % 2 != 0
+                                    or response[0] > len(response)):
+                                continue
                             hw_success = True
                             hw_msg = f"Command '{clean_cmd}' sent via PyUSB GET_DESCRIPTOR String #{str_idx}"
                             break
@@ -370,7 +378,7 @@ class MegatecQ1Driver:
                 try:
                     payload_64 = bytes([rid] + list(raw_bytes) + [0] * max(0, 64 - len(raw_bytes) - 1))
                     written = self.dev.send_feature_report(payload_64)
-                    if written and written > 0:
+                    if written == len(payload_64):
                         hw_success = True
                         hw_msg = f"Command '{clean_cmd}' sent via Feature Report ID 0x{rid:02X} (64-byte Q1 Spec)"
                         break
@@ -384,7 +392,7 @@ class MegatecQ1Driver:
                 try:
                     payload_8 = bytes([rid, code, 0, 0, 0, 0, 0, 0])
                     written = self.dev.send_feature_report(payload_8)
-                    if written and written > 0:
+                    if written == len(payload_8):
                         hw_success = True
                         hw_msg = f"Command '{clean_cmd}' sent via HID Feature Report ID 0x{rid:02X} (8-byte PDC Spec)"
                         break
@@ -400,7 +408,7 @@ class MegatecQ1Driver:
             for cand in (p17, p16, p8):
                 try:
                     written = self.dev.send_feature_report(cand)
-                    if written and written > 0:
+                    if written == len(cand):
                         hw_success = True
                         hw_msg = f"Command '{clean_cmd}' sent via Report ID 0 (len={len(cand)})"
                         break
@@ -417,7 +425,7 @@ class MegatecQ1Driver:
             ):
                 try:
                     written = self.dev.write(cand_w)
-                    if written and written > 0:
+                    if written == len(cand_w):
                         hw_success = True
                         hw_msg = f"Command '{clean_cmd}' sent via write (len={len(cand_w)})"
                         break
@@ -452,7 +460,7 @@ class MegatecQ1Driver:
                                 data_or_wLength=p_data,
                                 timeout=1000
                             )
-                            if ret and ret > 0:
+                            if ret == len(p_data):
                                 hw_success = True
                                 hw_msg = f"Command '{clean_cmd}' sent via {label}"
                                 break
@@ -461,7 +469,10 @@ class MegatecQ1Driver:
             except Exception as e:
                 logger.debug(f"PyUSB control transfer attempt failed: {e}")
 
-        # 3. Handle Battery Test lifecycle
+        if not hw_success:
+            return False, f"Failed to send command '{clean_cmd}' to Megatec device"
+
+        # Update lifecycle only after a successful transport write.
         if clean_cmd in (
             "T", "TEST", "QTEST", "QUICK", "CMD_TEST_BATTERY_QUICK",
             "TEST_BATTERY_QUICK", "TEST_QUICK", "TEST.BATTERY.START",
@@ -473,7 +484,7 @@ class MegatecQ1Driver:
             self._test_status = "in progress"
             self._test_result = "In progress"
             self._test_date = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
-            msg = hw_msg if hw_success else "Battery test (10s quick test) initiated successfully"
+            msg = hw_msg
             logger.info(f"Megatec battery test started: {msg}")
             return True, msg
 
@@ -488,7 +499,7 @@ class MegatecQ1Driver:
             self._test_status = "in progress"
             self._test_result = "In progress"
             self._test_date = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
-            msg = hw_msg if hw_success else "Deep battery test initiated successfully"
+            msg = hw_msg
             logger.info(f"Megatec deep battery test started: {msg}")
             return True, msg
 
@@ -500,7 +511,7 @@ class MegatecQ1Driver:
             self._test_duration = 0.0
             self._test_status = "aborted"
             self._test_result = "Aborted"
-            msg = hw_msg if hw_success else "Battery test aborted successfully"
+            msg = hw_msg
             logger.info(f"Megatec battery test aborted: {msg}")
             return True, msg
 

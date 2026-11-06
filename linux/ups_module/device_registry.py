@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -54,6 +55,9 @@ class DeviceProfile:
     report_ids: List[int] = field(default_factory=list)
     features: dict = field(default_factory=dict)
     notes: str = ""
+    aliases: List[str] = field(default_factory=list)
+    nominal_va: Optional[int] = None
+    nominal_watts: Optional[int] = None
 
     @classmethod
     def from_dict(cls, d: dict) -> "DeviceProfile":
@@ -68,6 +72,9 @@ class DeviceProfile:
             report_ids=[int(r, 0) for r in d.get("report_ids", [])],
             features=d.get("features", {}),
             notes=d.get("notes", ""),
+            aliases=d.get("aliases", []),
+            nominal_va=d.get("nominal_va"),
+            nominal_watts=d.get("nominal_watts"),
         )
 
 
@@ -126,11 +133,31 @@ class DeviceRegistry:
         return None
 
     def get_by_vid_pid(self, vid: int, pid: int) -> Optional[DeviceProfile]:
-        """Look up a device profile by USB VID/PID pair."""
-        for p in self._profiles:
-            if p.vid == vid and p.pid == pid:
-                return p
-        return None
+        """VID/PID alone cannot identify a Phoenixtec model variant."""
+        return self.match_device(vid, pid, "")
+
+    def match_device(self, vid: int, pid: int, identity: str) -> Optional[DeviceProfile]:
+        candidates = [p for p in self._profiles if p.vid == vid and p.pid == pid]
+        if len(candidates) == 1:
+            return candidates[0]
+        normalize = lambda value: re.sub(r"[^a-z0-9]", "", value.lower())
+        text = normalize(identity or "")
+        matches = []
+        generic = None
+        for profile in candidates:
+            if profile.features.get("variant_unknown"):
+                generic = profile
+                continue
+            for alias in [profile.model] + profile.aliases:
+                key = normalize(alias)
+                if key and key in text:
+                    matches.append((len(key), profile))
+        if matches:
+            score = max(length for length, _ in matches)
+            best = {p.id: p for length, p in matches if length == score}
+            if len(best) == 1:
+                return next(iter(best.values()))
+        return generic
 
     def get_all_vid_pid_pairs(self) -> List[Tuple[int, int]]:
         """Return a list of ``(vid, pid)`` tuples for all registered devices."""
@@ -151,14 +178,11 @@ class DeviceRegistry:
             logger.warning("hidapi not available — cannot auto-detect device")
             return None
 
-        for profile in self._profiles:
-            devices = hid.enumerate(profile.vid, profile.pid)
-            if devices:
-                logger.info(
-                    "Detected %s (%s) — VID=0x%04X PID=0x%04X",
-                    profile.model, profile.id, profile.vid, profile.pid,
-                )
-                return profile
+        for vid, pid in dict.fromkeys(self.get_all_vid_pid_pairs()):
+            for info in hid.enumerate(vid, pid):
+                profile = self.match_device(vid, pid, info.get("product_string") or "")
+                if profile:
+                    return profile
 
         logger.debug("No registered UPS device detected")
         return None

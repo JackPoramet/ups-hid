@@ -142,6 +142,8 @@ class UPSClient:
         self._vid = vid if vid is not None else profile.vid
         self._pid = pid if pid is not None else profile.pid
         self._profile = profile
+        self._explicit_model = model is not None
+        self._custom_report_ids = report_ids is not None
         self._report_ids: List[int] = report_ids or list(profile.report_ids) or list(DEFAULT_REPORT_IDS)
 
         self._handle = None                        # hid.device handle
@@ -171,18 +173,8 @@ class UPSClient:
         for dev_info in hid.enumerate():
             vid = dev_info['vendor_id']
             pid = dev_info['product_id']
-            prod = (dev_info.get('product_string') or '').lower().replace(' ', '')
-            candidates = [p for p in _registry.devices if p.vid == vid and p.pid == pid]
-            if candidates:
-                matched_profile = None
-                for p in candidates:
-                    p_model_norm = p.model.lower().replace(' ', '')
-                    p_id_norm = p.id.lower().replace('_', '').replace('-', '')
-                    if p_model_norm in prod or prod in p_model_norm or p_id_norm in prod:
-                        matched_profile = p
-                        break
-                if not matched_profile:
-                    matched_profile = candidates[0]
+            matched_profile = _registry.match_device(vid, pid, dev_info.get('product_string') or '')
+            if matched_profile:
                 logger.info("Auto-detected UPS: %s %s (VID=0x%04X, PID=0x%04X)", matched_profile.manufacturer, matched_profile.model, vid, pid)
                 return cls(model=matched_profile.id, name=name)
                     
@@ -231,6 +223,35 @@ class UPSClient:
                 raise RuntimeError("Already connected. Call disconnect() before connect().")
             self._handle = h
         self._device_info = info or {}
+
+        if not self._explicit_model or self._profile.features.get("variant_unknown"):
+            product = self._device_info.get("model") or self._device_info.get("product_string") or ""
+            matched = _registry.match_device(self._vid, self._pid, product)
+            if matched:
+                self._profile = matched
+                if not self._custom_report_ids:
+                    self._report_ids = list(matched.report_ids) or list(DEFAULT_REPORT_IDS)
+
+        if self._profile.features.get("variant_unknown") and self._vid == 0x06DA:
+            # These descriptor indices identify captured Phoenixtec variants.
+            # Never use them for MEC, whose indexed strings can trigger controls.
+            with self._handle_lock:
+                for index in (9, 3):
+                    try:
+                        variant = h.get_indexed_string(index)
+                    except Exception:
+                        continue
+                    if not isinstance(variant, str) or not variant:
+                        continue
+                    matched = _registry.match_device(self._vid, self._pid, variant)
+                    if matched and not matched.features.get("variant_unknown"):
+                        self._profile = matched
+                        self._device_info["model"] = matched.model
+                        self._device_info["variant"] = variant
+                        if not self._custom_report_ids:
+                            self._report_ids = list(matched.report_ids) or list(DEFAULT_REPORT_IDS)
+                        break
+        self._device_info["profile_id"] = self._profile.id
 
         # Instantiate driver if protocol is megatec_q1
         if self._profile and self._profile.protocol == 'megatec_q1':
@@ -323,7 +344,7 @@ class UPSClient:
                 include_zero=True,
             )
 
-        if 0x01 not in raw_reports:
+        if len(raw_reports.get(0x01) or []) < 2:
             status_meta = report_meta.get(0x01, {})
             errors = status_meta.get("errors", 0)
             raise RuntimeError(
@@ -442,8 +463,8 @@ class UPSClient:
             or (self._profile.manufacturer if self._profile else "")
         )
         model = (
-            info.get("product_string")
-            or info.get("model")
+            info.get("model")
+            or info.get("product_string")
             or (self._profile.model if self._profile else "")
         )
         serial = info.get("serial_number") or info.get("serial") or ""

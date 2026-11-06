@@ -3,7 +3,7 @@
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
@@ -12,6 +12,7 @@ from ups_module.core import decode_feature_reports, read_all_feature_reports
 from ups_module.events import EventBus
 from ups_module.linux_setup import generate_udev_rule
 from ups_module.poller import UPSPoller
+from ups_module.store import DataStore
 
 
 class FakeHandle:
@@ -30,6 +31,20 @@ class FailingFeatureHandle:
 
 
 class TestAuthoritativeStatus(unittest.TestCase):
+    def test_client_rejects_status_id_without_payload(self):
+        client = UPSClient()
+        client._handle = object()
+        with patch("ups_module.client.read_all_feature_reports", return_value=({1: [1]}, {})):
+            with self.assertRaisesRegex(RuntimeError, "authoritative UPS status"):
+                client.get_vars()
+
+    def test_missing_meter_does_not_mean_output_off(self):
+        decoded = decode_feature_reports({1: [1, 1, 0, 0, 0, 0, 1]})
+        self.assertEqual(decoded["ups.status"], "OL")
+        self.assertNotIn("output.voltage", decoded)
+        self.assertNotIn("output.power", decoded)
+        self.assertNotIn("Standby", decoded["ups_mode"])
+
     def test_empty_reports_do_not_claim_on_battery(self):
         decoded = decode_feature_reports({})
         self.assertNotIn("ups.status", decoded)
@@ -46,6 +61,37 @@ class TestAuthoritativeStatus(unittest.TestCase):
         with patch("ups_module.client.read_all_feature_reports", return_value=({}, {0x01: {"errors": 1}})):
             with self.assertRaisesRegex(RuntimeError, "authoritative UPS status"):
                 client._read_raw()
+
+
+class TestPollerStatus(unittest.TestCase):
+    def _poll(self, response=None, error=None):
+        store = DataStore()
+        poller = UPSPoller(store)
+        poller._report_ids = [1]
+        handle = Mock()
+        handle.get_feature_report.return_value = response
+        handle.get_feature_report.side_effect = error
+        poller._device_handle = handle
+        with patch("ups_module.poller.platform.system", return_value="Linux"):
+            poller._poll_once()
+        return store, handle
+
+    def test_zero_status_payload_is_a_successful_read(self):
+        store, handle = self._poll([1, 0, 0, 0, 0, 0, 0])
+        self.assertTrue(store.is_connected, store.status_message)
+        handle.close.assert_not_called()
+
+    def test_empty_and_header_only_are_not_valid_status(self):
+        for response in (None, [], [1]):
+            with self.subTest(response=response):
+                store, handle = self._poll(response)
+                self.assertFalse(store.is_connected)
+                handle.close.assert_called_once()
+
+    def test_status_read_error_disconnects(self):
+        store, handle = self._poll(error=OSError("disconnected"))
+        self.assertFalse(store.is_connected)
+        handle.close.assert_called_once()
 
 
 class TestControlSafety(unittest.TestCase):

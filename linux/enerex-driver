@@ -1,0 +1,3 @@
+#!/bin/sh
+cd /opt/enerex-ups || exit 1
+exec /usr/bin/python3 -m ups_module.nut_driver "$@"

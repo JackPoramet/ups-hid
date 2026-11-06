@@ -23,6 +23,24 @@ echo "=========================================================="
 echo " Starting Enerex UPS Bridge Uninstallation..."
 echo "=========================================================="
 
+# Remove owned monitor configuration before deleting its installed helper.
+if [ -f /opt/enerex-ups/ups_module/nut_config.py ]; then
+    systemctl stop nut-monitor.service 2>/dev/null || true
+    original_monitor=$(python3 /opt/enerex-ups/ups_module/nut_config.py --original-service-state)
+    python3 /opt/enerex-ups/ups_module/nut_config.py --remove
+    # Restore only the enablement state recorded by this installation.
+    case "$original_monitor" in
+        disabled) systemctl disable nut-monitor.service ;;
+        enabled-runtime) systemctl disable nut-monitor.service; systemctl enable --runtime nut-monitor.service ;;
+        enabled) systemctl enable nut-monitor.service ;;
+        "") : ;;
+        *) echo "ERROR: Invalid original monitor service state" >&2; exit 1 ;;
+    esac
+    rm -f /etc/nut/.enerex-monitor-original-enablement
+    # Original monitor enablement restored
+fi
+systemctl stop nut-server.service nut-driver.service 2>/dev/null || true
+
 echo "--- 1. Stopping and Disabling enerex-ups-bridge.service ---"
 if systemctl list-unit-files enerex-ups-bridge.service &>/dev/null || [ -f "/etc/systemd/system/enerex-ups-bridge.service" ]; then
     echo "  Stopping and disabling enerex-ups-bridge.service..."
@@ -31,7 +49,16 @@ if systemctl list-unit-files enerex-ups-bridge.service &>/dev/null || [ -f "/etc
 fi
 
 echo "--- 2. Force-Killing Any Lingering Bridge Processes ---"
-pkill -9 -f "enerex_ups_bridge.py" 2>/dev/null || true
+pkill -9 -f '^(/[^ ]*/)?python(3([.][0-9]+)?)?[[:space:]]+(-u[[:space:]]+)?((/[^ ]*/)|([.]/))?enerex_ups_bridge[.]py([[:space:]]|$)' 2>/dev/null || true
+# Never unlink a live lock inode: refuse maintenance if an owner survived.
+bridge_lock=/tmp/enerex_ups_bridge.lock
+if [ -d /run ]; then bridge_lock=/run/enerex_ups_bridge.lock; fi
+for bridge_lock in "$bridge_lock"; do
+    if [ -e "$bridge_lock" ] && ! flock -n "$bridge_lock" true; then
+        echo "ERROR: Bridge still owns $bridge_lock; refusing to replace files" >&2
+        exit 1
+    fi
+done
 echo "  [OK] Bridge processes terminated"
 
 echo "--- 3. Removing Systemd Service File ---"
@@ -67,10 +94,9 @@ echo "  [OK] Removed /usr/local/bin/upscmd and /usr/local/bin/enerex-test"
 echo "--- 6. Cleaning State, IPC and Lock Files ---"
 rm -f /etc/nut/myups.dev
 rm -f /etc/nut/myups.dev.tmp
+rm -f /etc/tmpfiles.d/enerex-ups.conf
 rm -f /run/enerex_ups_cmd
 rm -f /tmp/enerex_ups_cmd
-rm -f /run/enerex_ups_bridge.lock
-rm -f /tmp/enerex_ups_bridge.lock
 echo "  [OK] State, IPC and lock files removed"
 
 echo "--- 7. Reverting nut-driver.service patch (if applied) ---"

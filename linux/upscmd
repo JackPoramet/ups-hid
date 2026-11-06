@@ -1,0 +1,41 @@
+#!/bin/bash
+# Only intercept a simple command for a configured bridge UPS at the local
+# default endpoint. Native upscmd owns other targets and option parsing.
+LOCAL_UPS=$(awk '
+    { sub(/#.*/, ""); gsub(/\r/, "") }
+    /^[[:space:]]*\[/ {
+        section=$0; gsub(/^[[:space:]]*\[|\][[:space:]]*$/, "", section)
+    }
+    /^[[:space:]]*driver[[:space:]]*=/ {
+        value=$0; sub(/^[^=]*=/, "", value); gsub(/[[:space:]]/, "", value)
+        if (value == "enerex" || value == "dummy-ups") print section
+    }
+' /etc/nut/ups.conf 2>/dev/null)
+local_target=false
+if [ "$#" -eq 2 ] && [[ "$1" != -* ]]; then
+    while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        case "$1" in
+            "$name"|"$name@localhost"|"$name@localhost:3493"|"$name@127.0.0.1"|"$name@127.0.0.1:3493"|"$name@[::1]"|"$name@[::1]:3493")
+                local_target=true ;;
+        esac
+    done <<< "$LOCAL_UPS"
+fi
+if [ "$local_target" = true ]; then
+    command="$2"
+    case "$command" in
+        test.battery.start|test.battery.quick|test.battery.start.quick)
+            exec /usr/local/bin/enerex-test quick ;;
+        test.battery.deep|test.battery.start.deep)
+            exec /usr/local/bin/enerex-test deep ;;
+        test.battery.stop|test.battery.abort)
+            exec /usr/local/bin/enerex-test stop ;;
+    esac
+fi
+if [ -x /usr/bin/upscmd ]; then
+    exec /usr/bin/upscmd "$@"
+elif [ -x /usr/bin/upscmd.orig ]; then
+    exec /usr/bin/upscmd.orig "$@"
+fi
+echo "ERROR: native upscmd unavailable" >&2
+exit 1

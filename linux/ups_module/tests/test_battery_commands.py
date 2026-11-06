@@ -27,6 +27,137 @@ class FakeHidHandle:
 
 
 class TestBatteryCommands(unittest.TestCase):
+    def test_quick_alias_triggers_test_descriptor_and_canonical_payload(self):
+        device = FakeHidHandle()
+        seen = []
+        device.get_indexed_string = lambda idx: seen.append(idx) or "ACK"
+        with patch("ups_module.drivers.megatec.time.sleep"):
+            self.assertTrue(MegatecQ1Driver(device).send_command("QUICK")[0])
+        self.assertEqual(seen[0], 4)
+        device = FakeHidHandle()
+        self.assertTrue(MegatecQ1Driver(device).send_command("QUICK")[0])
+        self.assertIn(b"T\r", device.feature_reports[0])
+        self.assertNotIn(b"QUICK", device.feature_reports[0])
+
+    def test_truncated_pyusb_descriptor_does_not_start_lifecycle(self):
+        device = FakeHidHandle()
+        device.send_feature_report = lambda _: 0
+        device.write = lambda _: 0
+        usb = MagicMock()
+        for response in (b"\x03", b"\x04\x03A", b"\x03\x03A", b"\x04\x02A\x00", 8):
+            with self.subTest(response=response):
+                usb.ctrl_transfer.side_effect = lambda **kw: response if kw["bmRequestType"] == 0x80 else 0
+                with patch("usb.core.find", return_value=usb):
+                    self.assertFalse(MegatecQ1Driver(device).test_battery_quick()[0])
+
+    def test_malformed_fault_voltage_rejects_entire_frame(self):
+        with self.assertRaises(RuntimeError):
+            self._telemetry_driver("(230 BAD 230 10 50 13.8 --.- 00000000").get_vars()
+
+    def test_elapsed_command_timer_never_fabricates_a_pass(self):
+        device = FakeHidHandle()
+        device.get_indexed_string = lambda idx: "#220 4 12 50" if idx == 13 else "(230 230 230 10 50 13.8 25 00000000"
+        driver = MegatecQ1Driver(device)
+        driver.test_battery_quick()
+        driver._test_start_time = 0
+        result = driver.get_vars()
+        self.assertEqual(result["battery.test.status"], "unknown")
+        self.assertNotIn("passed", result["ups.test.result"].lower())
+        self.assertNotIn("CAL", result["ups.status"].split())
+
+    def test_empty_pyusb_read_is_not_success(self):
+        device = FakeHidHandle()
+        device.send_feature_report = lambda _: 0
+        device.write = lambda _: 0
+        usb = MagicMock()
+        usb.ctrl_transfer.side_effect = lambda **kw: [] if kw["bmRequestType"] == 0x80 else 0
+        with patch("usb.core.find", return_value=usb):
+            ok, _ = MegatecQ1Driver(device).test_battery_quick()
+        self.assertFalse(ok)
+
+    def setUp(self):
+        # The driver tries PyUSB before HID writes, even with a fake HID handle.
+        for guard in (
+            patch("hid.enumerate", return_value=[]),
+            patch("hid.device", side_effect=AssertionError("Real HID access blocked in tests")),
+            patch("usb.core.find", return_value=None),
+        ):
+            guard.start()
+            self.addCleanup(guard.stop)
+
+    def _failed_driver(self):
+        dev = MagicMock()
+        dev.get_indexed_string.side_effect = OSError("mock USB failure")
+        dev.send_feature_report.side_effect = OSError("mock USB failure")
+        dev.write.side_effect = OSError("mock USB failure")
+        return MegatecQ1Driver(dev)
+
+    def test_failed_quick_does_not_start_lifecycle(self):
+        driver = self._failed_driver()
+        before = dict(vars(driver))
+        self.assertFalse(driver.test_battery_quick()[0])
+        self.assertEqual(vars(driver), before)
+
+    def test_failed_deep_does_not_start_lifecycle(self):
+        driver = self._failed_driver()
+        before = dict(vars(driver))
+        self.assertFalse(driver.test_battery_deep()[0])
+        self.assertEqual(vars(driver), before)
+
+    def test_failed_stop_preserves_active_test(self):
+        driver = self._failed_driver()
+        driver._test_active = True
+        driver._test_status = "in progress"
+        driver._test_start_time = 123.0
+        before = dict(vars(driver))
+        self.assertFalse(driver.test_battery_stop()[0])
+        self.assertEqual(vars(driver), before)
+
+    def test_short_write_is_not_success(self):
+        dev = FakeHidHandle()
+        dev.send_feature_report = lambda payload: 1
+        dev.write = lambda payload: 1
+        driver = MegatecQ1Driver(dev)
+        self.assertFalse(driver.test_battery_quick()[0])
+        self.assertFalse(driver._test_active)
+
+    def test_explicit_nak_does_not_retry_other_transports(self):
+        dev = MagicMock()
+        dev.get_indexed_string.side_effect = ["", "NAK"]
+        with patch("ups_module.drivers.megatec.time.sleep"):
+            self.assertFalse(MegatecQ1Driver(dev).test_battery_quick()[0])
+        dev.send_feature_report.assert_not_called()
+        dev.write.assert_not_called()
+
+    def _telemetry_driver(self, telemetry):
+        dev = MagicMock()
+        dev.get_indexed_string.side_effect = lambda idx: "#220.0 4.0 12.0 50.0" if idx == 13 else telemetry
+        dev.get_manufacturer_string.return_value = "MEC"
+        dev.get_product_string.return_value = "MEC0003"
+        return MegatecQ1Driver(dev)
+
+    def test_invalid_q1_telemetry_is_communication_failure(self):
+        for telemetry in (None, "", "NAK", "230 230 230", "(230 230",
+                          "(bad 230 230 000 50 13.8 --.- 00001000",
+                          "(nan 230 230 000 50 13.8 --.- 00001000",
+                          "(230 230 inf 000 50 13.8 --.- 00001000",
+                          "(230 230 230 000 50 13.8 --.- 001",
+                          "(230 230 230 000 50 13.8 --.- 00001X00"):
+            with self.subTest(telemetry=telemetry), self.assertRaises(RuntimeError):
+                self._telemetry_driver(telemetry).get_vars()
+
+    def test_valid_q1_without_temperature_sensor(self):
+        data = self._telemetry_driver("(232.1 232.2 232.0 000 50.1 13.8 --.- 00001000").get_vars()
+        self.assertEqual(data["ups.status"], "OL")
+        self.assertEqual(data["input.voltage"], 232.1)
+        self.assertNotIn("ups.temperature", data)
+
+    def test_valid_q1_on_battery_preserves_zero_input(self):
+        data = self._telemetry_driver("(0.0 0.0 230.0 010 50.0 11.0 --.- 11001000").get_vars()
+        self.assertIn("OB", data["ups.status"])
+        self.assertIn("LB", data["ups.status"])
+        self.assertEqual(data["input.voltage"], 0.0)
+
     def test_megatec_send_command_quick_test(self):
         fake_dev = FakeHidHandle()
         driver = MegatecQ1Driver(fake_dev)
@@ -147,7 +278,7 @@ class TestBatteryCommands(unittest.TestCase):
         fail_dev.write.side_effect = RuntimeError("HID write failed")
 
         mock_usb_dev = MagicMock()
-        mock_usb_dev.ctrl_transfer.return_value = 8
+        mock_usb_dev.ctrl_transfer.return_value = bytes([4, 3, 65, 0])
 
         with patch("usb.core.find", return_value=mock_usb_dev):
             driver = MegatecQ1Driver(fail_dev)
@@ -180,11 +311,24 @@ class TestBatteryCommands(unittest.TestCase):
     def test_enrich_nut_variables_includes_instant_commands(self):
         data = {"ups.status": "OL"}
         info = {"product_string": "MEC0003"}
-        enriched = enrich_nut_variables(data, info)
+        from ups_module.device_registry import DeviceRegistry
+        enriched = enrich_nut_variables(data, info, DeviceRegistry().get_by_id("enerex_mec0003"))
         self.assertEqual(enriched.get("cmd.test.battery.start"), 1)
         self.assertEqual(enriched.get("cmd.test.battery.start.quick"), 1)
         self.assertEqual(enriched.get("cmd.test.battery.start.deep"), 1)
         self.assertEqual(enriched.get("cmd.test.battery.stop"), 1)
+
+
+class TestHardwareIsolation(unittest.TestCase):
+    def test_command_tests_never_discover_real_usb(self):
+        for method in ("test_megatec_send_command_quick_test",
+                       "test_megatec_send_command_deep_test",
+                       "test_megatec_send_command_cancel_test"):
+            with self.subTest(method=method), patch("usb.core.find", return_value=None) as outside_find:
+                result = unittest.TestResult()
+                TestBatteryCommands(method).run(result)
+                self.assertTrue(result.wasSuccessful(), result.errors + result.failures)
+                outside_find.assert_not_called()
 
 
 if __name__ == "__main__":

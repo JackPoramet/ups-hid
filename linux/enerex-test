@@ -1,0 +1,20 @@
+#!/bin/bash
+# One invocation writes one command. Direct SIGUSR1/2 remain a separate API.
+case "${1:-quick}" in
+    quick) command=cmd_test_battery_quick ;;
+    deep) command=cmd_test_battery_deep ;;
+    stop|abort|cancel) command=cmd_test_battery_stop ;;
+    *) echo "Usage: enerex-test [quick|deep|stop]" >&2; exit 2 ;;
+esac
+
+# shortcut: single-writer mailbox; use a queued transport before concurrent producers.
+for queue in /run/enerex_ups_cmd /tmp/enerex_ups_cmd; do
+    if [ -f "$queue" ] && [ ! -L "$queue" ] && [ -w "$queue" ]; then
+        if printf '%s\n' "$command" > "$queue"; then
+            echo "OK: command queued ($command)"
+            exit 0
+        fi
+    fi
+done
+echo "ERROR: UPS command queue unavailable or not writable" >&2
+exit 1

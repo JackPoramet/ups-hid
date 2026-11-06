@@ -233,15 +233,15 @@ class UPSPoller(threading.Thread):
                 report_ids=self._report_ids,
                 sizes=(64,),
                 retries=1,
-                include_zero=False,
+                include_zero=True,
             )
-            if 0x01 not in raw:
+            if len(raw.get(0x01, [])) < 2:
                 errors = report_meta.get(0x01, {}).get("errors", 0)
                 raise RuntimeError(
                     "Unable to read authoritative UPS status report 0x01"
                     + (f" ({errors} HID read error(s))" if errors else "")
                 )
-            ups = decode_feature_reports(raw)
+            ups = decode_feature_reports(raw, device_info=self._device_info)
             ups.update(infer_tentative_live_values(raw, ups))
             
             self._fallback_read_input_voltage(ups)

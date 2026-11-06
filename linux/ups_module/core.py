@@ -908,13 +908,14 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
         bypass = bool(ups.get("bypass", False))
         boost = bool(ups.get("boost", False))
         buck = bool(ups.get("buck", False))
-        vout = float(ups.get("output_voltage_v", ups.get("output.voltage", 0.0)) or 0.0)
+        vout_raw = ups.get("output_voltage_v", ups.get("output.voltage"))
+        vout = float(vout_raw) if vout_raw is not None else None
 
         if bypass and ac:
             status_parts = ["OL", "BYPASS"]
         elif bypass and not ac:
             status_parts = ["OB"]
-        elif ac and vout < 50.0 and not (boost or buck):
+        elif ac and vout is not None and vout < 50.0 and not (boost or buck):
             status_parts = ["OFF"]
         elif ac:
             status_parts = ["OL"]
@@ -974,24 +975,23 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
             ups["input.voltage"] = 0.0
             ups["input.frequency"] = 0.0
 
-    # Report 0x74: max power config
+    # Captured Unity descriptor: two u16 fields, active W then apparent VA.
+    # 2000D instead declares one u16 ConfigApparentPower and returns 9, which
+    # contradicts its known model rating. Preserve that evidence in the fixture;
+    # never reinterpret it as Unity watts merely because a backend pads buffers.
+    rating_identity = " ".join(str((device_info or {}).get(k) or "")
+                               for k in ("profile_id", "model", "product_string")).lower()
+    offline_rating_layout = "offline" in rating_identity or "2000d" in rating_identity
     d = payload(0x74)
-    if d:
-        if len(d) >= 5:
-            w_val = d[1] | (d[2] << 8)
-            va_val = d[3] | (d[4] << 8)
+    if d and len(d) >= 4 and not offline_rating_layout:
+        w_val = d[0] | (d[1] << 8)
+        va_val = d[2] | (d[3] << 8)
+        if w_val > 0:
             ups["config_max_active_power_w"] = w_val
+            ups["ups.realpower.nominal"] = w_val
+        if va_val > 0:
             ups["config_max_apparent_power_va"] = va_val
-            if w_val > 0:
-                ups["ups.realpower.nominal"] = w_val
-            if va_val > 0:
-                ups["ups.power.nominal"] = va_val
-        elif len(d) >= 2:
-            va_val = d[0] | (d[1] << 8)
-            ups["config_max_apparent_power_va"] = va_val
-            if va_val > 0:
-                ups["ups.power.nominal"] = va_val
-                ups["ups.realpower.nominal"] = int(round(va_val * 0.6))
+            ups["ups.power.nominal"] = va_val
 
     d = payload(0x29)
     if d and len(d) >= 4:
@@ -1009,11 +1009,12 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
     ac_in = bool(ups.get("ac_present", False))
     batt_discharging = bool(ups.get("discharging", False))
     is_bypass = bool(ups.get("bypass", False))
-    vout = float(ups.get("output_voltage_v", ups.get("output.voltage", 0.0)) or 0.0)
+    vout_raw = ups.get("output_voltage_v", ups.get("output.voltage"))
+    vout = float(vout_raw) if vout_raw is not None else None
 
     if not has_status_report:
         ups["ups_mode"] = "Unknown (status report unavailable)"
-    elif ac_in and vout < 50.0:
+    elif ac_in and vout is not None and vout < 50.0:
         ups["ups_mode"] = "Standby Mode (เสียบปลั๊ก/ปิดเครื่อง)"
     elif is_bypass:
         ups["ups_mode"] = "Bypass Mode (โหมดบายพาส)"
@@ -1403,6 +1404,8 @@ def main() -> int:
     h, info = open_ups_device(scan_vid, scan_pid)
     if not h:
         return 1
+    info = dict(info or {})
+    info.setdefault("profile_id", profile.id)
 
     try:
         # The requested range is authoritative. Registered report IDs are a
@@ -1447,7 +1450,7 @@ def main() -> int:
         dump_raw(raw)
         print_feature_coverage(meta, request_ids)
 
-        ups = decode_feature_reports(raw)
+        ups = decode_feature_reports(raw, device_info=info)
         ups.update(infer_tentative_live_values(raw, ups))
         print_ups_data(ups)
         print_unknown_reports(raw)
@@ -1479,7 +1482,7 @@ def main() -> int:
                         retries=1,
                         include_zero=False,
                     )
-                    m_ups = decode_feature_reports(m_raw)
+                    m_ups = decode_feature_reports(m_raw, device_info=info)
                     m_ups.update(infer_tentative_live_values(m_raw, m_ups))
                     status_str = m_ups.get("ups.status", "UNKNOWN")
                     batt_str = m_ups.get("battery.charge", "?")

@@ -163,7 +163,10 @@ class UPSData:
     """UPS firmware version string."""
 
     ups_power_nominal: Optional[int] = None
-    """Nominal UPS power (W)."""
+    """Nominal UPS apparent power (VA), the standard NUT meaning."""
+
+    ups_realpower_nominal: Optional[int] = None
+    """Nominal UPS active power (W)."""
 
     ups_apparent_power_nominal: Optional[int] = None
     """Nominal UPS apparent power (VA)."""
@@ -243,6 +246,7 @@ class UPSData:
             "output.power":                 self.output_power,
             "output.power.apparent":        self.output_power_apparent,
             "ups.power.nominal":            self.ups_power_nominal,
+            "ups.realpower.nominal":        self.ups_realpower_nominal,
             "ups.apparent.power.nominal":   self.ups_apparent_power_nominal,
         }
         return {k: v for k, v in mapping.items() if v is not None}
@@ -344,8 +348,9 @@ def ups_data_from_raw(raw: Dict[str, Any]) -> UPSData:
         ups_load=_first_present("ups.load", "percent_load"),
         ups_temperature=_first_present("ups.temperature", "temperature_c"),
         ups_firmware=_get("ups.firmware"),
-        ups_power_nominal=_get("config_max_active_power_w"),
-        ups_apparent_power_nominal=_get("config_max_apparent_power_va"),
+        ups_power_nominal=_first_present("ups.power.nominal", "config_max_apparent_power_va", "ups.apparent.power.nominal"),
+        ups_realpower_nominal=_first_present("ups.realpower.nominal", "config_max_active_power_w"),
+        ups_apparent_power_nominal=_first_present("ups.power.nominal", "config_max_apparent_power_va", "ups.apparent.power.nominal"),
 
         # Flags
         ac_present=_get("ac_present"),
