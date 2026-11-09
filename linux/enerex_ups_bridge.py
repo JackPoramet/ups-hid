@@ -233,9 +233,10 @@ def enrich_nut_variables(data: dict, info: dict, profile=None) -> dict:
     prod = info.get("model") or info.get("product_string") or data.get("device.model") or data.get("ups.model") or (profile.model if profile else "UPS")
     serial = info.get("serial") or info.get("serial_number") or data.get("device.serial") or data.get("ups.serial") or "0000000000"
 
-    # Ensure Innova Unity models are named "Innova Unity" to prevent UP-Connex-Box regex mangling
-    if "innova unity" in prod.lower():
-        prod = "Innova Unity"
+    # Append sub-model suffix (e.g. "Tower 3-1 10K", "RT 3K") if available from USB String 3
+    sub = (info.get("model_sub") or (getattr(profile, "model_sub", "") if profile else "")).strip()
+    if sub and sub.lower() not in prod.lower():
+        prod = f"{prod} {sub}"
 
     data["device.mfr"] = mfr
     data["device.model"] = prod

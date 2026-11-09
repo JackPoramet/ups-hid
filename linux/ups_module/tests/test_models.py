@@ -612,9 +612,9 @@ class TestTower3110K(unittest.TestCase):
             "input_phases": 3,
         }
         enriched = enrich_nut_variables(data, device_info)
-        # Model string must remain 'Innova Unity' to not trigger ups_func.py regex bug
-        self.assertEqual(enriched.get("device.model"), "Innova Unity")
-        self.assertEqual(enriched.get("ups.model"), "Innova Unity")
+        # Model string includes sub-model suffix: 'Innova Unity Tower 3-1 10K'
+        self.assertEqual(enriched.get("device.model"), "Innova Unity Tower 3-1 10K")
+        self.assertEqual(enriched.get("ups.model"), "Innova Unity Tower 3-1 10K")
         self.assertEqual(enriched.get("ups.power.nominal"), 10000)
         self.assertEqual(enriched.get("ups.realpower.nominal"), 9000)
         # Dynamic power: 50% load -> 5000 VA, 4500 W
