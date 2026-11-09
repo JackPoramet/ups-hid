@@ -31,6 +31,15 @@
 
 ---
 
+**ดาวน์โหลดและแตกไฟล์แพ็กเกจ:**
+
+```bash
+tar -xzf enerex-ups-linux-v1.0.4.tar.gz
+cd enerex-ups-linux-v1.0.4
+```
+
+**คำสั่งติดตั้งและจัดการระบบ:**
+
 ```bash
 chmod +x install.sh update.sh uninstall.sh
 sudo ./install.sh       # ติดตั้งระบบและ service ทั้งหมด
