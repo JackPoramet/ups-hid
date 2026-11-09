@@ -201,6 +201,6 @@
   - [x] `ups.load` (0 - 100 %) — ภาระโหลดเทียบกับพิกัด (ข้อมูลจริง จาก Report 0x07 byte `d[3]`)
   - [x] `ups.temperature` (25.0 - 45.0 °C) — อุณหภูมิเครื่อง (ข้อมูลจริง จาก Report 0x07 bytes `d[5..6]`)
   - [x] `ups.power.nominal` (10000 VA) / `ups.realpower.nominal` (9000 W) — พิกัดกำลังไฟฟ้า (ข้อมูลจริง จาก Report 0x74 / Device Registry Fallback)
-  - [x] `device.mfr` (`PHOENIXTEC`) / `device.model` (`Innova Unity`) — ข้อมูลผู้ผลิตและรุ่น (ข้อมูลจริง จาก USB Descriptors String 1 & 2)
+  - [x] `device.mfr` (`PHOENIXTEC`) / `device.model` (`Innova Unity Tower 3-1 10K`) — ข้อมูลผู้ผลิตและรุ่น (ข้อมูลจริง จาก USB Descriptors String 1 & 2 รวม String 3 Sub-model)
   - [x] `device.serial` — หมายเลขซีเรียล (ข้อมูลจริง จาก USB String 4)
 
