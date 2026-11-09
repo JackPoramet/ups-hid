@@ -174,13 +174,47 @@ class UPSClient:
             prod = (dev_info.get('product_string') or '').lower().replace(' ', '')
             candidates = [p for p in _registry.devices if p.vid == vid and p.pid == pid]
             if candidates:
+                s3_val = ""
+                s9_val = ""
+                path_val = dev_info.get("path")
+                if path_val and vid == 0x06DA and len(candidates) > 1:
+                    try:
+                        probe_h = hid.device()
+                        probe_arg = path_val if isinstance(path_val, bytes) else str(path_val).encode("utf-8")
+                        probe_h.open_path(probe_arg)
+                        try:
+                            s3_raw = probe_h.get_indexed_string(3)
+                            if s3_raw and isinstance(s3_raw, str):
+                                s3_val = s3_raw.strip().lstrip("\x00 \t\r\n")
+                        except Exception:
+                            pass
+                        try:
+                            s9_raw = probe_h.get_indexed_string(9)
+                            if s9_raw and isinstance(s9_raw, str):
+                                s9_val = s9_raw.strip()
+                        except Exception:
+                            pass
+                        probe_h.close()
+                    except Exception:
+                        pass
+
                 matched_profile = None
-                for p in candidates:
-                    p_model_norm = p.model.lower().replace(' ', '')
-                    p_id_norm = p.id.lower().replace('_', '').replace('-', '')
-                    if p_model_norm in prod or prod in p_model_norm or p_id_norm in prod:
-                        matched_profile = p
-                        break
+                if s3_val or s9_val:
+                    s_comb = f"{s3_val} {s9_val}".lower()
+                    for p in candidates:
+                        p_sub = (getattr(p, "model_sub", "") or "").lower()
+                        p_com = (getattr(p, "model_commercial", "") or "").lower()
+                        if (p_sub and p_sub in s_comb) or (p_com and p_com in s_comb):
+                            matched_profile = p
+                            break
+
+                if not matched_profile:
+                    for p in candidates:
+                        p_model_norm = p.model.lower().replace(' ', '')
+                        p_id_norm = p.id.lower().replace('_', '').replace('-', '')
+                        if p_model_norm in prod or prod in p_model_norm or p_id_norm in prod:
+                            matched_profile = p
+                            break
                 if not matched_profile:
                     matched_profile = candidates[0]
                 logger.info("Auto-detected UPS: %s %s (VID=0x%04X, PID=0x%04X)", matched_profile.manufacturer, matched_profile.model, vid, pid)
@@ -231,6 +265,14 @@ class UPSClient:
                 raise RuntimeError("Already connected. Call disconnect() before connect().")
             self._handle = h
         self._device_info = info or {}
+        if self._profile:
+            self._device_info.setdefault("profile_id", self._profile.id)
+            self._device_info.setdefault("input_phases", getattr(self._profile, "input_phases", 1))
+            self._device_info.setdefault("output_phases", getattr(self._profile, "output_phases", 1))
+            if getattr(self._profile, "model_sub", ""):
+                self._device_info.setdefault("model_sub", self._profile.model_sub)
+            if getattr(self._profile, "model_commercial", ""):
+                self._device_info.setdefault("model_commercial", self._profile.model_commercial)
 
         # Instantiate driver if protocol is megatec_q1
         if self._profile and self._profile.protocol == 'megatec_q1':
@@ -455,6 +497,11 @@ class UPSClient:
             "manufacturer_string": mfr,
             "product_string":      model,
             "serial_number":       serial,
+            "model_sub":           info.get("model_sub") or (getattr(self._profile, "model_sub", "") if self._profile else ""),
+            "model_commercial":    info.get("model_commercial") or (getattr(self._profile, "model_commercial", "") if self._profile else ""),
+            "profile_id":          self._profile.id if self._profile else "",
+            "input_phases":        getattr(self._profile, "input_phases", 1) if self._profile else 1,
+            "output_phases":       getattr(self._profile, "output_phases", 1) if self._profile else 1,
         }
 
     @property

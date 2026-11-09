@@ -164,3 +164,43 @@
   - [x] `ups.power.nominal` (880 VA) / `ups.realpower.nominal` (528 W) — พิกัดกำลังไฟฟ้า (ข้อมูลจริง คำนวณจากแรงดันและกระแสพิกัด Index 13)
   - [x] `device.mfr` (`MEC`) / `device.model` (`MEC0003`) — ข้อมูลผู้ผลิตและรุ่น (ข้อมูลจริง จาก USB Descriptors)
   - [x] `device.serial` (`MEC0003`) — หมายเลขซีเรียล (ข้อมูลจริง จาก USB Descriptors)
+
+---
+
+### 5. **Innova Unity Tower 3-1 10K** (Online Double-Conversion 3-Phase In / 1-Phase Out 10kVA)
+* **สถานะการทำงาน (Operating Status):**
+  - [x] `ups.status: OL` — สถานะไฟหลวงปกติ จ่ายไฟตรง (ข้อมูลจริง จาก Report 0x07 WorkMode=3)
+  - [x] `ups.status: OL BYPASS` / `BYPASS` — สถานะเมื่อเปิดใช้งานโหมดบายพาส (ข้อมูลจริง จาก Report 0x07 WorkMode=2)
+  - [x] `ups.status: OB DISCHRG` — สถานะเมื่อไฟดับหรือสลับเข้าแบตเตอรี่ (ข้อมูลจริง จาก Report 0x07 WorkMode=4)
+  - [x] `ups.status: OB DISCHRG LB` — สถานะเตือนแบตเตอรี่เหลือน้อยระดับวิกฤต (ข้อมูลจริง และ Fallback เกณฑ์แบตเตอรี่)
+  - [x] `ups.status: OL CAL` — สถานะเมื่อกำลังทดสอบแบตเตอรี่ Self-Test (ข้อมูลจริง จาก Report 0x24 / Report 0x27)
+* **ระบบไฟฟ้าขาเข้า (Input Power — 3-Phase Input, Phase 1 extraction):**
+  - [x] `input.voltage` (~215.0 - 230.0 V) — แรงดันไฟฟ้าขาเข้า Phase 1 (`L1-N`) จาก Report 0x31 bytes `d[2..3]` (สำหรับระบบ 1-Phase ของ UP-Connex-Box)
+  - [x] `input.voltage.nominal` (230 V) — แรงดันไฟเข้าพิกัด (ข้อมูลจริง จาก Report 0x72)
+  - [x] `input.frequency` (50.0 Hz) — ความถี่ไฟฟ้าขาเข้า (ข้อมูลจริง จาก Report 0x31 bytes `d[0..1]`)
+  - [x] `input.frequency.nominal` (50 Hz) — ความถี่ไฟเข้าพิกัด (ข้อมูลจริง จาก Report 0x14)
+* **ระบบไฟฟ้าขาออก (Output Power — 1-Phase Output):**
+  - [x] `output.voltage` (~230.0 V) — แรงดันไฟฟ้าขาออก (ข้อมูลจริง จาก Report 0x42 bytes `d[8..9]`)
+  - [x] `output.voltage.nominal` (230 V) — แรงดันไฟออกพิกัด (ข้อมูลจริง จาก Report 0x72)
+  - [x] `output.frequency` (50.0 Hz) — ความถี่ไฟฟ้าขาออก (ข้อมูลจริง จาก Report 0x42 bytes `d[6..7]`)
+  - [x] `output.frequency.nominal` (50 Hz) — ความถี่ไฟออกพิกัด (ข้อมูลจริง)
+  - [x] `output.current` (~0.0 - 43.5 A) — กระแสไฟฟ้าขาออก (ข้อมูลจริง จาก Report 0x42 bytes `d[4..5]`)
+  - [x] `output.power` (~0 - 9000 W) — กำลังไฟฟ้าจริง Active Power (ข้อมูลจริง จาก Report 0x42 bytes `d[0..1]`)
+  - [x] `output.power.apparent` (~0 - 10000 VA) — กำลังไฟฟ้าปรากฏ Apparent Power (ข้อมูลจริง จาก Report 0x42 bytes `d[2..3]`)
+  - [x] `outlet.1.status` (`on` / `off`) — สถานะเต้ารับจ่ายไฟ (ข้อมูลจริง)
+* **ระบบแบตเตอรี่ (Battery Subsystem — High Voltage Bank):**
+  - [x] `battery.charge` (100 %) — เปอร์เซ็นต์แบตเตอรี่ (ข้อมูลจริง จาก Report 0x06)
+  - [x] `battery.voltage` (~192.0 - 270.0 V) — แรงดันไฟฟ้ากระแสตรงแบตเตอรี่ High Voltage Bank (ข้อมูลจริง จาก Report 0x07 bytes `d[7..8]`)
+  - [x] `battery.runtime` — เวลาสำรองไฟที่เหลือ (ข้อมูลจริง จาก Report 0x06)
+  - [x] `battery.runtime.low` (180 วินาที) — เกณฑ์เตือนเวลาสำรองไฟใกล้หมด (Fallback ตามมาตรฐาน NUT)
+  - [x] `battery.charger.status` (`resting` / `floating` / `charging` / `discharging`) — สถานะการชาร์จ
+  - [x] `battery.type` (`PbAc`) — ชนิดแบตเตอรี่
+  - [x] `battery.test.status` (`passed` / `in progress` / `failed`) — ผลการทดสอบแบตเตอรี่ (ข้อมูลจริง จาก Report 0x24)
+  - [x] `ups.test.result` (`Done and passed` / `In progress`) — ผลการทดสอบแบตเตอรี่ตามมาตรฐาน NUT
+* **ข้อมูลตัวเครื่องและระบบ (Device & System Info):**
+  - [x] `ups.load` (0 - 100 %) — ภาระโหลดเทียบกับพิกัด (ข้อมูลจริง จาก Report 0x07 byte `d[3]`)
+  - [x] `ups.temperature` (25.0 - 45.0 °C) — อุณหภูมิเครื่อง (ข้อมูลจริง จาก Report 0x07 bytes `d[5..6]`)
+  - [x] `ups.power.nominal` (10000 VA) / `ups.realpower.nominal` (9000 W) — พิกัดกำลังไฟฟ้า (ข้อมูลจริง จาก Report 0x74 / Device Registry Fallback)
+  - [x] `device.mfr` (`PHOENIXTEC`) / `device.model` (`Innova Unity`) — ข้อมูลผู้ผลิตและรุ่น (ข้อมูลจริง จาก USB Descriptors String 1 & 2)
+  - [x] `device.serial` — หมายเลขซีเรียล (ข้อมูลจริง จาก USB String 4)
+

@@ -449,5 +449,178 @@ class TestZeroAndStaleHandling(unittest.TestCase):
         self.assertEqual(enriched_valid.get("ups.temperature"), 32.5)
 
 
+class TestTower3110K(unittest.TestCase):
+    """Unit tests for Innova Unity Tower 3-1 10K UPS support."""
+
+    def test_tower_3_1_10k_report_07_decoding(self):
+        from ups_module.core import decode_feature_reports
+        # Report 0x07 (9 payload bytes):
+        # d[0..1] = 0x0098 (vendor tag)
+        # d[2] = 0x03 (WorkMode: 3=Line Mode)
+        # d[3] = 45 (PercentLoad: 45%)
+        # d[4] = 0xE9
+        # d[5..6] = 303 (Temperature: 303 Kelvin -> 29.85 C)
+        # d[7..8] = 2160 (Battery Voltage: 216.0 V)
+        temp_k = 303
+        vbat_raw = 2160
+        raw = {
+            0x01: [0x01, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00],  # ac=1, status_good=1
+            0x07: [0x07, 0x98, 0x00, 0x03, 45, 0xE9, temp_k & 0xFF, (temp_k >> 8) & 0xFF, vbat_raw & 0xFF, (vbat_raw >> 8) & 0xFF],
+            0x42: [0x42, 0x94, 0x11, 0x88, 0x13, 0xD9, 0x00, 0xF4, 0x01, 0xFC, 0x08],  # 230.0V out
+        }
+        device_info = {
+            "product_string": "Innova Unity",
+            "model_sub": "Tower 3-1 10K",
+            "model_commercial": "Unity 10K T",
+            "profile_id": "phoenixtec_innova_unity_tower_3_1_10k",
+            "input_phases": 3,
+        }
+        decoded = decode_feature_reports(raw, device_info=device_info)
+        self.assertEqual(decoded.get("work_mode_code"), 3)
+        self.assertFalse(decoded.get("bypass"))
+        self.assertEqual(decoded.get("ups.load"), 45)
+        self.assertEqual(decoded.get("percent_load"), 45)
+        self.assertAlmostEqual(decoded.get("temperature_c"), 29.9, places=1)
+        self.assertAlmostEqual(decoded.get("ups.temperature"), 29.9, places=1)
+        self.assertEqual(decoded.get("battery_voltage_v"), 216.0)
+        self.assertEqual(decoded.get("battery.voltage"), 216.0)
+
+    def test_tower_3_1_10k_report_07_bypass_mode(self):
+        from ups_module.core import decode_feature_reports
+        # WorkMode = 2 (Bypass)
+        raw = {
+            0x01: [0x01, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00],
+            0x07: [0x07, 0x98, 0x00, 0x02, 10, 0xE9, 0x2F, 0x01, 0x70, 0x08],  # 216.0V
+        }
+        device_info = {
+            "product_string": "Innova Unity",
+            "model_sub": "Tower 3-1 10K",
+        }
+        decoded = decode_feature_reports(raw, device_info=device_info)
+        self.assertEqual(decoded.get("work_mode_code"), 2)
+        self.assertTrue(decoded.get("bypass"))
+
+    def test_tower_3_1_10k_report_42_decoding(self):
+        from ups_module.core import decode_feature_reports
+        # Report 0x42 (10 payload bytes):
+        # d[0..1] = ActivePower (W): 4500
+        # d[2..3] = ApparentPower (VA): 5000
+        # d[4..5] = Current (0.1A): 217 -> 21.7 A
+        # d[6..7] = Frequency (0.1Hz): 500 -> 50.0 Hz
+        # d[8..9] = Output Voltage (0.1V): 2300 -> 230.0 V
+        act_w = 4500
+        app_va = 5000
+        curr_raw = 217
+        freq_raw = 500
+        volt_raw = 2300
+        raw = {
+            0x01: [0x01, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00],
+            0x42: [
+                0x42,
+                act_w & 0xFF, (act_w >> 8) & 0xFF,
+                app_va & 0xFF, (app_va >> 8) & 0xFF,
+                curr_raw & 0xFF, (curr_raw >> 8) & 0xFF,
+                freq_raw & 0xFF, (freq_raw >> 8) & 0xFF,
+                volt_raw & 0xFF, (volt_raw >> 8) & 0xFF,
+            ],
+        }
+        device_info = {
+            "product_string": "Innova Unity",
+            "model_sub": "Tower 3-1 10K",
+        }
+        decoded = decode_feature_reports(raw, device_info=device_info)
+        self.assertEqual(decoded.get("output_active_power_w"), 4500)
+        self.assertEqual(decoded.get("output.power"), 4500)
+        self.assertEqual(decoded.get("output_apparent_power_va"), 5000)
+        self.assertEqual(decoded.get("output.power.apparent"), 5000)
+        self.assertEqual(decoded.get("output_current_a"), 21.7)
+        self.assertEqual(decoded.get("output.current"), 21.7)
+        self.assertEqual(decoded.get("output_frequency_hz"), 50.0)
+        self.assertEqual(decoded.get("output.frequency"), 50.0)
+        self.assertEqual(decoded.get("output_voltage_v"), 230.0)
+        self.assertEqual(decoded.get("output.voltage"), 230.0)
+
+    def test_tower_3_1_10k_report_31_phase1_only(self):
+        from ups_module.core import decode_feature_reports
+        # Report 0x31 (3-phase payload):
+        # d[0..1] = Input Frequency (0.1Hz): 500 -> 50.0 Hz
+        # d[2..3] = Phase 1 (L1-N) Voltage (0.1V): 2200 -> 220.0 V
+        # d[4..5] = Phase 2 (L2-N) Voltage (0.1V): 2210 -> 221.0 V
+        # d[6..7] = Phase 3 (L3-N) Voltage (0.1V): 2190 -> 219.0 V
+        raw = {
+            0x01: [0x01, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00],
+            0x31: [
+                0x31,
+                0xF4, 0x01,  # 50.0 Hz
+                0x98, 0x08,  # L1-N: 2200 -> 220.0 V
+                0xA2, 0x08,  # L2-N: 2210 -> 221.0 V
+                0x8E, 0x08,  # L3-N: 2190 -> 219.0 V
+            ],
+        }
+        device_info = {
+            "product_string": "Innova Unity",
+            "model_sub": "Tower 3-1 10K",
+            "input_phases": 3,
+        }
+        decoded = decode_feature_reports(raw, device_info=device_info)
+        self.assertEqual(decoded.get("input.frequency"), 50.0)
+        self.assertEqual(decoded.get("input.voltage"), 220.0)
+
+        # Ensure NUT dict outputs strictly standard 1-phase input.voltage
+        nut_dict = ups_data_from_raw(decoded).to_nut_dict()
+        self.assertEqual(nut_dict.get("input.voltage"), 220.0)
+        self.assertEqual(nut_dict.get("input.frequency"), 50.0)
+        self.assertNotIn("input.L1-N.voltage", nut_dict)
+        self.assertNotIn("input.L2-N.voltage", nut_dict)
+        self.assertNotIn("input.L3-N.voltage", nut_dict)
+
+    def test_tower_3_1_10k_report_72_and_74_ratings(self):
+        from ups_module.core import decode_feature_reports
+        # Report 0x72 (2 bytes): Config Voltage 230V
+        # Report 0x74 (4 bytes): Active Power 9000W, Apparent Power 10000VA
+        raw = {
+            0x01: [0x01, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00],
+            0x72: [0x72, 0xE6, 0x00],              # 230 V
+            0x74: [0x74, 0x28, 0x23, 0x10, 0x27],  # 9000 W, 10000 VA
+        }
+        device_info = {
+            "product_string": "Innova Unity",
+            "model_sub": "Tower 3-1 10K",
+        }
+        decoded = decode_feature_reports(raw, device_info=device_info)
+        self.assertEqual(decoded.get("config_nominal_voltage_v"), 230)
+        self.assertEqual(decoded.get("input.voltage.nominal"), 230)
+        self.assertEqual(decoded.get("output.voltage.nominal"), 230)
+        self.assertEqual(decoded.get("ups.realpower.nominal"), 9000)
+        self.assertEqual(decoded.get("ups.power.nominal"), 10000)
+
+    def test_tower_3_1_10k_enrich_nut_variables_fallback_ratings(self):
+        from enerex_ups_bridge import enrich_nut_variables
+        # Without Report 0x74, Tower 3-1 10K should default to 10000 VA and 9000 W
+        data = {
+            "input.voltage": 220.0,
+            "output.voltage": 230.0,
+            "ups.status": "OL",
+            "ups.load": 50,
+        }
+        device_info = {
+            "manufacturer_string": "PHOENIXTEC",
+            "product_string": "Innova Unity",
+            "model_sub": "Tower 3-1 10K",
+            "model_commercial": "Unity 10K T",
+            "profile_id": "phoenixtec_innova_unity_tower_3_1_10k",
+            "input_phases": 3,
+        }
+        enriched = enrich_nut_variables(data, device_info)
+        # Model string must remain 'Innova Unity' to not trigger ups_func.py regex bug
+        self.assertEqual(enriched.get("device.model"), "Innova Unity")
+        self.assertEqual(enriched.get("ups.model"), "Innova Unity")
+        self.assertEqual(enriched.get("ups.power.nominal"), 10000)
+        self.assertEqual(enriched.get("ups.realpower.nominal"), 9000)
+        # Dynamic power: 50% load -> 5000 VA, 4500 W
+        self.assertEqual(enriched.get("output.power.apparent"), 5000)
+        self.assertEqual(enriched.get("output.power"), 4500)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

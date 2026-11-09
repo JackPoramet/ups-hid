@@ -13,12 +13,17 @@
 
 ---
 
-| Hardware Model         | USB VID:PID   | Protocol       | Rating         |
-| ---------------------- | ------------- | -------------- | -------------- |
-| Innova Unity IOT Tower | 0x06DA:0xFFFF | phoenixtec_hid | 3000VA / 2700W |
-| Innova Basic G2        | 0x06DA:0xFFFF | phoenixtec_hid | 2700VA / 2700W |
-| Offline UPS 2000D      | 0x06DA:0xFFFF | phoenixtec_hid | 2000VA / 1200W |
-| MEC0003 (800E)         | 0x0001:0x0000 | megatec_q1     | 880VA / 528W   |
+| Hardware Model            | USB VID:PID   | Protocol       | Rating           |
+| ------------------------- | ------------- | -------------- | ---------------- |
+| Innova Unity Tower 3-1 10K| 0x06DA:0xFFFF | phoenixtec_hid | 10000VA / 9000W  |
+| Innova Unity RT 3K        | 0x06DA:0xFFFF | phoenixtec_hid | 3000VA / 2700W   |
+| Innova Unity IOT Tower    | 0x06DA:0xFFFF | phoenixtec_hid | 3000VA / 2700W   |
+| Innova Basic G2           | 0x06DA:0xFFFF | phoenixtec_hid | 2700VA / 2700W   |
+| Offline UPS 2000D         | 0x06DA:0xFFFF | phoenixtec_hid | 2000VA / 1200W   |
+| MEC0003 (800E)            | 0x0001:0x0000 | megatec_q1     | 880VA / 528W     |
+
+> [!NOTE]
+> **Innova Unity Tower 3-1 10K**: เป็น UPS สถาปัตยกรรม 3-Phase Input / 1-Phase Output ระบบจะดึงแรงดันไฟฟ้า Phase 1 (`L1-N`) จาก Report `0x31` ออกมาเป็นตัวแปร `input.voltage` หลักแบบ 1-Phase ตามข้อกำหนดของระบบ UP-Connex-Box
 
 ---
 

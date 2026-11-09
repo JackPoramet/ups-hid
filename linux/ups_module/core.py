@@ -336,6 +336,25 @@ def open_ups_device(vid: int = VID, pid: int = PID, verbose: bool = False):
         except Exception:
             pass
 
+    # Read model_sub (String 3) and model_commercial (String 9) for Phoenixtec devices (vid == 0x06DA)
+    if vid == 0x06DA or target.get("vendor_id") == 0x06DA:
+        try:
+            s3 = h.get_indexed_string(3)
+            if s3 and isinstance(s3, str):
+                s3_clean = s3.strip().lstrip("\x00 \t\r\n")
+                if (s3_clean and not s3_clean.startswith("(") and not s3_clean.startswith("#")
+                        and not re.search(r"\d+\.\d+\s+\d+\.\d+", s3_clean)
+                        and s3_clean.lower() not in ("hid ups", "ups", "ups device")):
+                    target["model_sub"] = s3_clean
+        except Exception:
+            pass
+        try:
+            s9 = h.get_indexed_string(9)
+            if s9 and isinstance(s9, str) and s9.strip():
+                target["model_commercial"] = s9.strip()
+        except Exception:
+            pass
+
     if verbose:
         print("\nเปิดอุปกรณ์สำเร็จ")
         print(f"  Manufacturer : {target.get('manufacturer_string')}")
@@ -640,9 +659,56 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
     if d:
         model = ""
         if device_info:
-            model = (device_info.get("product_string") or "").lower()
+            model = " ".join([
+                str(device_info.get("product_string") or ""),
+                str(device_info.get("model") or ""),
+                str(device_info.get("model_sub") or ""),
+                str(device_info.get("model_commercial") or ""),
+                str(device_info.get("profile_id") or ""),
+            ]).lower()
 
-        if "basic" in model or "g2" in model:
+        is_tower_3_1 = any(k in model for k in ("3-1", "3/1", "tower 3-1", "tower_3_1", "10k"))
+        if not is_tower_3_1 and device_info:
+            in_p = device_info.get("input_phases") or (device_info.get("phases", {}).get("input") if isinstance(device_info.get("phases"), dict) else 1)
+            if in_p == 3:
+                is_tower_3_1 = True
+
+        if (is_tower_3_1 and len(d) >= 9) or (len(d) in (9, 10) and not any(k in model for k in ("basic", "g2", "olg2", "2000", "offline"))):
+            # Tower 3-1 10K (per hardware HID descriptor):
+            # d[0..1] = Usage FFFF:0098 (16-bit vendor tag)
+            # d[2] = WorkMode (Usage FFFF:0094: 1=Standby, 2=Bypass, 3=Line, 4=Battery, 5=Test)
+            # d[3] = PercentLoad (Usage 0084:0035: 0..100%)
+            # d[4] = Usage FFFF:00E9
+            # d[5..6] = Temperature (Usage 0084:0036: Kelvin)
+            # d[7..8] = Battery Voltage (Usage 0084:0030: 0.1V)
+            work_mode_byte = d[2]
+            ups["work_mode_code"] = work_mode_byte
+            ups["bypass"] = (work_mode_byte == 2)
+
+            load = d[3]
+            ups["percent_load"] = load
+            ups["ups.load"] = load
+
+            temp_k = d[5] | (d[6] << 8)
+            if 273 <= temp_k <= 373:
+                ups["temperature_c"] = round(temp_k - 273.15, 1)
+                ups["ups.temperature"] = ups["temperature_c"]
+
+            vbat_raw = d[7] | (d[8] << 8)
+            vbat_calc = round(vbat_raw / 10.0, 1)
+            if 10.0 <= vbat_calc <= 350.0:
+                ups["battery_voltage_v"] = vbat_calc
+                ups["battery.voltage"] = vbat_calc
+            elif 10 <= vbat_raw < 100:
+                ups["battery_voltage_v"] = float(vbat_raw)
+                ups["battery.voltage"] = ups["battery_voltage_v"]
+
+            ups["r07_w0"] = d[0] | (d[1] << 8)
+            ups["r07_b2"] = d[2]
+            ups["r07_w3"] = temp_k
+            ups["r07_w9"] = vbat_raw
+
+        elif "basic" in model or "g2" in model:
             # InnovaBasicG2 (per HID Descriptor):
             # d[6] = WorkMode (Usage FFFF:0094: 1=Standby, 2=Bypass, 3=Line, 4=Battery, 5=Test)
             # d[7] = PercentLoad, d[9..10] = Temperature (Kelvin), d[15..16] or d[11..12] = Battery Voltage
@@ -661,12 +727,12 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
                     ups["ups.temperature"] = ups["temperature_c"]
             if len(d) >= 17:
                 vbat_raw = d[15] | (d[16] << 8)
-                if 100 <= vbat_raw <= 600:
+                if 100 <= vbat_raw <= 3500:
                     ups["battery_voltage_v"] = round(vbat_raw / 10.0, 1)
                     ups["battery.voltage"] = ups["battery_voltage_v"]
             elif len(d) >= 13:
                 vbat_raw = d[11] | (d[12] << 8)
-                if 100 <= vbat_raw <= 600:
+                if 100 <= vbat_raw <= 3500:
                     ups["battery_voltage_v"] = round(vbat_raw / 10.0, 1)
                     ups["battery.voltage"] = ups["battery_voltage_v"]
         elif len(d) >= 11:
@@ -686,7 +752,7 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
                 ups["temperature_c"] = round(temp_k - 273.15, 1)
                 ups["ups.temperature"] = ups["temperature_c"]
 
-            if 10.0 <= vbat_calc <= 60.0:
+            if 10.0 <= vbat_calc <= 350.0:
                 ups["battery_voltage_v"] = vbat_calc
                 ups["battery.voltage"] = vbat_calc
 
@@ -836,9 +902,49 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
     if d:
         model = ""
         if device_info:
-            model = (device_info.get("product_string") or "").lower()
+            model = " ".join([
+                str(device_info.get("product_string") or ""),
+                str(device_info.get("model") or ""),
+                str(device_info.get("model_sub") or ""),
+                str(device_info.get("model_commercial") or ""),
+                str(device_info.get("profile_id") or ""),
+            ]).lower()
 
-        if len(d) >= 14:
+        is_tower_3_1 = any(k in model for k in ("3-1", "3/1", "tower 3-1", "tower_3_1", "10k"))
+        if not is_tower_3_1 and device_info:
+            in_p = device_info.get("input_phases") or (device_info.get("phases", {}).get("input") if isinstance(device_info.get("phases"), dict) else 1)
+            if in_p == 3:
+                is_tower_3_1 = True
+
+        if (is_tower_3_1 or len(d) == 10) and len(d) >= 10 and not any(k in model for k in ("basic", "g2", "olg2", "2000", "offline")):
+            # Tower 3-1 10K (10 payload bytes per hardware HID descriptor):
+            # d[0..1]=ActiveW, d[2..3]=ApparentVA, d[4..5]=Current(0.1A), d[6..7]=Freq(0.1Hz), d[8..9]=Volt(0.1V)
+            act_pwr = d[0] | (d[1] << 8)
+            app_pwr = d[2] | (d[3] << 8)
+            curr_raw = d[4] | (d[5] << 8)
+            freq_raw = d[6] | (d[7] << 8)
+            volt_raw = d[8] | (d[9] << 8)
+
+            ups["output_active_power_w"] = act_pwr
+            ups["output_apparent_power_va"] = app_pwr
+            ups["output_current_a"] = round(curr_raw / 10.0, 1) if curr_raw > 0 else 0.0
+            ups["output_frequency_hz"] = round(freq_raw / 10.0, 1) if (400 <= freq_raw <= 700 or freq_raw == 0) else round(freq_raw / 10.0, 1)
+
+            if volt_raw >= 1000:
+                ups["output_voltage_v"] = round(volt_raw / 10.0, 1)
+            elif volt_raw == 0:
+                ups["output_voltage_v"] = 0.0
+            else:
+                ups["output_voltage_v"] = float(volt_raw)
+
+            if 0.0 <= ups["output_voltage_v"] <= 350.0:
+                ups["output.voltage"] = ups["output_voltage_v"]
+            ups["output.frequency"] = ups["output_frequency_hz"]
+            ups["output.current"] = ups["output_current_a"]
+            ups["output.power"] = ups["output_active_power_w"]
+            ups["output.power.apparent"] = ups["output_apparent_power_va"]
+
+        elif len(d) >= 14:
             if "basic" in model or "g2" in model:
                 # InnovaBasicG2 (per HID Descriptor):
                 # d[2..3]=ActiveW, d[4..5]=ApparentVA, d[6..7]=Current(0.1A), d[8..9]=Freq(0.1Hz), d[11..12]=Volt(0.1V)
@@ -974,10 +1080,41 @@ def decode_feature_reports(raw: Dict[int, List[int]], device_info: Optional[Dict
             ups["input.voltage"] = 0.0
             ups["input.frequency"] = 0.0
 
+    # Report 0x72: Config Voltage (Innova Unity RT 3K / Tower 3-1)
+    d = payload(0x72)
+    if d:
+        cfg_v = (d[0] | (d[1] << 8)) if len(d) >= 2 else d[0]
+        if cfg_v > 0:
+            ups["config_nominal_voltage_v"] = cfg_v
+            ups["nominal_voltage_v"] = cfg_v
+            ups["input.voltage.nominal"] = cfg_v
+            ups["output.voltage.nominal"] = cfg_v
+
     # Report 0x74: max power config
     d = payload(0x74)
     if d:
-        if len(d) >= 5:
+        w_val = None
+        va_val = None
+        if len(d) >= 4:
+            w_candidate_0 = d[0] | (d[1] << 8)
+            va_candidate_2 = d[2] | (d[3] << 8)
+            if 100 <= w_candidate_0 <= 50000 and 100 <= va_candidate_2 <= 50000:
+                w_val = w_candidate_0
+                va_val = va_candidate_2
+            elif len(d) >= 5 and 100 <= (d[1] | (d[2] << 8)) <= 50000 and 100 <= (d[3] | (d[4] << 8)) <= 50000:
+                w_val = d[1] | (d[2] << 8)
+                va_val = d[3] | (d[4] << 8)
+
+        if w_val is not None:
+            ups["config_max_active_power_w"] = w_val
+            ups["config_max_apparent_power_va"] = va_val
+            ups["nominal_active_power_w"] = w_val
+            ups["nominal_apparent_power_va"] = va_val
+            if w_val > 0:
+                ups["ups.realpower.nominal"] = w_val
+            if va_val > 0:
+                ups["ups.power.nominal"] = va_val
+        elif len(d) >= 5:
             w_val = d[1] | (d[2] << 8)
             va_val = d[3] | (d[4] << 8)
             ups["config_max_active_power_w"] = w_val

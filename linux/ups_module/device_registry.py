@@ -54,10 +54,18 @@ class DeviceProfile:
     report_ids: List[int] = field(default_factory=list)
     features: dict = field(default_factory=dict)
     notes: str = ""
+    match_product: str = ""
+    model_sub: str = ""
+    model_commercial: str = ""
+    input_phases: int = 1
+    output_phases: int = 1
 
     @classmethod
     def from_dict(cls, d: dict) -> "DeviceProfile":
         """Create a DeviceProfile from a meta.json device entry."""
+        phases = d.get("phases", {})
+        in_phases = d.get("input_phases", phases.get("input", 1) if isinstance(phases, dict) else 1)
+        out_phases = d.get("output_phases", phases.get("output", 1) if isinstance(phases, dict) else 1)
         return cls(
             id=d["id"],
             manufacturer=d["manufacturer"],
@@ -68,6 +76,11 @@ class DeviceProfile:
             report_ids=[int(r, 0) for r in d.get("report_ids", [])],
             features=d.get("features", {}),
             notes=d.get("notes", ""),
+            match_product=d.get("match_product", ""),
+            model_sub=d.get("model_sub", ""),
+            model_commercial=d.get("model_commercial", ""),
+            input_phases=int(in_phases or 1),
+            output_phases=int(out_phases or 1),
         )
 
 

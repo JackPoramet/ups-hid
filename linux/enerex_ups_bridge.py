@@ -233,6 +233,10 @@ def enrich_nut_variables(data: dict, info: dict, profile=None) -> dict:
     prod = info.get("model") or info.get("product_string") or data.get("device.model") or data.get("ups.model") or (profile.model if profile else "UPS")
     serial = info.get("serial") or info.get("serial_number") or data.get("device.serial") or data.get("ups.serial") or "0000000000"
 
+    # Ensure Innova Unity models are named "Innova Unity" to prevent UP-Connex-Box regex mangling
+    if "innova unity" in prod.lower():
+        prod = "Innova Unity"
+
     data["device.mfr"] = mfr
     data["device.model"] = prod
     data["device.serial"] = serial
@@ -378,8 +382,20 @@ def enrich_nut_variables(data: dict, info: dict, profile=None) -> dict:
 
     # 5. UPS Nominal Power & Real Power (Model-specific ratings)
     model_str = (info.get("model") or info.get("product_string") or data.get("device.model") or data.get("ups.model") or (profile.model if profile else "")).lower()
+    model_ident = " ".join([
+        str(info.get("model_sub") or ""),
+        str(info.get("model_commercial") or ""),
+        str(info.get("profile_id") or ""),
+        str(getattr(profile, "model_sub", "") or ""),
+        str(getattr(profile, "model_commercial", "") or ""),
+        str(getattr(profile, "id", "") or ""),
+        model_str,
+    ]).lower()
 
-    if "2000" in model_str or "offline" in model_str:
+    if any(k in model_ident for k in ("3-1", "3/1", "10k", "tower_3_1")):
+        data.setdefault("ups.power.nominal", 10000)
+        data.setdefault("ups.realpower.nominal", 9000)
+    elif "2000" in model_str or "offline" in model_str:
         data.setdefault("ups.power.nominal", 2000)
         data.setdefault("ups.realpower.nominal", 1200)
     elif "mec" in model_str or "800" in model_str:
