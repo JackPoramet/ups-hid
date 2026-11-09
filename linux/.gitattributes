@@ -1,0 +1,8 @@
+* text=auto eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.conf text eol=lf
+*.md text eol=lf
+enerex-driver text eol=lf
+enerex-test text eol=lf
+upscmd text eol=lf
