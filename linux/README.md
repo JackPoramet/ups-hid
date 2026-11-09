@@ -31,20 +31,21 @@
 
 ---
 
-**ดาวน์โหลดและแตกไฟล์แพ็กเกจ:**
+**Download and extract the package:**
 
 ```bash
+wget https://github.com/JackPoramet/ups-hid/releases/download/v1.0.4/enerex-ups-linux-v1.0.4.tar.gz
 tar -xzf enerex-ups-linux-v1.0.4.tar.gz
 cd enerex-ups-linux-v1.0.4
 ```
 
-**คำสั่งติดตั้งและจัดการระบบ:**
+**Installation and system management commands:**
 
 ```bash
 chmod +x install.sh update.sh uninstall.sh
-sudo ./install.sh       # ติดตั้งระบบและ service ทั้งหมด
-sudo ./update.sh        # อัพเดทโค้ดและ reload service ทันที
-sudo ./uninstall.sh     # ถอนการติดตั้ง
+sudo ./install.sh       # Install system and all services
+sudo ./update.sh        # Update code and reload services immediately
+sudo ./uninstall.sh     # Uninstall services
 ```
 
 ---
