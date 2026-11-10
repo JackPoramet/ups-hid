@@ -10,6 +10,13 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+if [ ! -s "$SCRIPT_DIR/VERSION" ]; then
+    echo "ERROR: Missing VERSION file" >&2
+    exit 1
+fi
+
 echo "--- 1. Installing required dependencies ---"
 apt-get update
 apt-get install -y python3-hid python3-usb python3-pymysql python3-mysqldb 2>/dev/null || apt-get install -y python3-hid python3-usb python3-pymysql 2>/dev/null || apt-get install -y python3-hid python3-usb
@@ -18,7 +25,12 @@ echo "--- 2. Stopping existing NUT services and old bridge processes ---"
 systemctl stop nut-server.service || true
 systemctl stop nut-driver.service || true
 systemctl stop enerex-ups-bridge.service 2>/dev/null || true
-pkill -9 -f "enerex_ups_bridge.py" 2>/dev/null || true
+pkill -9 -f '^(/[^ ]*/)?python(3([.][0-9]+)?)?[[:space:]]+(-u[[:space:]]+)?((/[^ ]*/)|([.]/))?enerex_ups_bridge[.]py([[:space:]]|$)' 2>/dev/null || true
+bridge_lock=/run/enerex_ups_bridge.lock
+if [ -e "$bridge_lock" ] && ! flock -n "$bridge_lock" true; then
+    echo "ERROR: Bridge still owns $bridge_lock; refusing to replace files" >&2
+    exit 1
+fi
 
 echo "--- 3. Copying files to /opt/enerex-ups/ ---"
 # Clear old files and python cache to prevent stale code execution
@@ -161,6 +173,7 @@ systemctl start enerex-ups-bridge.service
 # Start nut-server; nut-driver is managed dynamically by enerex-ups-bridge based on UPS connection
 systemctl start nut-server.service
 
+install -m 0644 "$SCRIPT_DIR/VERSION" /opt/enerex-ups/VERSION
 echo "=========================================================="
 echo "Installation Complete!"
 echo "Check bridge status with: sudo systemctl status enerex-ups-bridge"

@@ -27,7 +27,7 @@ echo " Updating Enerex UPS Bridge..."
 echo "=========================================================="
 
 # Check source files exist
-if [ ! -d "./ups_module" ] || [ ! -f "./enerex_ups_bridge.py" ]; then
+if [ ! -d "./ups_module" ] || [ ! -f "./enerex_ups_bridge.py" ] || [ ! -s "./VERSION" ]; then
     echo "ERROR: Required files (ups_module/ or enerex_ups_bridge.py) not found in $SCRIPT_DIR"
     exit 1
 fi
@@ -37,11 +37,14 @@ echo "--- 1. Stopping NUT services and old bridge processes ---"
 systemctl stop nut-server.service 2>/dev/null || true
 systemctl stop nut-driver.service 2>/dev/null || true
 systemctl stop enerex-ups-bridge.service 2>/dev/null || true
-pkill -9 -f "enerex_ups_bridge.py" 2>/dev/null || true
+pkill -9 -f '^(/[^ ]*/)?python(3([.][0-9]+)?)?[[:space:]]+(-u[[:space:]]+)?((/[^ ]*/)|([.]/))?enerex_ups_bridge[.]py([[:space:]]|$)' 2>/dev/null || true
+bridge_lock=/run/enerex_ups_bridge.lock
+if [ -e "$bridge_lock" ] && ! flock -n "$bridge_lock" true; then
+    echo "ERROR: Bridge still owns $bridge_lock; refusing to replace files" >&2
+    exit 1
+fi
 
-# Clear stale NUT PID and socket files to avoid "socket in use" or "stale driver" errors
-rm -f /run/nut/*.pid /var/run/nut/*.pid 2>/dev/null || true
-rm -f /run/enerex_ups_bridge.lock /tmp/enerex_ups_bridge.lock 2>/dev/null || true
+# Preserve live PID and lock inodes.
 
 echo "--- 2. Updating code in /opt/enerex-ups/ ---"
 # Clear Python caches
@@ -49,6 +52,7 @@ find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 find /opt/enerex-ups -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
 mkdir -p /opt/enerex-ups
+rm -f /opt/enerex-ups/VERSION
 rm -rf /opt/enerex-ups/ups_module
 cp -r ./ups_module /opt/enerex-ups/
 cp ./enerex_ups_bridge.py /opt/enerex-ups/
@@ -131,6 +135,9 @@ touch /run/enerex_ups_cmd /tmp/enerex_ups_cmd
 chown root:ups-hid /run/enerex_ups_cmd /tmp/enerex_ups_cmd 2>/dev/null || true
 chmod 660 /run/enerex_ups_cmd /tmp/enerex_ups_cmd 2>/dev/null || true
 
+# Discard the previous release's telemetry before starting the bridge. Otherwise
+# dummy-ups can retain variables that the new release intentionally omits.
+rm -f /etc/nut/myups.dev
 # Ensure dummy state file exists and has valid initial state so nut-driver doesn't fail
 if [ ! -s /etc/nut/myups.dev ]; then
     echo "ups.status: WAIT" > /etc/nut/myups.dev
@@ -164,6 +171,7 @@ systemctl is-active --quiet nut-driver.service && DRIVER_ACTIVE=true || true
 systemctl is-active --quiet nut-server.service && SERVER_ACTIVE=true || true
 
 if [ "$BRIDGE_ACTIVE" = true ] && [ "$SERVER_ACTIVE" = true ]; then
+    install -m 0644 "$SCRIPT_DIR/VERSION" /opt/enerex-ups/VERSION
     echo "=========================================================="
     echo " [OK] Update Complete! Core services active and healthy:"
     echo "   - enerex-ups-bridge : active (running)"
@@ -185,4 +193,5 @@ else
     echo "   sudo journalctl -u nut-server.service -n 20 --no-pager"
     echo "   sudo journalctl -u nut-driver.service -n 20 --no-pager"
     echo "=========================================================="
+    exit 1
 fi

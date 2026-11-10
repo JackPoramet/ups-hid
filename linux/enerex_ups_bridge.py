@@ -19,6 +19,7 @@ try:
     from ups_module.client import UPSClient
 except ImportError:
     from client import UPSClient
+from ups_module.hardware_session import HardwareSession
 
 # File that NUT's dummy-ups will read from
 DUMMY_FILE = "/etc/nut/myups.dev"
@@ -403,8 +404,8 @@ def enrich_nut_variables(data: dict, info: dict, profile=None) -> dict:
         data.setdefault("ups.power.nominal", 800)
         data.setdefault("ups.realpower.nominal", 480)
     elif "innova" in model_str or "unity" in model_str or "basic" in model_str:
-        data.setdefault("ups.power.nominal", 3000)
-        data.setdefault("ups.realpower.nominal", 2700)
+        # Generic Phoenixtec names cover several ratings; retain only measured values.
+        pass
     else:
         if "ups.power.nominal" in data and "ups.realpower.nominal" not in data:
             data["ups.realpower.nominal"] = int(round(float(data["ups.power.nominal"]) * 0.8))
@@ -417,17 +418,17 @@ def enrich_nut_variables(data: dict, info: dict, profile=None) -> dict:
     # 5.1 Dynamic Output Power & Current Calculation (for models lacking raw power meters e.g. Offline 2000D)
     if not is_off:
         load_pct = float(data.get("ups.load", 0) or 0)
-        nom_va = float(data.get("ups.power.nominal", 2700) or 2700)
-        nom_w = float(data.get("ups.realpower.nominal", 2700) or 2700)
+        nom_va = data.get("ups.power.nominal")
+        nom_w = data.get("ups.realpower.nominal")
         vout = float(data.get("output.voltage", 230.0) or 230.0)
 
-        if "output.power.apparent" not in data or data.get("output.power.apparent") is None:
-            data["output.power.apparent"] = int(round((load_pct / 100.0) * nom_va))
+        if data.get("output.power.apparent") is None and nom_va is not None:
+            data["output.power.apparent"] = int(round((load_pct / 100.0) * float(nom_va)))
 
-        if "output.power" not in data or data.get("output.power") is None:
-            data["output.power"] = int(round((load_pct / 100.0) * nom_w))
+        if data.get("output.power") is None and nom_w is not None:
+            data["output.power"] = int(round((load_pct / 100.0) * float(nom_w)))
 
-        if "output.current" not in data or data.get("output.current") is None:
+        if data.get("output.current") is None and data.get("output.power.apparent") is not None:
             if vout > 50.0:
                 data["output.current"] = round(float(data["output.power.apparent"]) / vout, 1)
             else:
@@ -491,16 +492,17 @@ def main():
     acquire_single_instance_lock()
     logging.info("Starting Enerex UPS Bridge daemon...")
 
+    client = None
     while _running:
         if not is_enerex_driver_active():
             logging.info("Native driver configured in /etc/nut/ups.conf (e.g. usbhid-ups). Bridge in standby...")
             time.sleep(5)
             continue
 
-        client = None
         try:
             logging.info("Scanning for Enerex/Phoenixtec/Megatec UPS...")
-            client = UPSClient.auto_detect()
+            if client is None:
+                client = HardwareSession(should_run=lambda: _running)
             client.connect()
 
             info = client.device_info
@@ -570,11 +572,13 @@ def main():
             clear_dummy_file()
             time.sleep(5)
         finally:
-            if client and getattr(client, "is_connected", False):
+            if client:
                 try:
                     client.disconnect()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logging.error("USB cleanup incomplete; retaining owner before retry: %s", exc)
+                else:
+                    client = None
     logging.info("Enerex UPS Bridge exited cleanly.")
 
 
