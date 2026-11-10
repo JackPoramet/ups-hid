@@ -197,3 +197,8 @@ After installing or updating from a package that includes `VERSION`, check the
 installed package version with `cat /opt/enerex-ups/VERSION`. Older installations
 without this file do not record their release version and must be identified by
 other evidence. A development version identifies a test build, not a release.
+
+During `install.sh` or `update.sh`, the installer checks
+`/etc/erx/.service/log`. If absent, it creates the directory with mode `0755`;
+if it already exists, its ownership, permissions and contents are left intact.
+If the path exists but is not a directory, installation stops with an error.

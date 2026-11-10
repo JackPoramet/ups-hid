@@ -16,6 +16,11 @@ if [ ! -s "$SCRIPT_DIR/VERSION" ]; then
     echo "ERROR: Missing VERSION file" >&2
     exit 1
 fi
+if [ ! -f "$SCRIPT_DIR/ensure-log-dir.sh" ]; then
+    echo "ERROR: Missing ensure-log-dir.sh" >&2
+    exit 1
+fi
+bash "$SCRIPT_DIR/ensure-log-dir.sh" /etc/erx/.service/log
 
 echo "--- 1. Installing required dependencies ---"
 apt-get update

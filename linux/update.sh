@@ -27,10 +27,11 @@ echo " Updating Enerex UPS Bridge..."
 echo "=========================================================="
 
 # Check source files exist
-if [ ! -d "./ups_module" ] || [ ! -f "./enerex_ups_bridge.py" ] || [ ! -s "./VERSION" ]; then
-    echo "ERROR: Required files (ups_module/ or enerex_ups_bridge.py) not found in $SCRIPT_DIR"
+if [ ! -d "./ups_module" ] || [ ! -f "./enerex_ups_bridge.py" ] || [ ! -s "./VERSION" ] || [ ! -f "./ensure-log-dir.sh" ]; then
+    echo "ERROR: Required update files not found in $SCRIPT_DIR" >&2
     exit 1
 fi
+bash "$SCRIPT_DIR/ensure-log-dir.sh" /etc/erx/.service/log
 
 echo "--- 1. Stopping NUT services and old bridge processes ---"
 # Always stop nut-server (consumer) before nut-driver (producer)
