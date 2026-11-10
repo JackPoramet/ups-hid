@@ -14,12 +14,19 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ ! -f "$SCRIPT_DIR/terminal-output.sh" ]; then
+    echo "ERROR: Missing terminal-output.sh" >&2
+    exit 1
+fi
+source "$SCRIPT_DIR/terminal-output.sh"
+trap 'status=$?; ui_error "Stopped at line $LINENO (exit $status)"; exit "$status"' ERR
+
 if [ "$EUID" -ne 0 ]; then
-  echo "ERROR: Please run as root (sudo ./update.sh)"
+  ui_error "Please run as root (sudo ./update.sh)"
   exit 1
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "=========================================================="
@@ -28,12 +35,12 @@ echo "=========================================================="
 
 # Check source files exist
 if [ ! -d "./ups_module" ] || [ ! -f "./enerex_ups_bridge.py" ] || [ ! -s "./VERSION" ] || [ ! -f "./ensure-log-dir.sh" ]; then
-    echo "ERROR: Required update files not found in $SCRIPT_DIR" >&2
+    ui_error "Required update files not found in $SCRIPT_DIR"
     exit 1
 fi
 bash "$SCRIPT_DIR/ensure-log-dir.sh" /etc/erx/.service/log
 
-echo "--- 1. Stopping NUT services and old bridge processes ---"
+ui_info "1. Stopping NUT services and old bridge processes"
 # Always stop nut-server (consumer) before nut-driver (producer)
 systemctl stop nut-server.service 2>/dev/null || true
 systemctl stop nut-driver.service 2>/dev/null || true
@@ -41,13 +48,13 @@ systemctl stop enerex-ups-bridge.service 2>/dev/null || true
 pkill -9 -f '^(/[^ ]*/)?python(3([.][0-9]+)?)?[[:space:]]+(-u[[:space:]]+)?((/[^ ]*/)|([.]/))?enerex_ups_bridge[.]py([[:space:]]|$)' 2>/dev/null || true
 bridge_lock=/run/enerex_ups_bridge.lock
 if [ -e "$bridge_lock" ] && ! flock -n "$bridge_lock" true; then
-    echo "ERROR: Bridge still owns $bridge_lock; refusing to replace files" >&2
+    ui_error "Bridge still owns $bridge_lock; refusing to replace files"
     exit 1
 fi
 
 # Preserve live PID and lock inodes.
 
-echo "--- 2. Updating code in /opt/enerex-ups/ ---"
+ui_info "2. Updating code in /opt/enerex-ups/"
 # Clear Python caches
 find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 find /opt/enerex-ups -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
@@ -58,9 +65,9 @@ rm -rf /opt/enerex-ups/ups_module
 cp -r ./ups_module /opt/enerex-ups/
 cp ./enerex_ups_bridge.py /opt/enerex-ups/
 chmod +x /opt/enerex-ups/enerex_ups_bridge.py
-echo "  [OK] Updated /opt/enerex-ups/ files"
+ui_ok "Updated /opt/enerex-ups/ files"
 
-echo "--- 3. Updating CLI helper tools ---"
+ui_info "3. Updating CLI helper tools"
 cat << 'EOF' > /usr/local/bin/upscmd
 #!/bin/bash
 # Smart upscmd router: detects active driver in ups.conf
@@ -125,9 +132,9 @@ case "$CMD" in
 esac
 EOF
 chmod +x /usr/local/bin/enerex-test
-echo "  [OK] Updated /usr/local/bin/upscmd and /usr/local/bin/enerex-test"
+ui_ok "Updated /usr/local/bin/upscmd and /usr/local/bin/enerex-test"
 
-echo "--- 4. Checking dummy-ups link and IPC permissions ---"
+ui_info "4. Checking dummy-ups link and IPC permissions"
 if [ -f "/lib/nut/dummy-ups" ]; then
     ln -sf /lib/nut/dummy-ups /lib/nut/enerex
 fi
@@ -150,7 +157,7 @@ if [ -f /lib/systemd/system/nut-driver.service ]; then
     sed -i 's/ExecStart=\/sbin\/upsdrvctl start/ExecStart=-\/sbin\/upsdrvctl start/' /lib/systemd/system/nut-driver.service
 fi
 
-echo "--- 5. Reloading systemd and restarting services sequentially ---"
+ui_info "5. Reloading systemd and restarting services sequentially"
 systemctl daemon-reload
 systemctl reset-failed 2>/dev/null || true
 
@@ -174,21 +181,21 @@ systemctl is-active --quiet nut-server.service && SERVER_ACTIVE=true || true
 if [ "$BRIDGE_ACTIVE" = true ] && [ "$SERVER_ACTIVE" = true ]; then
     install -m 0644 "$SCRIPT_DIR/VERSION" /opt/enerex-ups/VERSION
     echo "=========================================================="
-    echo " [OK] Update Complete! Core services active and healthy:"
-    echo "   - enerex-ups-bridge : active (running)"
-    echo "   - nut-server        : active (running)"
+    ui_ok "Update complete. Core services:"
+    ui_ok "enerex-ups-bridge: active (running)"
+    ui_ok "nut-server: active (running)"
     if [ "$DRIVER_ACTIVE" = true ]; then
-        echo "   - nut-driver        : active (UPS connected)"
+        ui_ok "nut-driver: active (UPS connected)"
     else
-        echo "   - nut-driver        : standby (No UPS connected - reports 'Driver not connected')"
+        ui_warn "nut-driver: standby (awaiting UPS telemetry)"
     fi
     echo " Check UPS data with: upsc myups"
     echo "=========================================================="
 else
     echo "=========================================================="
-    echo " [WARNING] Some services failed to start cleanly:"
-    [ "$BRIDGE_ACTIVE" = false ] && echo "   - enerex-ups-bridge : FAILED"
-    [ "$SERVER_ACTIVE" = false ] && echo "   - nut-server        : FAILED"
+    ui_error "Some services failed to start cleanly:"
+    [ "$BRIDGE_ACTIVE" = false ] && ui_error "enerex-ups-bridge: failed"
+    [ "$SERVER_ACTIVE" = false ] && ui_error "nut-server: failed"
     echo ""
     echo " View logs with:"
     echo "   sudo journalctl -u nut-server.service -n 20 --no-pager"

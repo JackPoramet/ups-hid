@@ -202,3 +202,7 @@ During `install.sh` or `update.sh`, the installer checks
 `/etc/erx/.service/log`. If absent, it creates the directory with mode `0755`;
 if it already exists, its ownership, permissions and contents are left intact.
 If the path exists but is not a directory, installation stops with an error.
+
+## Terminal output
+
+The install and update scripts use colored status messages on supported interactive terminals. Redirected output stays plain text. Set `NO_COLOR=1` to disable colors.

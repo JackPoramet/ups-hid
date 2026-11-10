@@ -5,39 +5,46 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ ! -f "$SCRIPT_DIR/terminal-output.sh" ]; then
+    echo "ERROR: Missing terminal-output.sh" >&2
+    exit 1
+fi
+source "$SCRIPT_DIR/terminal-output.sh"
+trap 'status=$?; ui_error "Stopped at line $LINENO (exit $status)"; exit "$status"' ERR
+
 if [ "$EUID" -ne 0 ]; then
-  echo "Please run as root (sudo ./install.sh)"
+  ui_error "Please run as root (sudo ./install.sh)"
   exit 1
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 if [ ! -s "$SCRIPT_DIR/VERSION" ]; then
-    echo "ERROR: Missing VERSION file" >&2
+    ui_error "Missing VERSION file"
     exit 1
 fi
 if [ ! -f "$SCRIPT_DIR/ensure-log-dir.sh" ]; then
-    echo "ERROR: Missing ensure-log-dir.sh" >&2
+    ui_error "Missing ensure-log-dir.sh"
     exit 1
 fi
 bash "$SCRIPT_DIR/ensure-log-dir.sh" /etc/erx/.service/log
 
-echo "--- 1. Installing required dependencies ---"
+ui_info "1. Installing required dependencies"
 apt-get update
 apt-get install -y python3-hid python3-usb python3-pymysql python3-mysqldb 2>/dev/null || apt-get install -y python3-hid python3-usb python3-pymysql 2>/dev/null || apt-get install -y python3-hid python3-usb
 
-echo "--- 2. Stopping existing NUT services and old bridge processes ---"
+ui_info "2. Stopping existing NUT services and old bridge processes"
 systemctl stop nut-server.service || true
 systemctl stop nut-driver.service || true
 systemctl stop enerex-ups-bridge.service 2>/dev/null || true
 pkill -9 -f '^(/[^ ]*/)?python(3([.][0-9]+)?)?[[:space:]]+(-u[[:space:]]+)?((/[^ ]*/)|([.]/))?enerex_ups_bridge[.]py([[:space:]]|$)' 2>/dev/null || true
 bridge_lock=/run/enerex_ups_bridge.lock
 if [ -e "$bridge_lock" ] && ! flock -n "$bridge_lock" true; then
-    echo "ERROR: Bridge still owns $bridge_lock; refusing to replace files" >&2
+    ui_error "Bridge still owns $bridge_lock; refusing to replace files"
     exit 1
 fi
 
-echo "--- 3. Copying files to /opt/enerex-ups/ ---"
+ui_info "3. Copying files to /opt/enerex-ups/"
 # Clear old files and python cache to prevent stale code execution
 rm -rf /opt/enerex-ups/*
 find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
@@ -46,19 +53,19 @@ mkdir -p /opt/enerex-ups
 if [ -d "./ups_module" ]; then
     cp -r ./ups_module /opt/enerex-ups/
 else
-    echo "ERROR: Cannot find ./ups_module in the current directory. Make sure it's copied into this deployment folder."
+    ui_error "Cannot find ./ups_module in the deployment folder"
     exit 1
 fi
 
 cp enerex_ups_bridge.py /opt/enerex-ups/
 chmod +x /opt/enerex-ups/enerex_ups_bridge.py
 
-echo "--- 4. Masking dummy-ups driver name ---"
+ui_info "4. Masking dummy-ups driver name"
 if [ -f "/lib/nut/dummy-ups" ]; then
     ln -sf /lib/nut/dummy-ups /lib/nut/enerex
 fi
 
-echo "--- 5. Initializing dummy device file and IPC queue ---"
+ui_info "5. Initializing dummy device file and IPC queue"
 echo "ups.status: WAIT" > /etc/nut/myups.dev
 chmod 666 /etc/nut/myups.dev
 
@@ -139,7 +146,7 @@ esac
 EOF
 chmod +x /usr/local/bin/enerex-test
 
-echo "--- 6. Setting up Systemd Service (Production Standards) ---"
+ui_info "6. Setting up Systemd Service (Production Standards)"
 SERVICE_FILE="/etc/systemd/system/enerex-ups-bridge.service"
 cat << 'EOF' > "$SERVICE_FILE"
 [Unit]
@@ -170,7 +177,7 @@ if [ -f /lib/systemd/system/nut-driver.service ]; then
     sed -i 's/ExecStart=\/sbin\/upsdrvctl start/ExecStart=-\/sbin\/upsdrvctl start/' /lib/systemd/system/nut-driver.service
 fi
 
-echo "--- 7. Starting Services ---"
+ui_info "7. Starting Services"
 systemctl daemon-reload
 systemctl enable enerex-ups-bridge.service
 systemctl start enerex-ups-bridge.service
@@ -180,7 +187,7 @@ systemctl start nut-server.service
 
 install -m 0644 "$SCRIPT_DIR/VERSION" /opt/enerex-ups/VERSION
 echo "=========================================================="
-echo "Installation Complete!"
+ui_ok "Installation complete!"
 echo "Check bridge status with: sudo systemctl status enerex-ups-bridge"
 echo "Check UPS data with: upsc myups"
 echo "=========================================================="
